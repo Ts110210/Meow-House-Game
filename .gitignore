@@ -1,0 +1,11 @@
+node_modules/
+dist/
+*.keystore
+*.jks
+.DS_Store
+# 每次 npx cap sync 都会重新生成，不用进仓库
+android/app/src/main/assets/public/
+android/app/src/main/assets/capacitor.config.json
+android/app/src/main/assets/capacitor.plugins.json
+android/capacitor-cordova-android-plugins/
+android/local.properties

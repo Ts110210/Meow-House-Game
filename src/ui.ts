@@ -1,0 +1,904 @@
+// 界面：顶部和底部的按钮，以及所有从下方弹出的面板。
+import { ZONES, CONFIG, DAY, DESTS, FOODS, FRY, FUR_COLORS, GEAR, GOODS, HOUR, MIN, SOUVENIRS, SPRITE, TOOLS, type ActionName } from './config';
+import { renderPostcard } from './art/postcard';
+import { drawDefaultSheet } from './art/defaultPet';
+import type { Game } from './game';
+import { setToastHandler } from './platform/notify';
+import type { ObjectKind, Scene } from './scene';
+import * as sim from './sim';
+import { drawBackScreen, takeBackTaps } from './backscreen';
+import { ASSETS } from './assets.config';
+import { exportLayout, isChanged, resetBackground, resetObjects, saveLayout } from './layout';
+import { composeSheet, splitStrip, type Assembled, type StripPart } from './assemble';
+import { canvasToBlob, saveBlob } from './platform/download';
+import { isNative, notifyPermission } from './platform/native';
+import { hoursToText, simulateAll, type SimResult } from './simulate';
+import { buildSet, previewSet, drawFrame, fileToDataUrl, frameIndex, hasRow, imageToAvatar, loadImage, normalizeSheet, type SpriteSet } from './sprites';
+import type { Pet, Postcard, Result } from './types';
+
+type Kid = Node | string | number | null | undefined | false;
+function h(tag: string, attrs: Record<string, any> | null = null, ...kids: (Kid | Kid[])[]): HTMLElement {
+  const el = document.createElement(tag);
+  if (attrs) for (const k in attrs) {
+    const v = attrs[k];
+    if (v === null || v === undefined || v === false) continue;
+    if (k.startsWith('on')) el.addEventListener(k.slice(2), v);
+    else if (k === 'class') el.className = v;
+    else if (k === 'disabled' || k === 'checked') (el as any)[k] = !!v;
+    else if (k === 'value') (el as any).value = v;
+    else el.setAttribute(k, String(v));
+  }
+  for (const kid of kids.flat()) if (kid !== null && kid !== undefined && kid !== false) el.append(kid instanceof Node ? kid : String(kid));
+  return el;
+}
+
+export function fmtDur(ms: number): string {
+  ms = Math.max(0, ms);
+  const d = Math.floor(ms / DAY), hr = Math.floor((ms % DAY) / HOUR), m = Math.floor((ms % HOUR) / MIN), s = Math.floor((ms % MIN) / 1000);
+  if (d > 0) return `${d} 天 ${hr} 小时`;
+  if (hr > 0) return `${hr} 小时 ${m} 分`;
+  if (m > 0) return `${m} 分 ${String(s).padStart(2, '0')} 秒`;
+  return `${s} 秒`;
+}
+const fmtDate = (t: number) => { const d = new Date(t); return `${d.getFullYear()}.${d.getMonth() + 1}.${d.getDate()}`; };
+const STAT_COLOR = { food: '#e2b85a', mood: '#e58f7b', clean: '#8ec3d4' };
+const STAT_NAME = { food: '饱食', mood: '心情', clean: '干净' };
+
+interface Sheet { title: string; render: () => Kid | Kid[]; onClose?: () => void }
+
+export class UI {
+  private hudFish!: HTMLElement; private hudCheck!: HTMLElement; private hudDev!: HTMLElement;
+  private strip!: HTMLElement; private zonesEl!: HTMLElement; private toasts!: HTMLElement;
+  private scrim: HTMLElement | null = null; private body: HTMLElement | null = null;
+  private sheet: Sheet | null = null;
+  private anims: ((t: number) => void)[] = [];
+  private live: (() => void)[] = [];
+  private cardCache = new Map<string, HTMLCanvasElement>();
+  private preview: { petId: string; action: ActionName; until: number } | null = null;
+  private plan: sim.DispatchPlan = { petIds: [], bento: '', tool: null, goods: [] };
+  private albumFilter = 'all';
+  private backPet = ''; private backCard: { id: string; until: number } | null = null; private backHappy = 0;
+  private verTaps = 0; private resetArmed = false;
+  private imp: { sheet?: HTMLCanvasElement; rows?: number; set?: SpriteSet; removeWhite: boolean; avatar?: HTMLCanvasElement; name: string; error?: string; srcUrl?: string; busy?: boolean } = { removeWhite: true, name: '' };
+  private adoptForm = { name: '', color: 'grey' };
+  private editingName = false;
+
+  constructor(private game: Game, private scene: Scene, private root: HTMLElement) {
+    this.buildHud();
+    setToastHandler((t) => this.toast(t));
+    game.onChange(() => { this.updateHud(); this.refresh(); });
+    game.onEvent((e) => {
+      if (e.type === 'return') {
+        this.backCard = { id: e.postcardId, until: performance.now() + 9000 };
+        if (!this.sheet) this.showReturns(); else this.toast('有宠物回家了');
+      }
+      if (e.type === 'died') { const p = game.pet(e.petId); if (p) this.toast(`${p.name}离开了……它会留在相册里`); }
+    });
+    setInterval(() => { this.live.forEach((f) => f()); this.updateHudLive(); }, 500);
+    // 真正的背屏上点了宠物：在这里记到存档里
+    setInterval(() => { for (const id of takeBackTaps()) this.game.act((s) => sim.petPet(s, id, CONFIG.backScreen.petMood)); }, 1500);
+    const loop = (t: number) => { for (const f of this.anims) f(t); requestAnimationFrame(loop); };
+    requestAnimationFrame(loop);
+    this.updateHud();
+    this.showAway();
+    if (game.isNew) { this.toast('点一下宠物可以照顾它'); setTimeout(() => this.toast('左右滑动看整个家，到门口可以派它出门'), 2800); }
+    if (game.state.pendingReturns.length) setTimeout(() => { if (!this.sheet) this.showReturns(); }, 600);
+  }
+
+  // ---------- 开场：离开期间发生了什么 ----------
+
+  private showAway() {
+    const g = this.game; const info = g.loadInfo;
+    if (info?.source === 'backup') this.toast('主存档读不出来，已经换用备份存档');
+    else if (info && info.from < g.saveVersion) this.toast(`存档已从 v${info.from} 升级到 v${g.saveVersion}`);
+    if (g.awayMs < 2 * MIN) return;
+    const name = (id: string) => g.pet(id)?.name ?? '宠物';
+    const lines: string[] = [];
+    const died = new Set<string>(), weak = new Set<string>();
+    for (const e of g.awayEvents) {
+      if (e.type === 'died') died.add(e.petId);
+      if (e.type === 'weak') weak.add(e.petId);
+    }
+    for (const e of g.awayEvents) {
+      if (e.type === 'return') { const c = g.state.postcards.find((x) => x.id === e.postcardId); if (c) lines.push(`${c.petIds.map(name).join(' 和 ')}旅行回来了，带回一张明信片`); }
+      if (e.type === 'stage') lines.push(`${name(e.petId)}长大了，现在是${CONFIG.growth.stageNames[e.stage]}`);
+      if (e.type === 'weak' && !died.has(e.petId)) lines.push(`${name(e.petId)}饿得很虚弱，快喂点东西`);
+      if (e.type === 'hungry' && !weak.has(e.petId) && !died.has(e.petId)) lines.push(`${name(e.petId)}饿了`);
+      if (e.type === 'died') lines.push(`${name(e.petId)}饿了太久，离开了。它会留在相册里。`);
+    }
+    if (!lines.length) { this.toast(`你离开了 ${fmtDur(g.awayMs)}，这段时间的变化已经算好了`); return; }
+    this.open({ title: `你离开了 ${fmtDur(g.awayMs)}`, render: () => [h('div', { class: 'card' }, lines.map((l) => h('div', { class: 'item' }, h('div', { class: 'txt' }, l)))),
+      h('p', null, h('button', { class: 'btn primary block', onclick: () => this.close() }, '知道了'))] });
+  }
+
+  /** 返回键（安卓）或 Esc：有面板就关面板，在调整模式就退出。返回 false 表示没有东西可关。 */
+  handleBack(): boolean {
+    if (this.sheet) { this.close(); return true; }
+    if (this.editBar) { if (this.scene.bgMode) this.stopBgEdit(); else this.stopEdit(); return true; }
+    return false;
+  }
+
+  // ---------- 提示 ----------
+
+  toast(text: string) {
+    const t = h('div', { class: 'toast' }, text);
+    this.toasts.append(t);
+    while (this.toasts.children.length > 3) this.toasts.firstChild!.remove();
+    setTimeout(() => t.remove(), 2600);
+  }
+  private say(r: Result) { if (r.msg) this.toast(r.msg); return r.ok; }
+
+  // ---------- 顶部和底部 ----------
+
+  private buildHud() {
+    this.hudFish = h('button', { class: 'pill', onclick: () => this.openShop() });
+    this.hudCheck = h('button', { class: 'pill', onclick: () => { this.say(this.game.act((s) => sim.checkin(s))); } }, '签到');
+    this.hudDev = h('button', { class: 'pill dev', onclick: () => this.openDev() });
+    const top = h('div', { class: 'hud-top' }, this.hudFish, this.hudCheck, h('div', { class: 'spacer' }), this.hudDev,
+      h('button', { class: 'pill', onclick: () => this.openShop() }, '商店'),
+      h('button', { class: 'pill', onclick: () => this.openMenu() }, '菜单'));
+    this.strip = h('div', { class: 'petstrip' });
+    this.zonesEl = h('div', { class: 'zones' }, ZONES.map((z, i) => h('button', { class: 'zone', onclick: () => this.scene.scrollToZone(i) }, z.name)));
+    this.toasts = h('div', { class: 'toasts' });
+    this.root.append(top, h('div', { class: 'hud-bottom' }, this.strip, this.zonesEl), this.toasts);
+  }
+
+  setZone(i: number) { [...this.zonesEl.children].forEach((c, k) => c.classList.toggle('on', k === i)); }
+
+  private avatarCanvas(pet: Pet, size = 92) {
+    const cv = h('canvas', { width: size, height: size }) as HTMLCanvasElement;
+    const set = this.game.spriteOf(pet);
+    if (set) cv.getContext('2d')!.drawImage(set.avatar, 0, 0, size, size);
+    return cv;
+  }
+
+  private stripSig = '';
+  private updateHud() {
+    const s = this.game.state;
+    this.hudFish.textContent = `🐟 ${s.fish}`;
+    this.hudCheck.classList.toggle('hot', sim.canCheckin(s));
+    this.hudCheck.textContent = sim.canCheckin(s) ? '签到' : '已签到';
+    this.hudDev.style.display = s.dev.enabled ? '' : 'none';
+    this.hudDev.textContent = `调试×${s.dev.speed}`;
+    this.scene.relayout();
+    const sig = sim.alivePets(s).map((p) => `${p.id}${p.name}${p.tripId ? 1 : 0}`).join('|');
+    if (sig !== this.stripSig) {
+      this.stripSig = sig;
+      this.strip.replaceChildren(...sim.alivePets(s).map((p) => h('button', { class: 'petchip' + (p.tripId ? ' out' : ''), 'data-pet': p.id, title: p.name, onclick: () => { this.scene.focusPet(p.id); this.openPet(p.id); } }, this.avatarCanvas(p), h('span', { class: 'dot' }))));
+    }
+    this.updateHudLive();
+  }
+  private updateHudLive() {
+    const s = this.game.state; const low = CONFIG.stats.lowThreshold;
+    this.hudCheck.classList.toggle('hot', sim.canCheckin(s));
+    for (const chip of this.strip.children as any as HTMLElement[]) {
+      const p = this.game.pet(chip.dataset.pet!); const dot = chip.querySelector('.dot') as HTMLElement; if (!p) continue;
+      const text = p.tripId ? '外出' : sim.isWeak(p) ? '虚弱' : p.food < low ? '饿' : p.clean < low ? '脏' : p.mood < low ? '闷' : '';
+      dot.textContent = text; dot.style.display = text ? '' : 'none';
+      dot.className = 'dot' + (p.tripId ? ' blue' : sim.isWeak(p) ? ' grey' : '');
+    }
+  }
+
+  // ---------- 面板的开关 ----------
+
+  private open(sheet: Sheet) {
+    if (this.sheet?.onClose) this.sheet.onClose();
+    this.sheet = sheet;
+    if (!this.scrim) {
+      this.body = h('div', { class: 'sheet-body' });
+      const title = h('h2');
+      const panel = h('div', { class: 'sheet' }, h('div', { class: 'sheet-head' }, title, h('button', { class: 'x', 'aria-label': '关闭', onclick: () => this.close() }, '×')), this.body);
+      this.scrim = h('div', { class: 'scrim', onclick: (e: Event) => { if (e.target === this.scrim) this.close(); } }, panel);
+      this.root.append(this.scrim);
+    }
+    this.scrim.querySelector('h2')!.textContent = sheet.title;
+    this.body!.scrollTop = 0;
+    this.refresh(true);
+  }
+
+  close() {
+    if (this.sheet?.onClose) this.sheet.onClose();
+    this.sheet = null; this.anims = []; this.live = []; this.editingName = false;
+    this.scrim?.remove(); this.scrim = null; this.body = null;
+    if (this.game.state.pendingReturns.length) setTimeout(() => { if (!this.sheet) this.showReturns(); }, 250);
+  }
+
+  private refresh(force = false) {
+    if (!this.sheet || !this.body) return;
+    const active = document.activeElement;
+    if (!force && active && this.body.contains(active) && ((active.tagName === 'INPUT' && ['text', 'range'].includes((active as HTMLInputElement).type)) || (active.tagName === 'TEXTAREA' && !(active as HTMLTextAreaElement).readOnly))) return;
+    const top = this.body.scrollTop;
+    this.anims = []; this.live = [];
+    const out = this.sheet.render();
+    this.body.replaceChildren(...([out].flat().filter((k) => k !== null && k !== undefined && k !== false) as (Node | string)[]));
+    this.body.scrollTop = top;
+    this.live.forEach((f) => f());
+  }
+
+  private countdown(until: () => number, done = '到了') {
+    const el = h('span');
+    this.live.push(() => { const left = until() - this.game.state.clock; el.textContent = left > 0 ? fmtDur(left) : done; });
+    return el;
+  }
+
+  private petAnim(set: SpriteSet | undefined | (() => SpriteSet | null), action: () => ActionName, size = 208) {
+    const cv = h('canvas', { width: size, height: size }) as HTMLCanvasElement;
+    const ctx = cv.getContext('2d')!;
+    const get = typeof set === 'function' ? set : () => set ?? null;
+    this.anims.push((t) => { const s = get(); if (!s) return; const a = action(); ctx.clearRect(0, 0, size, size); drawFrame(ctx, s, a, frameIndex(a, t), 0, 0, size); });
+    return cv;
+  }
+
+  // ---------- 场景里点到东西 ----------
+
+  onObject(kind: ObjectKind) {
+    if (kind === 'door') this.openDoor();
+    else if (kind === 'album') this.openAlbum();
+    else if (kind === 'cabinet') this.openCabinet();
+    else if (kind === 'pond') this.openPond();
+  }
+
+  // ---------- 宠物面板 ----------
+
+  openPet(id: string) {
+    this.editingName = false;
+    this.open({ title: '宠物', render: () => this.renderPet(id) });
+  }
+
+  private renderPet(id: string): Kid[] {
+    const s = this.game.state; const p = this.game.pet(id);
+    if (!p) return [h('p', null, '找不到这只宠物')];
+    const set = this.game.spriteOf(p);
+    if (p.dead) return [
+      h('div', { class: 'pethead' }, this.avatarCanvas(p, 208), h('div', null, h('b', null, p.name), h('p', { class: 'soft' }, `陪伴了 ${fmtDur(p.age)}`), h('p', { class: 'soft' }, `${fmtDate(p.adoptedAt)} – ${fmtDate(p.diedAt ?? s.clock)}`))),
+      h('div', { class: 'banner grey' }, `${p.name}已经离开了。它的明信片还留在相册里。`),
+    ];
+    const trip = s.trips.find((t) => t.id === p.tripId);
+    const action = (): ActionName => (this.preview && this.preview.petId === id && performance.now() < this.preview.until ? this.preview.action : sim.isWeak(p) ? 'sleep' : 'idle');
+    const nameEl = this.editingName
+      ? h('div', { class: 'row' }, h('input', { type: 'text', maxlength: 8, value: p.name, id: 'rename', style: 'flex:1;width:auto' }),
+        h('button', { class: 'btn small primary', onclick: () => { const v = (document.getElementById('rename') as HTMLInputElement).value; this.editingName = false; if (!this.say(this.game.act((st) => sim.rename(st, id, v)))) this.refresh(true); } }, '保存'))
+      : h('div', { class: 'row' }, h('b', { style: 'font-size:20px' }, p.name), h('button', { class: 'btn small', onclick: () => { this.editingName = true; this.refresh(true); } }, '改名'));
+    const ageEl = h('p', { class: 'soft' });
+    this.live.push(() => {
+      const st = sim.stageOf(p); const next = (st + 1) * CONFIG.growth.stageDuration - p.age;
+      ageEl.textContent = `${sim.stageName(p)} · 已陪伴 ${fmtDur(p.age)}` + (st < 2 ? ` · 再过 ${fmtDur(next / Math.max(1, s.dev.growth))} 长大` : '');
+    });
+    const out: Kid[] = [h('div', { class: 'pethead' }, this.petAnim(() => this.game.spriteOf(p) ?? null, action), h('div', { style: 'flex:1;min-width:0' }, nameEl, ageEl,
+      p.spriteId.startsWith('default:') ? h('div', { class: 'seg' }, Object.entries(FUR_COLORS).map(([k, v]) => h('button', { class: 'chip mini' + (p.spriteId === 'default:' + k ? ' on' : ''), onclick: async () => {
+        await this.game.ensureSprite('default:' + k); this.cardCache.clear(); this.stripSig = '';
+        this.say(this.game.act((st) => sim.setColor(st, id, k)));
+      } }, v.name))) : null))];
+
+    for (const k of ['food', 'mood', 'clean'] as const) {
+      const fill = h('div', { class: 'fill', style: `background:${STAT_COLOR[k]}` }); const num = h('span', { class: 'num' });
+      this.live.push(() => { fill.style.width = `${p[k]}%`; num.textContent = String(Math.round(p[k])); });
+      out.push(h('div', { class: 'bar' }, h('span', null, STAT_NAME[k]), h('div', { class: 'track' }, fill), num));
+    }
+
+    if (trip) {
+      out.push(h('div', { class: 'banner' }, '出门中，', this.countdown(() => trip.returnAt, '马上到家'), '后回家。旅途中靠便当，状态不会下降。'));
+      return out;
+    }
+    if (sim.isWeak(p)) {
+      const left = h('b'); this.live.push(() => { left.textContent = fmtDur(sim.weakTimeLeft(s, p)); });
+      out.push(h('div', { class: 'banner' }, `${p.name}饿得很虚弱，还能撑 `, left, `。喂食可以救回来，但心情会掉 ${CONFIG.weak.rescueMoodPenalty}。`));
+    }
+
+    const mult = (k: 'feed' | 'pet' | 'bath' | 'play') => { const m = sim.peekMult(s, p, k); return m < 1 ? h('small', null, `连续做，效果 ×${m}`) : null; };
+    const doAct = (fn: (st: typeof s) => Result, anim: ActionName) => {
+      const r = this.game.act(fn); this.say(r);
+      if (r.ok) { this.preview = { petId: id, action: anim, until: performance.now() + 2600 }; this.scene.perform(id, anim); }
+    };
+    out.push(h('h3', null, '喂食'));
+    out.push(h('div', { class: 'grid3' }, FOODS.map((f) => h('button', { class: 'act', disabled: sim.count(s, f.id) < 1, onclick: () => doAct((st) => sim.feed(st, id, f.id), 'eat') },
+      h('span', { class: 'big' }, f.icon), `${f.name} ×${sim.count(s, f.id)}`, h('small', null, `饱食 +${f.restore}`)))));
+    const fm = mult('feed'); if (fm) out.push(h('p', { class: 'soft' }, '短时间内连续喂食，每次效果减半；', `下一次 ×${sim.peekMult(s, p, 'feed')}`));
+    if (FOODS.every((f) => sim.count(s, f.id) < 1)) out.push(h('button', { class: 'btn block', onclick: () => this.openShop() }, '食物吃完了，去商店'));
+    out.push(h('h3', null, '互动'));
+    out.push(h('div', { class: 'grid3' },
+      h('button', { class: 'act', onclick: () => doAct((st) => sim.petPet(st, id), 'happy') }, '摸摸', mult('pet') ?? h('small', null, `心情 +${CONFIG.actions.petMood}`)),
+      h('button', { class: 'act', onclick: () => doAct((st) => sim.bath(st, id), 'bath') }, '洗澡', mult('bath') ?? h('small', null, `干净 +${CONFIG.actions.bathClean}`)),
+      h('button', { class: 'act', onclick: () => doAct((st) => sim.play(st, id), 'play') }, '玩耍', mult('play') ?? h('small', null, `心情 +${CONFIG.actions.playMood + (s.owned.ball ? CONFIG.actions.playBonusBall : 0) + (s.owned.scratcher ? CONFIG.actions.playBonusScratcher : 0)}`))));
+    out.push(h('p', null, h('button', { class: 'btn block', onclick: () => { this.plan = { petIds: [id], bento: this.plan.bento, tool: null, goods: [] }; this.openDoor(); } }, '派它出门')));
+    return out;
+  }
+
+  // ---------- 门口：派宠物出门 ----------
+
+  openDoor() { this.open({ title: '门口', render: () => this.renderDoor() }); }
+
+  private renderDoor(): Kid[] {
+    const s = this.game.state; const t = CONFIG.travel; const plan = this.plan;
+    plan.petIds = plan.petIds.filter((id) => sim.homePets(s).some((p) => p.id === id));
+    if (!FOODS.some((f) => f.id === plan.bento && sim.count(s, f.id) > 0)) plan.bento = FOODS.find((f) => sim.count(s, f.id) > 0)?.id ?? '';
+    if (plan.tool && sim.count(s, plan.tool) < 1) plan.tool = null;
+    const out: Kid[] = [];
+
+    if (s.trips.length) {
+      out.push(h('h3', null, '正在路上'));
+      out.push(h('div', { class: 'card' }, s.trips.map((trip) => h('div', { class: 'item' },
+        h('div', { class: 'txt' }, h('b', null, trip.petIds.map((id) => this.game.pet(id)?.name).join(' 和 ')), h('span', { class: 'soft' }, '还有 ', this.countdown(() => trip.returnAt, '马上到家'))),
+        s.dev.enabled ? h('button', { class: 'btn small', onclick: () => this.game.runEvents((st) => sim.finishTripNow(st, trip.id)) }, '立刻回家') : null))));
+    }
+
+    out.push(h('h3', null, `① 选谁出门（结伴最多 ${t.maxCompanions} 只，共用一张明信片）`));
+    const home = sim.homePets(s);
+    if (!home.length) out.push(h('p', { class: 'soft' }, '家里没有宠物了，等它们回来吧。'));
+    out.push(h('div', { class: 'row' }, home.map((p) => {
+      const bad = sim.isWeak(p) ? '虚弱' : p.mood < t.moodRefuseBelow ? '不想出门' : '';
+      const on = plan.petIds.includes(p.id);
+      return h('button', { class: 'chip' + (on ? ' on' : ''), disabled: !!bad, onclick: () => {
+        if (on) plan.petIds = plan.petIds.filter((x) => x !== p.id);
+        else { plan.petIds.push(p.id); if (plan.petIds.length > t.maxCompanions) plan.petIds.shift(); }
+        this.refresh(true);
+      } }, this.avatarCanvas(p, 56), p.name, bad ? `（${bad}）` : '');
+    })));
+
+    out.push(h('h3', null, '② 便当：决定走多久、走多远'));
+    out.push(h('div', { class: 'grid3' }, FOODS.map((f) => h('button', { class: 'act' + (plan.bento === f.id ? ' btn on' : ''), disabled: sim.count(s, f.id) < 1, onclick: () => { plan.bento = f.id; this.refresh(true); } },
+      h('span', { class: 'big' }, f.icon), `${f.name} ×${sim.count(s, f.id)}`, h('small', { style: plan.bento === f.id ? 'color:#fff' : '' }, `${['', '近处', '中等', '远方'][f.tier]} · ${fmtDur(f.tripTime)}`)))));
+
+    out.push(h('h3', null, '③ 行李：影响去哪类地方、带回什么（可以不带）'));
+    const tools = TOOLS.filter((x) => sim.count(s, x.id) > 0);
+    out.push(h('div', { class: 'row' }, h('button', { class: 'chip' + (!plan.tool ? ' on' : ''), onclick: () => { plan.tool = null; this.refresh(true); } }, '不带'),
+      tools.map((x) => h('button', { class: 'chip' + (plan.tool === x.id ? ' on' : ''), onclick: () => { plan.tool = x.id; this.refresh(true); } }, `${x.icon} ${x.name}`))));
+    if (!tools.length) out.push(h('p', { class: 'soft' }, '还没有行李道具，商店里可以买。'));
+
+    out.push(h('h3', null, `④ 货物：路上随机卖掉，换成小鱼干（最多 ${t.goodsCapacity} 件）`));
+    const goodsRows = GOODS.filter((g) => sim.count(s, g.id) > 0 || plan.goods.includes(g.id)).map((g) => {
+      const n = plan.goods.filter((x) => x === g.id).length;
+      return h('div', { class: 'item' }, h('span', { class: 'ico' }, g.icon), h('div', { class: 'txt' }, h('b', null, g.name), h('span', { class: 'soft' }, `有 ${sim.count(s, g.id)} 件 · 卖 ${g.sellMin}–${g.sellMax}`)),
+        h('button', { class: 'btn small', disabled: n < 1, onclick: () => { const i = plan.goods.indexOf(g.id); if (i >= 0) plan.goods.splice(i, 1); this.refresh(true); } }, '−'),
+        h('b', { style: 'width:22px;text-align:center' }, n),
+        h('button', { class: 'btn small', disabled: plan.goods.length >= t.goodsCapacity || n >= sim.count(s, g.id), onclick: () => { plan.goods.push(g.id); this.refresh(true); } }, '+'));
+    });
+    out.push(goodsRows.length ? h('div', { class: 'card' }, goodsRows) : h('p', { class: 'soft' }, '还没有货物，商店里可以买。'));
+
+    const chk = sim.checkDispatch(s, plan);
+    out.push(h('p', { style: 'margin-top:16px' }, h('button', { class: 'btn primary block', disabled: !chk.ok, onclick: () => {
+      const r = this.game.act((st) => sim.dispatch(st, plan)); this.say(r);
+      if (r.ok) { this.plan = { petIds: [], bento: plan.bento, tool: null, goods: [] }; this.close(); }
+    } }, chk.ok ? '出发' : chk.msg)));
+    out.push(h('p', { class: 'row' }, h('button', { class: 'btn small', onclick: () => this.openShop() }, '去商店')));
+    return out;
+  }
+
+  // ---------- 回家 ----------
+
+  private cardCanvas(card: Postcard) {
+    let cv = this.cardCache.get(card.id);
+    if (!cv) { cv = renderPostcard(card.destId, card.petIds.map((id) => this.game.spriteOf(this.game.pet(id))), this.game.assets.get(`postcard.${card.destId}`)); this.cardCache.set(card.id, cv); }
+    return cv;
+  }
+  private cardCopy(card: Postcard) {
+    const src = this.cardCanvas(card); const cv = h('canvas', { width: src.width, height: src.height }) as HTMLCanvasElement;
+    cv.getContext('2d')!.drawImage(src, 0, 0); return cv;
+  }
+  private cardDetail(card: Postcard): Kid[] {
+    const dest = DESTS.find((d) => d.id === card.destId)!; const names = card.petIds.map((id) => this.game.pet(id)?.name ?? '？').join(' 和 ');
+    const out: Kid[] = [h('div', { class: 'postcard' }, this.cardCopy(card), h('span', null, `${dest.name} · ${names} · ${fmtDate(card.at)}`))];
+    const sv = card.souvenir ? SOUVENIRS[card.souvenir] : null;
+    out.push(h('div', { class: 'card', style: 'margin-top:12px' },
+      h('div', { class: 'item' }, h('span', { class: 'ico' }, sv ? sv.icon : '·'), h('div', { class: 'txt' }, h('b', null, sv ? `带回纪念品：${sv.name}` : '这次没带回纪念品'), h('span', { class: 'soft' }, sv ? '已经摆进收藏柜' : '心情好、带对行李，更容易带回来'))),
+      card.sold.length + card.unsold.length ? h('div', { class: 'item' }, h('span', { class: 'ico' }, '🐟'), h('div', { class: 'txt' }, h('b', null, `卖货收入 +${card.income}`), h('span', { class: 'soft' }, `卖掉 ${card.sold.length} 件` + (card.unsold.length ? `，${card.unsold.length} 件没卖掉，带回来了` : '')))) : null));
+    return out;
+  }
+
+  showReturns() {
+    const s = this.game.state;
+    const id = s.pendingReturns[0]; if (!id) return;
+    const card = s.postcards.find((c) => c.id === id);
+    if (!card) { s.pendingReturns.shift(); return; }
+    const names = card.petIds.map((pid) => this.game.pet(pid)?.name ?? '？').join(' 和 ');
+    this.open({ title: `${names}回家了`, onClose: () => { const i = s.pendingReturns.indexOf(id); if (i >= 0) s.pendingReturns.splice(i, 1); this.game.save(); },
+      render: () => [...this.cardDetail(card), h('p', { class: 'soft center' }, `旅行回来有点脏，干净值 −${CONFIG.travel.cleanDropOnReturn}`), h('button', { class: 'btn primary block', onclick: () => this.close() }, '收进相册')] });
+  }
+
+  // ---------- 相册、收藏柜 ----------
+
+  openAlbum() { this.albumFilter = 'all'; this.open({ title: '纪念相册', render: () => this.renderAlbum() }); }
+
+  private renderAlbum(): Kid[] {
+    const s = this.game.state; const f = this.albumFilter;
+    const chip = (key: string, label: string) => h('button', { class: 'chip' + (f === key ? ' on' : ''), onclick: () => { this.albumFilter = key; this.refresh(true); } }, label);
+    const petsIn = s.pets.filter((p) => s.postcards.some((c) => c.petIds.includes(p.id)));
+    const destsIn = DESTS.filter((d) => s.postcards.some((c) => c.destId === d.id));
+    const cards = s.postcards.filter((c) => f === 'all' || c.petIds.includes(f.slice(4)) || c.destId === f.slice(5)).slice().reverse();
+    const out: Kid[] = [h('div', { class: 'row' }, chip('all', '全部'), petsIn.map((p) => chip('pet:' + p.id, p.name)), destsIn.map((d) => chip('dest:' + d.id, d.name)))];
+    out.push(cards.length ? h('div', { class: 'postgrid', style: 'margin-top:12px' }, cards.map((c) => {
+      const dest = DESTS.find((d) => d.id === c.destId)!;
+      return h('button', { class: 'postcard', onclick: () => this.open({ title: dest.name, render: () => [...this.cardDetail(c), h('p', null, h('button', { class: 'btn block', onclick: () => this.open({ title: '纪念相册', render: () => this.renderAlbum() }) }, '回到相册'))] }) },
+        this.cardCopy(c), h('span', null, `${dest.name} · ${fmtDate(c.at)}`));
+    })) : h('p', { class: 'soft center', style: 'padding:24px 0' }, '还没有明信片。到门口派宠物出门，它会带一张回来。'));
+    const dead = s.pets.filter((p) => p.dead);
+    if (dead.length) {
+      out.push(h('h3', null, '纪念'));
+      out.push(h('div', { class: 'row' }, dead.map((p) => h('button', { class: 'chip', onclick: () => this.openPet(p.id) }, this.avatarCanvas(p, 56), p.name))));
+    }
+    return out;
+  }
+
+  openCabinet() {
+    this.open({ title: '收藏柜', render: () => {
+      const s = this.game.state; const ids = Object.keys(SOUVENIRS);
+      return [h('p', { class: 'soft' }, `已收集 ${Object.keys(s.souvenirs).length} / ${ids.length} 种纪念品`),
+        h('div', { class: 'grid4' }, ids.map((id) => { const n = s.souvenirs[id] ?? 0; const dest = DESTS.find((d) => d.souvenirs.includes(id));
+          return h('div', { class: 'souv' + (n ? '' : ' none') }, h('span', { class: 'ico' }, n ? SOUVENIRS[id].icon : '？'), n ? `${SOUVENIRS[id].name}${n > 1 ? ' ×' + n : ''}` : dest?.name ?? ''); }))];
+    } });
+  }
+
+  // ---------- 鱼塘 ----------
+
+  openPond() {
+    this.open({ title: '鱼塘', render: () => {
+      const s = this.game.state;
+      return [h('p', { class: 'soft' }, `鱼苗 ${fmtDur(CONFIG.pond.growTime)}长大，每条收获 ${CONFIG.pond.fishPerFry} 小鱼干。现在有 ${sim.count(s, FRY.id)} 条鱼苗。`),
+        h('div', { class: 'card' }, s.pond.map((p, i) => h('div', { class: 'item' }, h('span', { class: 'ico' }, p == null ? '◌' : '🐟'),
+          h('div', { class: 'txt' }, h('b', null, `位置 ${i + 1}`), p == null ? h('span', { class: 'soft' }, '空着') : sim.pondReady(s, i) ? h('span', { class: 'soft' }, '长大了，可以收获') : h('span', { class: 'soft' }, '还要 ', this.countdown(() => p + CONFIG.pond.growTime, '长大了'))),
+          p == null ? h('button', { class: 'btn small', disabled: sim.count(s, FRY.id) < 1, onclick: () => this.say(this.game.act((st) => sim.plantFry(st, i))) }, '放鱼苗')
+            : h('button', { class: 'btn small primary', disabled: !sim.pondReady(s, i), 'data-ready': i, onclick: () => this.say(this.game.act((st) => sim.harvest(st, i))) }, '收获')))),
+        h('p', null, h('button', { class: 'btn block', disabled: s.fish < FRY.price, onclick: () => this.say(this.game.act((st) => sim.buy(st, FRY.id))) }, `买一条鱼苗（🐟 ${FRY.price}）`))];
+    } });
+    // 鱼长大的那一刻，把「收获」按钮点亮
+    const tick = () => { if (this.sheet?.title === '鱼塘') { const s = this.game.state; const stale = [...(this.body?.querySelectorAll('[data-ready]') ?? [])].some((b) => (b as HTMLButtonElement).disabled && sim.pondReady(s, Number((b as HTMLElement).dataset.ready))); if (stale) this.refresh(true); setTimeout(tick, 700); } };
+    setTimeout(tick, 700);
+  }
+
+  // ---------- 商店 ----------
+
+  openShop() {
+    this.open({ title: '商店', render: () => {
+      const s = this.game.state;
+      const row = (id: string, icon: string, name: string, desc: string, price: number, owned?: boolean) => h('div', { class: 'item' }, h('span', { class: 'ico' }, icon),
+        h('div', { class: 'txt' }, h('b', null, name, owned === undefined ? h('span', { class: 'soft' }, `  有 ${sim.count(s, id)}`) : null), h('span', { class: 'soft' }, desc)),
+        h('button', { class: 'btn small' + (owned ? '' : ' primary'), disabled: owned || s.fish < price, onclick: () => this.say(this.game.act((st) => sim.buy(st, id))) }, owned ? '已拥有' : `🐟 ${price}`));
+      return [h('p', null, `你有 🐟 ${s.fish} 小鱼干`),
+        h('h3', null, '食物（也可以当出门的便当）'), h('div', { class: 'card' }, FOODS.map((f) => row(f.id, f.icon, f.name, f.desc, f.price))),
+        h('h3', null, '行李道具（回家后会还回来）'), h('div', { class: 'card' }, TOOLS.map((t) => row(t.id, t.icon, t.name, t.desc, t.price))),
+        h('h3', null, '行商货物（宠物带出门卖）'), h('div', { class: 'card' }, GOODS.map((g) => row(g.id, g.icon, g.name, `卖 ${g.sellMin}–${g.sellMax}，${Math.round(g.sellChance * 100)}% 能卖掉`, g.price))),
+        h('h3', null, '鱼塘'), h('div', { class: 'card' }, row(FRY.id, FRY.icon, FRY.name, `${fmtDur(CONFIG.pond.growTime)}后收获 ${CONFIG.pond.fishPerFry} 小鱼干`, FRY.price)),
+        h('h3', null, '家里的东西（买一次就一直在）'), h('div', { class: 'card' }, GEAR.map((g) => row(g.id, g.icon, g.name, g.desc, g.price, !!s.owned[g.id])))];
+    } });
+  }
+
+  // ---------- 菜单、家庭成员、领养 ----------
+
+  openMenu() {
+    this.resetArmed = false;
+    this.open({ title: '菜单', render: () => {
+      const s = this.game.state;
+      return [h('div', { class: 'grid2' },
+        h('button', { class: 'btn', onclick: () => this.openFamily() }, '家庭成员'), h('button', { class: 'btn', onclick: () => this.openAlbum() }, '纪念相册'),
+        h('button', { class: 'btn', onclick: () => this.openCabinet() }, '收藏柜'), h('button', { class: 'btn', onclick: () => this.openBack() }, '背屏预览'),
+        h('button', { class: 'btn', onclick: () => this.openDoor() }, '派宠物出门'), h('button', { class: 'btn', onclick: () => this.openPond() }, '鱼塘')),
+        h('p', null, h('button', { class: 'btn block', onclick: async () => {
+          if (!s.settings.notify) {
+            s.settings.notify = true;
+            if (isNative && !(await notifyPermission(true))) this.toast('系统没有允许通知，请到手机设置里给这个 App 打开通知权限');
+          } else s.settings.notify = false;
+          this.game.changed();
+        } }, `提醒（饿了、回家了）：${s.settings.notify ? '开' : '关'}`)),
+        isNative ? null : h('p', { class: 'soft center' }, '离开游戏后的提醒只在安卓 App 里有效，网页版只在开着的时候提示。'),
+        s.dev.enabled ? h('p', null, h('button', { class: 'btn block', onclick: () => this.openDev() }, '开发者面板')) : null,
+        h('p', { style: 'margin-top:20px' }, h('button', { class: 'btn block danger', onclick: async () => {
+          if (!this.resetArmed) { this.resetArmed = true; this.refresh(true); return; }
+          await this.game.reset(); this.cardCache.clear(); this.close(); this.toast('存档已经清空，重新开始');
+        } }, this.resetArmed ? '再点一次，确认清空全部存档' : '清空存档，重新开始')),
+        h('div', { class: 'ver', onclick: () => {
+          if (++this.verTaps >= 5) { this.verTaps = 0; s.dev.enabled = !s.dev.enabled; this.game.changed(); this.toast(s.dev.enabled ? '开发者模式已打开' : '开发者模式已关闭'); }
+        } }, `背屏宠物小游戏 ${CONFIG.version}`)];
+    } });
+  }
+
+  openFamily() {
+    this.open({ title: '家庭成员', render: () => {
+      const s = this.game.state; const alive = sim.alivePets(s); const cost = sim.nextSlotCost(s);
+      const out: Kid[] = [h('p', { class: 'soft' }, `现在养着 ${alive.length} 只，有 ${s.slots} 个位置（最多 ${CONFIG.maxPets} 个）。`)];
+      out.push(h('div', { class: 'card' }, alive.map((p) => h('div', { class: 'item' }, h('span', { class: 'ico' }, h('span', { class: 'chip', style: 'padding:0;box-shadow:none;background:none' }, this.avatarCanvas(p, 56))),
+        h('div', { class: 'txt' }, h('b', null, p.name), h('span', { class: 'soft' }, `${sim.stageName(p)}${p.tripId ? ' · 出门中' : sim.isWeak(p) ? ' · 虚弱' : ''}`)),
+        h('button', { class: 'btn small', onclick: () => this.openPet(p.id) }, '看看')))));
+      if (alive.length < s.slots) out.push(h('p', null, h('button', { class: 'btn primary block', onclick: () => this.openAdopt() }, '有空位：领养一只新宠物')));
+      else if (cost !== null) out.push(h('p', null, h('button', { class: 'btn block', disabled: s.fish < cost, onclick: () => this.say(this.game.act((st) => sim.unlockSlot(st))) }, `解锁下一个空位（🐟 ${cost}）`)));
+      else out.push(h('p', { class: 'soft center' }, '位置已经全部解锁。'));
+      return out;
+    } });
+  }
+
+  openAdopt() {
+    this.adoptForm = { name: '', color: Object.keys(FUR_COLORS)[sim.alivePets(this.game.state).length % 4] };
+    const previews = new Map<string, SpriteSet>();
+    const setFor = (c: string) => { if (!previews.has(c)) previews.set(c, buildSet('preview:' + c, drawDefaultSheet(c))); return previews.get(c)!; };
+    this.open({ title: '领养新宠物', render: () => {
+      const f = this.adoptForm;
+      return [h('h3', null, '方式一：默认宠物'),
+        h('div', { class: 'pethead' }, this.petAnim(setFor(f.color), () => 'idle'),
+          h('div', { style: 'flex:1' }, h('div', { class: 'seg' }, Object.entries(FUR_COLORS).map(([k, v]) => h('button', { class: 'chip' + (f.color === k ? ' on' : ''), onclick: () => { f.color = k; this.refresh(true); } }, v.name))),
+            h('p', null, h('input', { type: 'text', maxlength: 8, placeholder: '取个名字（最多 8 个字）', value: f.name, oninput: (e: Event) => { f.name = (e.target as HTMLInputElement).value; } })))),
+        h('button', { class: 'btn primary block', onclick: async () => {
+          await this.game.ensureSprite('default:' + f.color);
+          const r = this.game.act((s) => sim.adopt(s, f.name, 'default:' + f.color)); this.say(r);
+          if (r.ok && r.petId) this.openPet(r.petId);
+        } }, '领养'),
+        h('h3', null, '方式二：上传你自己做的宠物'),
+        h('button', { class: 'btn block', onclick: () => this.openAssembler('adopt') }, '每个动作上传一张图，自动拼好'),
+        h('p', null, h('button', { class: 'btn small', onclick: () => this.openImport() }, '我已经有拼好的整张精灵图'))];
+    } });
+  }
+
+  // ---------- 导入上传的精灵图 ----------
+
+  openImport() {
+    this.imp = { removeWhite: true, name: '' };
+    this.open({ title: '上传宠物', render: () => this.renderImport() });
+  }
+
+  private async reprocess() {
+    const imp = this.imp; if (!imp.srcUrl) return;
+    imp.busy = true; this.refresh(true);
+    try {
+      const img = await loadImage(imp.srcUrl);
+      const r = normalizeSheet(img, imp.removeWhite);
+      if (!r.ok) { imp.error = r.msg; imp.sheet = undefined; imp.set = undefined; }
+      else { imp.error = undefined; imp.sheet = r.sheet; imp.rows = r.rows; imp.set = buildSet('import-preview', r.sheet!, imp.avatar); }
+    } catch { imp.error = '这张图片读不出来，换一张 PNG 试试'; }
+    imp.busy = false; this.refresh(true);
+  }
+
+  private renderImport(): Kid[] {
+    const imp = this.imp;
+    const out: Kid[] = [
+      h('div', { class: 'card soft' }, h('b', null, '格式'), h('br'), `一张 PNG，${SPRITE.framesPerRow} 列，每格 ${SPRITE.cell}×${SPRITE.cell}（其他大小会自动缩放），宠物面朝右。`, h('br'),
+        '每行一个动作，从上到下：', SPRITE.rows.map((r, i) => `${SPRITE.rowNames[r]}${i < SPRITE.requiredRows ? '' : '（可选）'}`).join('、'), '。'),
+      h('h3', null, '① 选图片'),
+      h('div', { class: 'btn block file' }, imp.srcUrl ? '换一张图片' : '选择精灵图 PNG', h('input', { type: 'file', accept: 'image/png,image/webp,image/*', onchange: async (e: Event) => {
+        const file = (e.target as HTMLInputElement).files?.[0]; if (!file) return;
+        imp.srcUrl = await fileToDataUrl(file); await this.reprocess();
+      } })),
+      h('label', { class: 'check' }, h('input', { type: 'checkbox', checked: imp.removeWhite, onchange: (e: Event) => { imp.removeWhite = (e.target as HTMLInputElement).checked; void this.reprocess(); } }), '自动去掉白色背景（Gemini 生成的图一般需要）'),
+    ];
+    if (imp.busy) out.push(h('p', { class: 'soft' }, '正在按格子切开……'));
+    if (imp.error) out.push(h('div', { class: 'banner' }, imp.error));
+    if (imp.set && !imp.busy) {
+      const set = imp.set;
+      out.push(h('h3', null, '② 逐个看看动作对不对'));
+      out.push(h('div', { class: 'actgrid' }, SPRITE.rows.map((r) => {
+        const has = hasRow(set, r);
+        return h('div', { class: 'cell' }, this.petAnim(set, () => r, 128), SPRITE.rowNames[r].replace('（被摸）', ''), h('br'), h('span', { class: 'soft', style: 'font-size:11px' }, has ? '' : `用「${SPRITE.rowNames[SPRITE.fallback[r]].replace('（被摸）', '')}」代替`));
+      })));
+      out.push(h('h3', null, '③ 头像（可选）和名字'));
+      out.push(h('div', { class: 'row' }, h('div', { class: 'btn small file' }, imp.avatar ? '换头像' : '上传头像', h('input', { type: 'file', accept: 'image/*', onchange: async (e: Event) => {
+        const file = (e.target as HTMLInputElement).files?.[0]; if (!file) return;
+        try { imp.avatar = imageToAvatar(await loadImage(await fileToDataUrl(file))); imp.set = buildSet('import-preview', imp.sheet!, imp.avatar); } catch { this.toast('头像读不出来'); }
+        this.refresh(true);
+      } })), h('span', { class: 'soft' }, imp.avatar ? '已选头像' : '不传的话，用待机第 1 帧当头像')));
+      out.push(h('p', null, h('input', { type: 'text', maxlength: 8, placeholder: '取个名字（最多 8 个字）', value: imp.name, oninput: (e: Event) => { imp.name = (e.target as HTMLInputElement).value; } })));
+      out.push(h('button', { class: 'btn primary block', onclick: async () => {
+        if (!imp.name.trim()) { this.toast('先取个名字'); return; }
+        if (sim.alivePets(this.game.state).length >= this.game.state.slots) { this.toast('没有空位了，先到「家庭成员」解锁'); return; }
+        const { spriteId, persisted } = await this.game.saveCustomSprite(imp.sheet!, imp.avatar ?? null);
+        const r = this.game.act((s) => sim.adopt(s, imp.name, spriteId)); this.say(r);
+        if (!persisted) this.toast('这个浏览器存不下图片，关掉页面后要重新上传');
+        if (r.ok && r.petId) this.openPet(r.petId);
+      } }, '保存并领养'));
+    }
+    return out;
+  }
+
+  // ---------- 背屏预览（976×596） ----------
+
+  openBack() {
+    const B = CONFIG.backScreen;
+    this.open({ title: '背屏预览', render: () => {
+      const s = this.game.state; const alive = sim.alivePets(s);
+      if (!alive.some((p) => p.id === this.backPet)) this.backPet = alive[0]?.id ?? '';
+      const cv = h('canvas', { width: B.width, height: B.height }) as HTMLCanvasElement; const ctx = cv.getContext('2d')!;
+      cv.addEventListener('click', () => {
+        if (this.backCard && performance.now() < this.backCard.until) { this.backCard = null; return; }
+        const p = this.game.pet(this.backPet); if (!p || p.tripId) return;
+        const r = sim.petPet(s, p.id, B.petMood); if (r.ok) { this.backHappy = performance.now() + 1600; this.game.save(); }
+      });
+      this.anims.push((t) => this.drawBack(ctx, t));
+      const idx = alive.findIndex((p) => p.id === this.backPet);
+      const sw = (d: number) => { if (alive.length) { this.backPet = alive[(idx + d + alive.length) % alive.length].id; this.refresh(true); } };
+      const last = s.postcards[s.postcards.length - 1];
+      return [h('div', { class: 'backwrap' }, cv),
+        h('p', { class: 'row', style: 'justify-content:center' }, h('button', { class: 'btn small', disabled: alive.length < 2, onclick: () => sw(-1) }, '上一只'), h('button', { class: 'btn small', disabled: alive.length < 2, onclick: () => sw(1) }, '下一只'),
+          h('button', { class: 'btn small', disabled: !last, onclick: () => { if (last) this.backCard = { id: last.id, until: performance.now() + 9000 }; } }, '重看回家画面')),
+        h('p', { class: 'soft' }, `按 ${B.width}×${B.height} 的实际比例模拟。点一下宠物 = 摸摸（心情 +${B.petMood}）。宠物回家时这里会展示明信片。左边灰色是摄像头占位，具体位置要以实机截图为准。`)];
+    } });
+  }
+
+  private drawBack(ctx: CanvasRenderingContext2D, t: number) {
+    const s = this.game.state; const now = performance.now();
+    const card = this.backCard && now < this.backCard.until ? s.postcards.find((c) => c.id === this.backCard!.id) : undefined;
+    const pet = this.game.pet(this.backPet);
+    drawBackScreen(ctx, t, { state: s, pet, set: this.game.spriteOf(pet), happy: now < this.backHappy,
+      card: card ? { image: this.cardCanvas(card), text: `${card.petIds.map((id) => this.game.pet(id)?.name).join(' 和 ')}从${DESTS.find((d) => d.id === card.destId)?.name ?? ''}回来了` } : null });
+  }
+
+  // ---------- 素材替换（在页面里直接上传图片预览） ----------
+
+  private assetRemoveWhite: Record<string, boolean> = {};
+  assetsChanged() { this.cardCache.clear(); this.stripSig = ''; this.updateHud(); this.refresh(true); }
+
+  openAssets() {
+    const A = this.game.assets;
+    this.open({ title: '素材替换', render: () => {
+      const out: Kid[] = [h('div', { class: 'grid2' }, h('button', { class: 'btn primary', onclick: () => this.startEdit() }, '调整点击区域'), h('button', { class: 'btn primary', onclick: () => this.startBgEdit() }, '调整背景')),
+        h('p', { class: 'soft' }, '调整点击区域：拖动每件物品的位置和大小。调整背景：上传背景长图后，拖地板线和 5 个区域的分界线，宠物和物品会跟着对齐。'),
+        h('p', { class: 'soft' }, '给任意一项上传图片，马上就能在游戏里看到。上传的图只存在这个浏览器里；要正式放进游戏，把文件按下面的文件名放到 public/assets/ 文件夹。没有图片的项目用代码画的占位图。')];
+      let group = '';
+      for (const slot of A.slots()) {
+        if (slot.group !== group) { group = slot.group; out.push(h('h3', null, group)); }
+        const st = A.status(slot.key); const pic = A.get(slot.key);
+        const rw = this.assetRemoveWhite[slot.key] ?? (slot.kind === 'pet');
+        const thumb = h('canvas', { width: 72, height: 72, style: 'width:36px;height:36px;border-radius:8px;background:#fff;flex:none' }) as HTMLCanvasElement;
+        if (pic) { const k = Math.min(72 / pic.width, 72 / pic.height); thumb.getContext('2d')!.drawImage(pic, (72 - pic.width * k) / 2, (72 - pic.height * k) / 2, pic.width * k, pic.height * k); }
+        out.push(h('div', { class: 'item' }, thumb,
+          h('div', { class: 'txt' }, h('b', null, slot.name, h('span', { class: 'soft' }, st === 'upload' ? '  已上传' : st === 'file' ? '  用的是文件' : '  占位图')), h('span', { class: 'soft' }, `${slot.src} · ${slot.hint}`),
+            slot.kind === 'pet' || slot.kind === 'object' ? h('label', { class: 'check', style: 'margin:4px 0 0;font-size:12px' }, h('input', { type: 'checkbox', checked: rw, onchange: (e: Event) => { this.assetRemoveWhite[slot.key] = (e.target as HTMLInputElement).checked; } }), '上传时去掉白色背景') : null),
+          st === 'upload' ? h('button', { class: 'btn small', onclick: () => void A.clear(slot.key) }, '撤销') : null,
+          h('div', { class: 'btn small file' }, '上传', h('input', { type: 'file', accept: 'image/*', onchange: async (e: Event) => {
+            const file = (e.target as HTMLInputElement).files?.[0]; if (!file) return;
+            const saved = await A.upload(slot.key, file, this.assetRemoveWhite[slot.key] ?? (slot.kind === 'pet'));
+            this.toast(saved ? `${slot.name}已换上` : `${slot.name}已换上（这个浏览器存不下，刷新后要重传）`);
+          } }))));
+      }
+      return out;
+    } });
+  }
+
+  // ---------- 调整点击区域 ----------
+
+  private editBar: HTMLElement | null = null; private editInfo: HTMLElement | null = null;
+
+  startEdit() {
+    this.close();
+    this.editInfo = h('span', { class: 'soft' }, '拖框移动，拖右上角的圆点改大小');
+    this.editBar = h('div', { class: 'editbar' }, h('div', { class: 'editbar-text' }, h('b', null, '调整点击区域'), this.editInfo),
+      h('button', { class: 'btn small primary', onclick: () => this.openExport() }, '导出配置'),
+      h('button', { class: 'btn small', onclick: () => { resetObjects(); this.scene.refreshLayout(); this.toast('已还原成默认位置'); } }, '全部还原'),
+      h('button', { class: 'btn small on', onclick: () => this.stopEdit() }, '完成'));
+    this.root.append(this.editBar); this.root.classList.add('editing');
+    this.scene.setEditMode(true); this.scene.relayout();
+  }
+  stopEdit() {
+    this.editBar?.remove(); this.editBar = null; this.root.classList.remove('editing');
+    this.scene.setEditMode(false); this.scene.relayout();
+  }
+  /** 场景里拖动时调用：kind = 正在调的物品；null = 松手了，存一下 */
+  editChanged(kind: string | null) {
+    if (kind === null) { saveLayout(); return; }
+    const d = ASSETS.objects[kind];
+    if (this.editInfo && d) this.editInfo.textContent = `${d.label}：x ${d.x}，y ${d.y}，height ${d.height}${isChanged(kind) ? '（已调整）' : ''}`;
+  }
+  // ---------- 调整背景：地板线和区域分界线 ----------
+
+  startBgEdit() {
+    if (!this.scene.hasStrip()) { this.toast('先在「素材替换」里上传背景长图'); return; }
+    this.close();
+    this.editInfo = h('span', { class: 'soft' });
+    const pct = h('span', { class: 'soft' }, `${Math.round(ASSETS.petScale * 100)}%`);
+    const slider = h('input', { type: 'range', min: '40', max: '250', step: '2', value: String(Math.round(ASSETS.petScale * 100)), oninput: (e: Event) => {
+      ASSETS.petScale = Number((e.target as HTMLInputElement).value) / 100; pct.textContent = `${Math.round(ASSETS.petScale * 100)}%`; this.scene.geometryChanged(); saveLayout();
+    } }) as HTMLInputElement;
+    this.editBar = h('div', { class: 'editbar' }, h('div', { class: 'editbar-text' }, h('b', null, '调整背景'), this.editInfo),
+      h('button', { class: 'btn small primary', onclick: () => this.openExport() }, '导出配置'),
+      h('button', { class: 'btn small', onclick: () => { resetBackground(); slider.value = String(Math.round(ASSETS.petScale * 100)); pct.textContent = `${slider.value}%`; this.scene.geometryChanged(); this.bgChanged(false); this.toast('已还原'); } }, '还原'),
+      h('button', { class: 'btn small on', onclick: () => this.stopBgEdit() }, '完成'),
+      h('label', { class: 'editbar-slider' }, '宠物大小', slider, pct));
+    this.root.append(this.editBar); this.root.classList.add('editing');
+    this.scene.setBgMode(true); this.scene.relayout(); this.bgChanged(false);
+  }
+  stopBgEdit() {
+    this.editBar?.remove(); this.editBar = null; this.root.classList.remove('editing');
+    this.scene.setBgMode(false); this.scene.relayout();
+  }
+  /** 场景里拖线时调用；done = 松手了，存一下 */
+  bgChanged(done: boolean) {
+    if (done) saveLayout();
+    const s = ASSETS.room.strip;
+    if (this.editInfo) this.editInfo.textContent = `红线 = 地板线，蓝线 = 区域分界线，拖圆点或线都行。地板线 ${(s.floor * 100).toFixed(1)}%`;
+  }
+
+  // ---------- 精灵图拼装：每个动作一张横排 4 帧的图 ----------
+
+  private asm: { parts: Partial<Record<ActionName, StripPart>>; out: Assembled | null; set: SpriteSet | null; name: string; color: string; avatar: HTMLCanvasElement | null } = { parts: {}, out: null, set: null, name: '', color: 'orange', avatar: null };
+
+  private asmRecompose() {
+    const a = this.asm;
+    a.out = Object.keys(a.parts).length ? composeSheet(a.parts) : null;
+    a.set = a.out ? previewSet(a.out.sheet) : null;
+  }
+
+  /** mode = 'tool'：开发者工具（可以下载、设成默认宠物）；'adopt'：玩家上传自定义宠物 */
+  openAssembler(mode: 'tool' | 'adopt') {
+    this.asm = { parts: {}, out: null, set: null, name: '', color: 'orange', avatar: null };
+    this.open({ title: mode === 'tool' ? '精灵图拼装' : '上传宠物', render: () => this.renderAssembler(mode) });
+  }
+
+  private renderAssembler(mode: 'tool' | 'adopt'): Kid[] {
+    const a = this.asm;
+    const out: Kid[] = [h('div', { class: 'card soft' }, '每个动作上传一张图：', h('b', null, '白色背景，同一只宠物横着排 4 帧，面朝右'), '，帧和帧之间留一点空白。尺寸不用精确，程序会自动切成 4 帧、去掉白底、裁掉空白、统一大小、把脚底对齐。',
+      h('br'), `前 ${SPRITE.requiredRows} 个动作必须有，后 3 个可以不传。`)];
+    SPRITE.rows.forEach((act, idx) => {
+      const part = a.parts[act]; const required = idx < SPRITE.requiredRows;
+      const name = SPRITE.rowNames[act].replace('（被摸）', '');
+      const pick = h('div', { class: 'btn small file' }, part ? '换一张' : '上传', h('input', { type: 'file', accept: 'image/*', onchange: async (e: Event) => {
+        const file = (e.target as HTMLInputElement).files?.[0]; if (!file) return;
+        try { a.parts[act] = splitStrip(await loadImage(await fileToDataUrl(file)), act); this.asmRecompose(); }
+        catch { this.toast('这张图读不出来，换一张试试'); }
+        this.refresh(true);
+      } }));
+      const preview = part && a.set ? this.petAnim(() => this.asm.set, () => act, 128) : h('div', { class: 'asm-empty' }, required ? '必须' : '可选');
+      preview.classList.add('asm-prev');
+      const row = h('div', { class: 'asm-row' }, preview, h('div', { class: 'txt' }, h('b', null, `${idx + 1}. ${name}`),
+        part ? h('label', { class: 'asm-size' }, '大小', h('input', { type: 'range', min: '25', max: '95', step: '1', value: String(Math.round(part.size * 100)),
+          oninput: (e: Event) => { part.size = Number((e.target as HTMLInputElement).value) / 100; ((e.target as HTMLElement).nextSibling as HTMLElement).textContent = `${Math.round(part.size * 100)}%`; this.asmRecompose(); this.asmSwap(); },
+        }), h('span', null, `${Math.round(part.size * 100)}%`)) : h('span', { class: 'soft' }, required ? '还没上传' : `不传的话用「${SPRITE.rowNames[SPRITE.fallback[act]].replace('（被摸）', '')}」代替`),
+        part?.warn ? h('span', { class: 'asm-warn' }, part.warn) : null), pick,
+        part ? h('button', { class: 'btn small', 'aria-label': '去掉', onclick: () => { delete a.parts[act]; this.asmRecompose(); this.refresh(true); } }, '×') : null);
+      out.push(row);
+    });
+
+    if (a.out) {
+      out.push(h('h3', null, `拼好的精灵图（${a.out.sheet.width}×${a.out.sheet.height}，${a.out.rows} 行）`));
+      const img = h('img', { class: 'asm-sheet', alt: '拼好的精灵图', src: a.out.sheet.toDataURL('image/png') });
+      out.push(h('div', { class: 'asm-sheetwrap' }, img));
+      if (!a.out.complete) out.push(h('div', { class: 'banner' }, `还差：${a.out.missing.join('、')}`));
+    }
+    const ready = !!a.out?.complete;
+    if (mode === 'tool') {
+      out.push(h('p', null, h('button', { class: 'btn primary block', disabled: !ready, onclick: async () => {
+        const blob = await canvasToBlob(a.out!.sheet); if (!blob) { this.toast('生成图片失败'); return; }
+        const r = await saveBlob('pet-sheet.png', blob);
+        this.toast(r === 'saved' ? '已交给浏览器保存' : r === 'declined' ? '没有保存' : '这里下载不了，请长按上面的图片保存');
+      } }, '下载 PNG')));
+      out.push(h('div', { class: 'row' }, h('span', { class: 'soft' }, '或者直接用作默认宠物：'), Object.entries(FUR_COLORS).map(([k, v]) => h('button', { class: 'chip' + (a.color === k ? ' on' : ''), onclick: () => { a.color = k; this.refresh(true); } }, v.name))));
+      out.push(h('p', null, h('button', { class: 'btn block', disabled: !ready, onclick: async () => {
+        const saved = await this.game.assets.uploadDataUrl(`pet.${a.color}`, a.out!.sheet.toDataURL('image/png'), false);
+        this.toast(saved ? `已换成「${FUR_COLORS[a.color].name}」默认宠物的样子` : '已换上（这个浏览器存不下，刷新后要重来）');
+      } }, `用它替换「${FUR_COLORS[a.color].name}」默认宠物`)));
+    }
+    out.push(h('h3', null, mode === 'tool' ? '也可以直接领养' : '头像（可选）和名字'));
+    out.push(h('div', { class: 'row' }, h('div', { class: 'btn small file' }, a.avatar ? '换头像' : '上传头像', h('input', { type: 'file', accept: 'image/*', onchange: async (e: Event) => {
+      const file = (e.target as HTMLInputElement).files?.[0]; if (!file) return;
+      try { a.avatar = imageToAvatar(await loadImage(await fileToDataUrl(file))); } catch { this.toast('头像读不出来'); }
+      this.refresh(true);
+    } })), h('span', { class: 'soft' }, a.avatar ? '已选头像' : '不传的话，用待机第 1 帧当头像')));
+    out.push(h('p', null, h('input', { type: 'text', maxlength: 8, placeholder: '名字（最多 8 个字）', value: a.name, oninput: (e: Event) => { a.name = (e.target as HTMLInputElement).value; } })));
+    out.push(h('button', { class: 'btn block' + (mode === 'adopt' ? ' primary' : ''), disabled: !ready, onclick: async () => {
+      if (!a.name.trim()) { this.toast('先取个名字'); return; }
+      if (sim.alivePets(this.game.state).length >= this.game.state.slots) { this.toast('没有空位了，先到「家庭成员」解锁'); return; }
+      const { spriteId, persisted } = await this.game.saveCustomSprite(a.out!.sheet, a.avatar);
+      const r = this.game.act((s) => sim.adopt(s, a.name, spriteId)); this.say(r);
+      if (!persisted) this.toast('这个浏览器存不下图片，关掉页面后要重新上传');
+      if (r.ok && r.petId) this.openPet(r.petId);
+    } }, '保存并领养'));
+    if (mode === 'adopt') out.push(h('p', null, h('button', { class: 'btn small', onclick: () => this.openImport() }, '我已经有拼好的整张精灵图')));
+    return out;
+  }
+
+  /** 拖大小滑块时只换预览用的图，不重画整个面板（不然滑块会断） */
+  private asmSwap() {
+    const a = this.asm; if (!a.out) return;
+    // 预览动画读的是 a.set 的图：把新的画到同一张画布上
+    const img = this.body?.querySelector('.asm-sheet') as HTMLImageElement | null;
+    if (img) img.src = a.out.sheet.toDataURL('image/png');
+  }
+
+  private openExport() {
+    const text = exportLayout();
+    const area = h('textarea', { readonly: 'readonly', class: 'export', rows: 13 }) as HTMLTextAreaElement; area.value = text;
+    this.open({ title: '导出配置', render: () => [h('p', { class: 'soft' }, '把下面这段文字复制给 Claude，或者对照着改 src/assets.config.ts。调整结果已经存在这个浏览器里，刷新后还在。'), area,
+      h('p', null, h('button', { class: 'btn primary block', onclick: async () => {
+        try { await navigator.clipboard.writeText(text); this.toast('已复制'); } catch { area.focus(); area.select(); this.toast('复制不了，请长按上面的文字手动复制'); }
+      } }, '复制'))] });
+  }
+
+  // ---------- 数值模拟 ----------
+
+  private simOpt = { days: 14, pets: 1, feeder: false, travel: true }; private simOut: SimResult[] | null = null;
+
+  openSim() {
+    this.simOut = null;
+    this.open({ title: '数值模拟', render: () => {
+      const o = this.simOpt;
+      const seg = <T extends number | boolean>(opts: [T, string][], cur: T, set: (v: T) => void) => h('div', { class: 'seg' }, opts.map(([v, label]) => h('button', { class: 'chip' + (cur === v ? ' on' : ''), onclick: () => { set(v); this.simOut = null; this.refresh(true); } }, label)));
+      const out: Kid[] = [h('p', { class: 'soft' }, '用现在的数值和真正的游戏规则快进，不会动你的存档。主人的习惯是固定的：签到、收鱼塘再放鱼苗、把每只喂饱、摸一次、玩一次、脏了就洗。'),
+        h('h3', null, '模拟几天'), seg([[7, '7 天'], [14, '14 天'], [30, '30 天'], [60, '60 天']], o.days, (v) => { o.days = v; }),
+        h('h3', null, '养几只'), seg([[1, '1 只'], [2, '2 只'], [3, '3 只'], [5, '5 只']], o.pets, (v) => { o.pets = v; }),
+        h('h3', null, '条件'), h('div', { class: 'seg' },
+          h('button', { class: 'chip' + (o.feeder ? ' on' : ''), onclick: () => { o.feeder = !o.feeder; this.simOut = null; this.refresh(true); } }, '有自动喂食机'),
+          h('button', { class: 'chip' + (o.travel ? ' on' : ''), onclick: () => { o.travel = !o.travel; this.simOut = null; this.refresh(true); } }, '每天派一只出门带货')),
+        h('p', null, h('button', { class: 'btn primary block', onclick: () => { this.simOut = simulateAll(o.days, o.pets, o.feeder, o.travel); this.refresh(true); } }, `模拟 ${o.days} 天`))];
+      for (const r of this.simOut ?? []) {
+        out.push(h('h3', null, r.label));
+        out.push(h('div', { class: 'card simcard' },
+          h('div', null, h('b', null, '首次虚弱 '), hoursToText(r.firstWeakHour), '　', h('b', null, '首次死亡 '), hoursToText(r.firstDeathHour), r.deaths ? `（共 ${r.deaths} 只）` : '', r.rescues ? `　救回 ${r.rescues} 次` : ''),
+          h('div', null, h('b', null, '在家时间里 '), `饿 ${r.hungryPct}%　闷 ${r.sadPct}%　脏 ${r.dirtyPct}%`),
+          h('div', null, h('b', null, '小鱼干 '), `${r.fishStart} → ${r.fishEnd}（平均每天 ${r.fishPerDay >= 0 ? '+' : ''}${r.fishPerDay}）`),
+          h('div', { class: 'soft' }, `签到 +${r.earned.checkin}　鱼塘 ${r.earned.pond >= 0 ? '+' : ''}${r.earned.pond}　行商 ${r.earned.trade >= 0 ? '+' : ''}${r.earned.trade}　买食物 −${r.spentOnFood}`),
+          h('div', null, h('b', null, '成长 '), `青年：${r.stageDays[1] === null ? '没到' : '第 ' + r.stageDays[1] + ' 天'}　壮年：${r.stageDays[2] === null ? '没到' : '第 ' + r.stageDays[2] + ' 天'}　明信片 ${r.postcards} 张`),
+          h('div', { class: 'simtable' }, h('table', null,
+            h('tr', null, ['天', '饱食', '心情', '干净', '最低饱食', '最低心情', '小鱼干', '阶段', '发生了什么'].map((t) => h('th', null, t))),
+            r.rows.map((x) => h('tr', null, [x.day, x.food, x.mood, x.clean, x.minFood, x.minMood, x.fish, x.stage, x.note].map((v) => h('td', null, v))))))));
+      }
+      if (this.simOut) out.push(h('p', { class: 'soft' }, '饱食、心情、干净是每天第一次照顾之前看到的平均值（不照顾就是当天结束时）；「最低」是这一天里最差的那只的最低点。出门和卖货有随机性，每次结果会略有不同。'));
+      return out;
+    } });
+  }
+
+  // ---------- 存档：导出、导入 ----------
+
+  private importArmed = false; private importText = '';
+
+  openSaves() {
+    this.importArmed = false; this.importText = '';
+    this.open({ title: '存档', render: () => {
+      const g = this.game;
+      const savedEl = h('span'); this.live.push(() => { savedEl.textContent = g.lastSavedAt ? `${Math.max(0, Math.round((Date.now() - g.lastSavedAt) / 1000))} 秒前` : '还没有'; });
+      const doImport = async (text: string) => {
+        const r = await g.importText(text);
+        if (r.ok) { this.cardCache.clear(); this.stripSig = ''; this.close(); this.toast(r.from < g.saveVersion ? `导入成功（旧存档 v${r.from} 已自动升级）` : '导入成功'); }
+        else this.toast('导入失败：' + r.reason);
+      };
+      return [
+        h('div', { class: 'card soft' }, `存档版本 v${g.saveVersion}。游戏每隔几秒、切到后台、关掉页面时都会自动保存，另外每分钟留一份备份。`, h('br'),
+          '上次保存：', savedEl, '　', g.saveOk ? '保存正常' : h('b', { style: 'color:#b3493a' }, '这个浏览器存不了档，请用下面的导出')),
+        h('h3', null, '导出'),
+        h('p', { class: 'soft' }, '包含全部进度、自定义宠物的图片和你调过的布局。不包含「素材替换」里上传的图片。'),
+        h('div', { class: 'grid2' },
+          h('button', { class: 'btn primary', onclick: async () => {
+            const text = await g.exportText(); const d = new Date();
+            const r = await saveBlob(`pet-save-${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}.json`, new Blob([text], { type: 'application/json' }));
+            this.toast(r === 'saved' ? '已交给浏览器保存' : r === 'declined' ? '没有保存' : '这里下载不了，请用「复制存档文字」');
+          } }, '下载存档文件'),
+          h('button', { class: 'btn', onclick: async () => {
+            const text = await g.exportText();
+            try { await navigator.clipboard.writeText(text); this.toast(`已复制（${Math.ceil(text.length / 1024)} KB）`); } catch { this.toast('复制不了，请用「下载存档文件」'); }
+          } }, '复制存档文字')),
+        h('h3', null, '导入（会覆盖现在的进度）'),
+        h('div', { class: 'btn block file' }, '选择存档文件', h('input', { type: 'file', accept: '.json,application/json,text/plain', onchange: async (e: Event) => {
+          const file = (e.target as HTMLInputElement).files?.[0]; if (!file) return;
+          this.importText = await file.text(); this.importArmed = true; this.refresh(true);
+        } })),
+        h('p', { class: 'soft' }, '或者把存档文字贴在这里：'),
+        h('textarea', { class: 'export', rows: 4, placeholder: '{"format":"pet-game-save",…', oninput: (e: Event) => { this.importText = (e.target as HTMLTextAreaElement).value; } }, this.importArmed ? '' : this.importText),
+        h('p', null, h('button', { class: 'btn block danger', onclick: () => {
+          if (!this.importText.trim()) { this.toast('先选文件或贴上存档文字'); return; }
+          if (!this.importArmed) { this.importArmed = true; this.refresh(true); return; }
+          void doImport(this.importText);
+        } }, this.importArmed ? '确认导入，覆盖现在的进度' : '导入')),
+      ];
+    } });
+  }
+
+  // ---------- 开发者面板 ----------
+
+  openDev() {
+    this.open({ title: '开发者面板', render: () => {
+      const s = this.game.state; const d = s.dev; const D = CONFIG.dev;
+      const seg = (opts: number[], cur: number, set: (v: number) => void, fmt = (v: number) => `×${v}`) => h('div', { class: 'seg' }, opts.map((v) => h('button', { class: 'chip' + (cur === v ? ' on' : ''), onclick: () => { set(v); this.game.changed(); } }, fmt(v))));
+      const clockEl = h('span'); this.live.push(() => { clockEl.textContent = new Date(s.clock).toLocaleString('zh-CN', { hour12: false }); });
+      return [h('div', { class: 'grid2' }, h('button', { class: 'btn primary', onclick: () => this.openAssets() }, '素材替换'), h('button', { class: 'btn primary', onclick: () => this.openAssembler('tool') }, '精灵图拼装'),
+        h('button', { class: 'btn', onclick: () => this.openSaves() }, '存档：导出 / 导入'), h('button', { class: 'btn', onclick: () => this.openSim() }, '数值模拟')),
+        h('p', { class: 'soft' }, '游戏里的时间：', clockEl),
+        h('h3', null, '时间倍速（出门、鱼塘、状态下降、成长都会一起变快）'), seg(D.speedOptions, d.speed, (v) => { d.speed = v; }),
+        h('h3', null, '直接跳过一段时间'), h('div', { class: 'seg' }, ([['10 分钟', 10 * MIN], ['1 小时', HOUR], ['6 小时', 6 * HOUR], ['1 天', DAY], ['7 天', 7 * DAY]] as [string, number][]).map(([n, ms]) => h('button', { class: 'chip', onclick: () => { this.game.skip(ms); this.toast(`跳过了 ${n}`); } }, n))),
+        h('h3', null, '成长速度'), seg(D.growthOptions, d.growth, (v) => { d.growth = v; }),
+        h('h3', null, '饱食下降速度'), seg(D.decayOptions, d.decay.food, (v) => { d.decay.food = v; }),
+        h('h3', null, '心情下降速度'), seg(D.decayOptions, d.decay.mood, (v) => { d.decay.mood = v; }),
+        h('h3', null, '干净下降速度'), seg(D.decayOptions, d.decay.clean, (v) => { d.decay.clean = v; }),
+        h('h3', null, `小鱼干（现在 ${s.fish}）`), h('div', { class: 'seg' }, [0, 100, 500, 2000, 9999].map((v) => h('button', { class: 'chip', onclick: () => { s.fish = v; this.game.changed(); } }, `设为 ${v}`))),
+        h('h3', null, '出门'), h('button', { class: 'btn block', disabled: !s.trips.length, onclick: () => { this.game.runEvents((st) => st.trips.slice().flatMap((t) => sim.finishTripNow(st, t.id))); } }, `一键结束所有出门等待（${s.trips.length} 趟）`),
+        h('h3', null, '宠物状态'), h('div', { class: 'seg' },
+          h('button', { class: 'chip', onclick: () => { sim.alivePets(s).forEach((p) => { p.food = p.mood = p.clean = 100; p.weakSince = null; }); this.game.changed(); } }, '全部回满'),
+          h('button', { class: 'chip', onclick: () => { sim.homePets(s).forEach((p) => { p.food = 26; p.mood = 26; p.clean = 26; }); this.game.changed(); } }, '全部降到 26'),
+          h('button', { class: 'chip', onclick: () => { sim.homePets(s).forEach((p) => { p.food = 0.5; }); this.game.changed(); } }, '饱食降到快归零'),
+          h('button', { class: 'chip', onclick: () => { s.lastCheckin = ''; this.game.changed(); } }, '重置今日签到')),
+        h('p', { class: 'soft', style: 'margin-top:16px' }, '关闭开发者模式：菜单最下面的版本号连点 5 次。')];
+    } });
+  }
+}
