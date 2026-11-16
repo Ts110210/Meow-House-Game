@@ -99,6 +99,8 @@ export interface GameState {
   v: number;
   /** 第一次打开游戏的时间 */
   createdAt: number;
+  /** 季节循环的起点：这一刻是春天的第一天。之后每 CONFIG.season.days 天换一季 */
+  seasonStart: number;
   settings: { notify: boolean };
   /** 游戏里的「现在」。平时等于真实时间，开了倍速会跑得更快。 */
   clock: number;

@@ -261,9 +261,14 @@ console.log('昼夜和四季');
 {
   const at = (mo: number, h: number) => { const s = sim.newState(new Date(2026, mo, 10, h).getTime()); return s; };
   check('白天、傍晚、夜里按时间走', sim.dayTime(at(0, 10)) === 'day' && sim.dayTime(at(0, 18)) === 'dusk' && sim.dayTime(at(0, 23)) === 'night' && sim.dayTime(at(0, 3)) === 'night');
-  check('四季按月份走', sim.season(at(3, 10)) === 'spring' && sim.season(at(6, 10)) === 'summer' && sim.season(at(9, 10)) === 'autumn' && sim.season(at(0, 10)) === 'winter');
+  const L = CONFIG.season.days * DAY; const after = (ms: number) => { const s = at(6, 10); s.clock += ms; return sim.season(s); };
+  check('新存档从春天开始，和现实的月份无关', [0, 3, 6, 9].every((mo) => sim.season(at(mo, 10)) === 'spring'));
+  check('每季持续配置里的天数，春夏秋冬一轮后回到春天', after(L - MIN) === 'spring' && after(L) === 'summer' && after(2 * L) === 'autumn' && after(3 * L) === 'winter' && after(4 * L - MIN) === 'winter' && after(4 * L) === 'spring' && after(9 * L) === 'summer');
+  { const a = at(6, 10); sim.advance(a, L + HOUR); check('时间补算过了一季，季节跟着换', sim.season(a) === 'summer'); }
+  { const old: any = JSON.parse(JSON.stringify(at(6, 10))); old.v = 4; delete old.seasonStart; old.clock += 100 * DAY; const r = migrate(old);
+    check('旧存档升级后从春天开始算，之后照常轮换', r.ok && sim.season(r.state) === 'spring' && r.state.seasonStart === old.clock && (r.state.clock += L, sim.season(r.state) === 'summer')); }
   const s = at(6, 10); s.dev.time = 'night'; s.dev.season = 'winter';
-  check('开发者开关没开开发者模式时不生效', sim.dayTime(s) === 'day' && sim.season(s) === 'summer');
+  check('开发者开关没开开发者模式时不生效', sim.dayTime(s) === 'day' && sim.season(s) === 'spring');
   s.dev.enabled = true;
   check('开发者模式下一键切到夜里、冬天', sim.dayTime(s) === 'night' && sim.season(s) === 'winter');
 }

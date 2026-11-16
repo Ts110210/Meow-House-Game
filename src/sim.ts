@@ -1,6 +1,6 @@
 // 游戏规则。这个文件不碰画面，只改存档数据，方便单独测试。
 import { writeDiary } from './diary';
-import { CONFIG, DAY, DESTS, FOODS, FRY, FUR_COLORS, GEAR, GOODS, HOUR, MIN, SOUVENIRS, TOOLS, TREAT, type DayTime, type Season, type StatKey, decodeLook, TRAIT_IDS, type Trait, VISITORS, type VisitorWho, SPECIAL_DECOR, DECOR, ZONES } from './config';
+import { CONFIG, DAY, SEASON_IDS, DESTS, FOODS, FRY, FUR_COLORS, GEAR, GOODS, HOUR, MIN, SOUVENIRS, TOOLS, TREAT, type DayTime, type Season, type StatKey, decodeLook, TRAIT_IDS, type Trait, VISITORS, type VisitorWho, SPECIAL_DECOR, DECOR, ZONES } from './config';
 import type { GameEvent, GameState, Pet, Postcard, RepeatKey, Result, Trip, Visitor } from './types';
 
 const T = CONFIG.traits;
@@ -18,7 +18,7 @@ export function newPet(name: string, spriteId: string, clock: number, trait: Tra
 
 export function newState(now: number): GameState {
   const s: GameState = {
-    v: 4, createdAt: now, settings: { notify: true }, clock: now, lastReal: now, fish: CONFIG.startFish, slots: 1,
+    v: 5, createdAt: now, seasonStart: now, settings: { notify: true }, clock: now, lastReal: now, fish: CONFIG.startFish, slots: 1,
     pets: [], trips: [], postcards: [], souvenirs: {}, inv: { ...CONFIG.startItems }, owned: {},
     pond: Array(CONFIG.pond.slots).fill(null), lastCheckin: '', pendingReturns: [], friends: {}, variants: {}, milestones: [], decor: [], visitors: [], visitorQuota: 0, visitorDay: '', lastVisitorAt: 0, errand: null, display: { souvenirs: [], postcards: [] },
     dev: { enabled: false, background: false, time: 'auto', season: 'auto', speed: 1, growth: 1, decay: { food: 1, mood: 1, clean: 1 } },
@@ -47,8 +47,9 @@ export function dayTime(s: GameState): DayTime {
 }
 export function season(s: GameState): Season {
   if (s.dev.enabled && s.dev.season !== 'auto') return s.dev.season;
-  const m = new Date(s.clock).getMonth();
-  return m >= 2 && m <= 4 ? 'spring' : m >= 5 && m <= 7 ? 'summer' : m >= 8 && m <= 10 ? 'autumn' : 'winter';
+  // 游戏里自己的循环：从 seasonStart 那一刻的春天开始，每季 CONFIG.season.days 天，4 季一轮（和现实的月份无关）
+  const n = Math.floor(Math.max(0, s.clock - s.seasonStart) / (Math.max(0.01, CONFIG.season.days) * DAY));
+  return SEASON_IDS[n % SEASON_IDS.length];
 }
 export const stageOf = (p: Pet) => Math.min(2, Math.floor(p.age / CONFIG.growth.stageDuration));
 /** 新手保护：家里的第一只宠物，幼年期饱食掉得慢 */

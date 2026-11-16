@@ -9,7 +9,7 @@ import { CONFIG, DESTS, FOODS, SOUVENIRS, TRAIT_IDS, VISITORS, ZONES, DECOR } fr
 import { kv } from './platform/storage';
 import type { GameState, Pet, Postcard, Trip } from './types';
 
-export const SAVE_VERSION = 4;
+export const SAVE_VERSION = 5;
 const MAIN = 'pet-game-save-v1'; // 键名不跟版本走，这样旧存档一直读得到
 const BACKUP = 'pet-game-save-backup';
 const BEFORE_MIGRATION = 'pet-game-save-before-migration';
@@ -38,6 +38,8 @@ const MIGRATIONS: Record<number, (s: Raw) => Raw> = {
     s.display = { souvenirs: [], postcards: [] };
     s.v = 4; return s;
   },
+  // v4 → v5：季节不再跟现实的月份走，改成游戏里自己的循环。旧存档从升级这一刻的春天开始算
+  4: (s) => { s.seasonStart = typeof s.clock === 'number' && isFinite(s.clock) ? s.clock : Date.now(); s.v = 5; return s; },
 };
 
 const num = (v: any, d: number, lo = -Infinity, hi = Infinity) => (typeof v === 'number' && isFinite(v) ? Math.max(lo, Math.min(hi, v)) : d);
@@ -86,7 +88,7 @@ export function repair(raw: Raw, now = Date.now()): GameState {
   const dev = obj(raw.dev), decay = obj(dev.decay), settings = obj(raw.settings);
   const aliveCount = pets.filter((p) => !p.dead).length;
   return {
-    v: SAVE_VERSION, clock, lastReal: num(raw.lastReal, now), createdAt: num(raw.createdAt, clock),
+    v: SAVE_VERSION, clock, lastReal: num(raw.lastReal, now), createdAt: num(raw.createdAt, clock), seasonStart: num(raw.seasonStart, clock),
     fish: Math.floor(num(raw.fish, 0, 0)), slots: Math.floor(num(raw.slots, 1, Math.max(1, Math.min(aliveCount, CONFIG.maxPets)), CONFIG.maxPets)),
     pets, trips, postcards, souvenirs, inv: counts(raw.inv), owned, pond,
     lastCheckin: str(raw.lastCheckin, ''),
