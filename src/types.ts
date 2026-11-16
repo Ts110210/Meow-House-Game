@@ -1,4 +1,4 @@
-import type { DayTime, Season } from './config';
+import type { DayTime, Season, Trait } from './config';
 import type { StatKey } from './config';
 
 export type RepeatKey = 'feed' | 'pet' | 'bath' | 'play';
@@ -10,6 +10,10 @@ export interface Pet {
   spriteId: string;
   /** 已经活了多久（游戏时间，受成长速度影响） */
   age: number;
+  /** 性格 */
+  trait: Trait;
+  /** 上一次被照顾（喂、摸、洗、玩）的时刻 */
+  lastCare: number;
   food: number;
   mood: number;
   clean: number;
@@ -99,6 +103,8 @@ export interface GameState {
   pond: (number | null)[];
   lastCheckin: string;
   /** 主人自己挑的展示内容：收藏柜上摆哪几件、相册墙上挂哪几张。空 = 自动用最新的 */
+  /** 每两只宠物之间的友情值。键 = 两个编号按字母顺序用 | 连起来 */
+  friends: Record<string, number>;
   display: { souvenirs: string[]; postcards: string[] };
   /** 还没给主人看过的回家明信片 */
   pendingReturns: string[];

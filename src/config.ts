@@ -66,6 +66,32 @@ export const CONFIG = {
     notifyFoodBelow: 25,
   },
 
+  // ---------- 性格 ----------
+  traits: {
+    /** 贪吃：饱食掉得快，吃东西时额外加心情 */
+    glutton: { foodDecay: 1.2, eatMood: 6 },
+    /** 黏人：被摸时心情加得多；超过 lonelyAfter 没人理，心情掉得快 */
+    clingy: { petMood: 1.5, lonelyAfter: 3 * HOUR, lonelyMoodDecay: 1.3 },
+    /** 爱干净：干净值掉得慢，自己舔毛的保底线更高 */
+    tidy: { cleanDecay: 0.7, cleanFloorBonus: 15 },
+    /** 爱冒险：更容易去远的地方（高一档的目的地权重乘以 farWeight），纪念品概率更高 */
+    adventurer: { farWeight: 2.5, souvenirBonus: 0.1 },
+  },
+
+  // ---------- 友情 ----------
+  friendship: {
+    /** 一起出门一趟 */
+    perTrip: 25,
+    /** 自己凑在一起玩一次 */
+    perPlay: 5,
+    /** 到这个数就是好朋友（也是上限） */
+    best: 100,
+    /** 好朋友一起玩，加的心情乘以这个数 */
+    bestPlayMult: 2,
+    /** 好朋友结伴出门，纪念品概率再加这么多 */
+    bestSouvenirBonus: 0.1,
+  },
+
   // ---------- 动作要做多久（毫秒，真实时间） ----------
   durations: {
     eat: 10_000,
@@ -363,3 +389,13 @@ export const SPRITE = {
 };
 
 export type ActionName = (typeof SPRITE.rows)[number];
+
+/** 四种性格。数值在 CONFIG.traits 里 */
+export type Trait = 'glutton' | 'clingy' | 'tidy' | 'adventurer';
+export const TRAITS: Record<Trait, { name: string; icon: string; desc: string }> = {
+  glutton: { name: '贪吃', icon: '🍚', desc: '饿得快一些，但吃东西的时候特别开心' },
+  clingy: { name: '黏人', icon: '🤍', desc: '被摸的时候格外开心；太久没人理，心情掉得快' },
+  tidy: { name: '爱干净', icon: '✨', desc: '不容易脏，自己会把毛舔得更干净' },
+  adventurer: { name: '爱冒险', icon: '🧭', desc: '更爱去远的地方，更容易带回纪念品' },
+};
+export const TRAIT_IDS = Object.keys(TRAITS) as Trait[];

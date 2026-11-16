@@ -6,24 +6,26 @@ import { buildExport, migrate, parseImport, repair, SAVE_VERSION } from '../src/
 
 let failed = 0;
 function check(name: string, ok: boolean, detail = '') { console.log(`${ok ? '  通过' : '✗ 失败'}  ${name}${ok ? '' : '  ' + detail}`); if (!ok) failed++; }
+/** 新存档，第一只宠物固定成「爱冒险」（它不影响状态下降），这样每次跑结果都一样 */
+const blank = (now = T0) => { const s = sim.newState(now); s.pets[0].trait = 'adventurer'; return s; };
 const near = (a: number, b: number, eps = 1e-6) => Math.abs(a - b) < eps;
 const T0 = new Date(2026, 0, 1, 9, 0, 0).getTime();
 
 console.log('时间补算');
 {
-  const a = sim.newState(T0), b = sim.newState(T0);
+  const a = blank(), b = blank();
   sim.advance(a, 8 * HOUR);
   for (let i = 0; i < 480; i++) sim.advance(b, MIN);
   const pa = a.pets[0], pb = b.pets[0];
   check('一次补 8 小时 = 一分钟一分钟过 8 小时', near(pa.food, pb.food) && near(pa.mood, pb.mood) && near(pa.clean, pb.clean) && a.clock === b.clock, `${pa.food} vs ${pb.food}`);
-  const c = sim.newState(T0);
+  const c = blank();
   for (let i = 0; i < 8 * 3600; i += 7) sim.advance(c, 7000); // 每帧一小段
   check('很多小段加起来也一样', near(c.pets[0].food, pa.food, 0.05) && near(c.pets[0].mood, pa.mood, 0.05), `${c.pets[0].food} vs ${pa.food}`);
   const before = JSON.stringify(a); sim.advance(a, 0); sim.advance(a, -5000);
   check('时间不前进或倒退时什么都不变', JSON.stringify(a) === before);
 }
 {
-  const s = sim.newState(T0); const p = s.pets[0];
+  const s = blank(); const p = s.pets[0];
   const hoursToZero = CONFIG.stats.start.food / sim.foodRate(s, p);
   sim.advance(s, (hoursToZero - 0.1) * HOUR); check('饱食归零前不会虚弱', p.weakSince === null);
   sim.advance(s, 0.2 * HOUR); check('饱食归零后进入虚弱', p.weakSince !== null && !p.dead);
@@ -36,7 +38,7 @@ console.log('时间补算');
 
 console.log('离家出走和狸花猫');
 {
-  const lost = () => { const s = sim.newState(T0); const p = s.pets[0]; p.lostSince = T0; p.food = 0; return { s, p }; };
+  const lost = () => { const s = blank(); const p = s.pets[0]; p.lostSince = T0; p.food = 0; return { s, p }; };
   { const { s, p } = lost(); check('没有猫条时请不动狸花猫', !sim.sendSearch(s, p.id).ok && p.searchUntil === null); }
   const realRandom = Math.random;
   try {
@@ -65,7 +67,7 @@ console.log('旅行收藏');
 {
   const realRandom = Math.random; Math.random = () => 0.01; // 一定带回纪念品，并且先出稀有
   try {
-    const s = sim.newState(T0); const p = s.pets[0]; const got: (string | null)[] = [];
+    const s = blank(); const p = s.pets[0]; const got: (string | null)[] = [];
     for (let i = 0; i < 4; i++) { s.inv.kibble = 1; p.food = 80; p.mood = 80; p.clean = 80; sim.dispatch(s, { petIds: [p.id], bento: 'kibble', tool: null, goods: [] }); const dest = s.trips[0].destId; sim.advance(s, s.trips[0].returnAt - s.clock + MIN); got.push(s.postcards[s.postcards.length - 1].souvenir); if (i === 0) (s as any)._first = dest; }
     const owned = Object.keys(s.souvenirs);
     check('纪念品不会重复拿到', owned.length === got.filter(Boolean).length && Object.values(s.souvenirs).every((n) => n === 1));
@@ -73,7 +75,7 @@ console.log('旅行收藏');
   } finally { Math.random = realRandom; }
   check('10 个地方，每地 2 件纪念品（一普通一稀有）', (() => { return DESTS.length === 10 && DESTS.every((d: any) => d.souvenirs.length === 2 && SOUVENIRS[d.souvenirs[0]] && !SOUVENIRS[d.souvenirs[0]].rare && SOUVENIRS[d.souvenirs[1]]?.rare && SOUVENIRS[d.souvenirs[1]].desc); })());
   check('相册上限 = 地方数 × 5 = 50（每趟两张）', sim.albumLimit() === 50);
-  const s = sim.newState(T0);
+  const s = blank();
   for (let i = 0; i < 50; i++) s.postcards.push({ id: 'c' + i, destId: 'penang', petIds: [], at: T0 + i, souvenir: null, income: 0, sold: [], unsold: [] });
   check('默认挂最新的 4 张', sim.shownPostcards(s).map((c) => c.id).join() === 'c49,c48,c47,c46');
   sim.toggleDisplayPostcard(s, 'c49'); sim.toggleDisplayPostcard(s, 'c0');
@@ -99,7 +101,7 @@ console.log('旅行收藏');
 console.log('旅途来信和日记');
 {
   let ok = true; const fr: number[] = [];
-  for (let i = 0; i < 300; i++) { const s = sim.newState(T0); s.inv.kibble = 1; sim.dispatch(s, { petIds: [s.pets[0].id], bento: 'kibble', tool: null, goods: [] }); const t = s.trips[0]; const f = (t.letterAt - t.startAt) / (t.returnAt - t.startAt); fr.push(f); if (f < 0.3 || f > 0.7) ok = false; }
+  for (let i = 0; i < 300; i++) { const s = blank(); s.inv.kibble = 1; sim.dispatch(s, { petIds: [s.pets[0].id], bento: 'kibble', tool: null, goods: [] }); const t = s.trips[0]; const f = (t.letterAt - t.startAt) / (t.returnAt - t.startAt); fr.push(f); if (f < 0.3 || f > 0.7) ok = false; }
   check('寄信的时间在行程的 30%–70% 之间，而且每趟不一样', ok && Math.max(...fr) - Math.min(...fr) > 0.25);
   check('每个地点至少 3 句日记', DESTS.every((d) => diaryPlaceCount(d.id) >= 3));
   const seen = new Set<string>(); let bad = '';
@@ -107,14 +109,48 @@ console.log('旅途来信和日记');
     const t = writeDiary({ destId: d.id, season, time, tool, names, letter: true }); seen.add(t); if (/[{}]|undefined|我们们/.test(t) || t.length < 12) bad = t;
   }
   check('日记里没有没填上的空、句子够多样', bad === '' && seen.size > 150, bad || String(seen.size));
-  const base = JSON.parse(JSON.stringify(sim.newState(T0))); base.pets[0].tripId = 't1';
+  const base = JSON.parse(JSON.stringify(blank())); base.pets[0].tripId = 't1';
   const old = repair({ ...base, trips: [{ id: 't1', petIds: [base.pets[0].id], bento: 'kibble', tool: null, goods: [], startAt: T0, returnAt: T0 + HOUR, destId: 'bali' }] }, T0);
   check('旧存档里正在路上的那一趟不会补寄信', old.trips[0].letterSent === true);
 }
 
+console.log('性格和友情');
+{
+  const mk = (trait: any) => { const s = blank(); s.pets[0].trait = 'adventurer'; s.slots = 3; sim.adopt(s, '甲', 'default:grey', trait); sim.adopt(s, '乙', 'default:cow', trait === 'tidy' ? 'glutton' : 'tidy'); return { s, a: s.pets[1], b: s.pets[2] }; };
+  { const { s, a, b } = mk('glutton'); a.food = b.food = 90; sim.advance(s, 5 * HOUR);
+    check('贪吃：饱食掉得快 20%', near((90 - a.food) / (90 - b.food), 1.2, 0.01), `${a.food} ${b.food}`);
+    s.inv.kibble = 2; a.mood = b.mood = 40; a.food = b.food = 30; sim.feed(s, a.id, 'kibble'); sim.feed(s, b.id, 'kibble');
+    check('贪吃：吃东西额外加心情', near(a.mood - b.mood, CONFIG.traits.glutton.eatMood, 0.01)); }
+  { const { s, a, b } = mk('clingy'); a.mood = b.mood = 40; sim.petPet(s, a.id); sim.petPet(s, b.id);
+    check('黏人：被摸时心情加得多', near((a.mood - 40) / (b.mood - 40), CONFIG.traits.clingy.petMood, 0.01));
+    a.mood = b.mood = 90; a.food = b.food = 100; a.clean = b.clean = 100; sim.advance(s, 2 * HOUR); const early = [90 - a.mood, 90 - b.mood];
+    check('黏人：刚被摸过，心情掉得和别人一样', near(early[0], early[1], 0.01));
+    a.mood = b.mood = 90; a.food = b.food = 100; a.clean = b.clean = 100; sim.advance(s, 2 * HOUR); sim.advance(s, 2 * HOUR);
+    check('黏人：太久没人理，心情掉得快', (90 - a.mood) > (90 - b.mood) * 1.1, `${a.mood} ${b.mood}`); }
+  { const { s, a, b } = mk('tidy'); a.clean = b.clean = 100; sim.advance(s, 4 * HOUR);
+    check('爱干净：干净值掉得慢', near((100 - a.clean) / (100 - b.clean), CONFIG.traits.tidy.cleanDecay, 0.01));
+    sim.advance(s, 5 * DAY); check('爱干净：自己舔毛的保底线更高', near(a.clean - b.clean, CONFIG.traits.tidy.cleanFloorBonus, 0.01), `${a.clean} ${b.clean}`); }
+  { const { s, a, b } = mk('tidy'); const A = a.id, B = b.id;
+    check('一开始不是朋友', sim.friendship(s, A, B) === 0 && !sim.bestFriends(s, A, B));
+    a.mood = b.mood = 10; sim.companionPlay(s, A, B);
+    check('一起玩：友情增加，各加 3 心情', sim.friendship(s, A, B) === CONFIG.friendship.perPlay && near(a.mood, 13));
+    s.inv.kibble = 9; for (let i = 0; i < 4; i++) { a.food = b.food = a.mood = b.mood = a.clean = b.clean = 80; sim.dispatch(s, { petIds: [A, B], bento: 'kibble', tool: null, goods: [] }); sim.advance(s, s.trips[0].returnAt - s.clock + MIN); }
+    check('一起出门 4 趟就成了好朋友，友情不超过上限', sim.bestFriends(s, A, B) && sim.friendship(s, A, B) === CONFIG.friendship.best);
+    a.mood = b.mood = 10; sim.companionPlay(s, A, B);
+    check('好朋友一起玩，心情加倍', near(a.mood, 10 + CONFIG.actions.companionPlayMood * 2));
+    check('宠物面板能列出朋友，好朋友排前面', sim.friendsOf(s, A)[0].pet.id === B && sim.friendsOf(s, A)[0].best && sim.friendsOf(s, A).length === 2);
+    const r = repair(JSON.parse(JSON.stringify(s)), T0); check('友情和性格存档再读档还在', r.friends[sim.friendKey(A, B)] === 100 && r.pets[1].trait === 'tidy'); }
+  { const raw = JSON.parse(JSON.stringify(blank())); delete raw.pets[0].trait; delete raw.friends; raw.friends = { 'x|y': 50 };
+    const r1 = repair(JSON.parse(JSON.stringify(raw)), T0), r2 = repair(JSON.parse(JSON.stringify(raw)), T0);
+    check('旧存档的宠物补上一种性格，每次读档都一样；没有主的友情被清掉', !!r1.pets[0].trait && r1.pets[0].trait === r2.pets[0].trait && Object.keys(r1.friends).length === 0); }
+  { // 爱冒险：统计去远处的比例和纪念品
+    const far = (trait: any) => { let n = 0; for (let i = 0; i < 1500; i++) { const s = blank(); s.pets[0].trait = trait; s.inv.can = 1; s.pets[0].food = s.pets[0].mood = s.pets[0].clean = 90; sim.dispatch(s, { petIds: [s.pets[0].id], bento: 'can', tool: null, goods: [] }); if (DESTS.find((d) => d.id === s.trips[0].destId)!.tier > 1) n++; } return n / 1500; };
+    const fa = far('adventurer'), fo = far('tidy'); check('爱冒险：更常去远的地方', fa > fo + 0.03, `${fa} ${fo}`); }
+}
+
 console.log('新手保护');
 {
-  const s = sim.newState(T0); const p = s.pets[0]; p.food = 80; s.slots = 2; sim.adopt(s, '二号', 'default:grey'); const q = s.pets[1]; q.food = 80;
+  const s = blank(); const p = s.pets[0]; p.food = 80; s.slots = 2; sim.adopt(s, '二号', 'default:grey'); const q = s.pets[1]; q.food = 80;
   sim.advance(s, 10 * HOUR);
   check('第一只宠物幼年期饱食掉得慢一半', Math.abs((80 - p.food) - 15) < 0.2 && Math.abs((80 - q.food) - 30) < 0.2, `${p.food} ${q.food}`);
   check('提醒时间也按慢的速度算', sim.planReminders(s).find((r) => r.title.startsWith(p.name))!.inMs > sim.planReminders(s).find((r) => r.title.startsWith('二号'))!.inMs);
@@ -124,9 +160,9 @@ console.log('新手保护');
 
 console.log('逗猫棒和毛色');
 {
-  const s = sim.newState(T0); const p = s.pets[0]; p.mood = 20;
+  const s = blank(); const p = s.pets[0]; p.mood = 20;
   sim.play(s, p.id); check('空手陪玩：心情 +10', Math.abs(p.mood - 30) < 0.01, String(p.mood));
-  const s2 = sim.newState(T0); const q = s2.pets[0]; q.mood = 20; s2.fish = 100;
+  const s2 = blank(); const q = s2.pets[0]; q.mood = 20; s2.fish = 100;
   check('逗猫棒可以在商店买到', sim.buy(s2, 'wand').ok && s2.owned.wand === true);
   sim.play(s2, q.id); check('有逗猫棒：心情 +24', Math.abs(q.mood - 44) < 0.01, String(q.mood));
   check('有 10 种内置毛色', Object.keys(FUR_COLORS).length === 10 && ['tabby', 'calico', 'tortie', 'cow', 'siamese', 'persian'].every((k) => FUR_COLORS[k]));
@@ -149,35 +185,35 @@ console.log('昼夜和四季');
   check('开发者模式下一键切到夜里、冬天', sim.dayTime(s) === 'night' && sim.season(s) === 'winter');
 }
 {
-  const s = sim.newState(T0); const p = s.pets[0]; p.food = 0; sim.advance(s, MIN);
+  const s = blank(); const p = s.pets[0]; p.food = 0; sim.advance(s, MIN);
   const r = sim.feed(s, p.id, 'kibble');
   check('虚弱时喂食可以救回，心情受罚', r.ok && p.weakSince === null && p.mood <= CONFIG.stats.start.mood - CONFIG.weak.rescueMoodPenalty + 1);
 }
 {
-  const s = sim.newState(T0); s.owned.feeder = true; sim.advance(s, 10 * DAY);
+  const s = blank(); s.owned.feeder = true; sim.advance(s, 10 * DAY);
   check('有自动喂食机就不会饿到虚弱', s.pets[0].weakSince === null && !s.pets[0].dead && s.pets[0].food >= CONFIG.stats.feederFoodFloor - 1e-9);
 }
 {
-  const s = sim.newState(T0); const p = s.pets[0]; s.owned.feeder = true;
+  const s = blank(); const p = s.pets[0]; s.owned.feeder = true;
   sim.advance(s, CONFIG.growth.stageDuration - HOUR); check('不到 7 天还是幼年', sim.stageOf(p) === 0);
   const ev = sim.advance(s, 2 * HOUR); check('满 7 天长到青年，并且有事件', sim.stageOf(p) === 1 && ev.some((e) => e.type === 'stage'));
   sim.advance(s, 30 * DAY); check('最多长到壮年', sim.stageOf(p) === 2);
 }
 
 {
-  const solo = sim.newState(T0); solo.owned.feeder = true; sim.advance(solo, 6 * DAY);
+  const solo = blank(); solo.owned.feeder = true; sim.advance(solo, 6 * DAY);
   check('只养一只、没有玩具时，心情没有保底', solo.pets[0].mood === 0);
   for (const toy of ['ball', 'scratcher']) {
-    const s = sim.newState(T0); s.owned.feeder = true; s.owned[toy] = true; sim.advance(s, 6 * DAY);
+    const s = blank(); s.owned.feeder = true; s.owned[toy] = true; sim.advance(s, 6 * DAY);
     check(`只养一只、有${toy === 'ball' ? '玩具球' : '猫抓板'}时，心情不低于保底线`, near(s.pets[0].mood, CONFIG.stats.toyMoodFloor));
   }
-  const pair = sim.newState(T0); pair.owned.feeder = true; pair.slots = 2; sim.adopt(pair, '二号', 'default:grey'); sim.advance(pair, 6 * DAY);
+  const pair = blank(); pair.owned.feeder = true; pair.slots = 2; sim.adopt(pair, '二号', 'default:grey'); sim.advance(pair, 6 * DAY);
   check('有同伴时的保底不受影响', near(pair.pets[0].mood, CONFIG.stats.companionMoodFloor));
 }
 
 console.log('互动');
 {
-  const s = sim.newState(T0); const p = s.pets[0]; p.mood = 10;
+  const s = blank(); const p = s.pets[0]; p.mood = 10;
   sim.petPet(s, p.id); const g1 = p.mood - 10; sim.petPet(s, p.id); const g2 = p.mood - 10 - g1;
   check('连续做同一个动作效果减半', near(g2, g1 / 2));
   sim.advance(s, CONFIG.actions.repeatCooldown + MIN); const m = p.mood; sim.petPet(s, p.id);
@@ -186,7 +222,7 @@ console.log('互动');
 
 console.log('出门');
 {
-  const s = sim.newState(T0); const p = s.pets[0]; s.inv.bell = 2;
+  const s = blank(); const p = s.pets[0]; s.inv.bell = 2;
   const r = sim.dispatch(s, { petIds: [p.id], bento: 'kibble', tool: null, goods: ['bell', 'bell'] });
   check('可以派出门，便当和货物被扣掉', r.ok && s.trips.length === 1 && (s.inv.bell ?? 0) === 0 && p.tripId !== null);
   const f = p.food; sim.advance(s, 20 * MIN); check('旅途中状态不下降', p.food === f);
@@ -198,7 +234,7 @@ console.log('出门');
   check('回家后接着正常掉状态', p.food < f);
 }
 {
-  const s = sim.newState(T0); s.slots = 2; sim.adopt(s, '二号', 'default:grey'); s.inv.kibble = 1;
+  const s = blank(); s.slots = 2; sim.adopt(s, '二号', 'default:grey'); s.inv.kibble = 1;
   const ids = s.pets.map((p) => p.id);
   check('可以两只结伴', sim.dispatch(s, { petIds: ids, bento: 'kibble', tool: null, goods: [] }).ok && s.trips[0].petIds.length === 2);
   check('没有便当时不能再派', !sim.dispatch(s, { petIds: [], bento: 'kibble', tool: null, goods: [] }).ok);
@@ -231,7 +267,7 @@ console.log('存档');
   check('修好的存档可以继续玩不报错', !threw);
 }
 {
-  const s = sim.newState(T0); s.fish = 321; sim.advance(s, 5 * HOUR);
+  const s = blank(); s.fish = 321; sim.advance(s, 5 * HOUR);
   const text = JSON.stringify(buildExport(s, { 'custom:x': '{"sheet":"data:,"}', 'asset:y': 'no' }, '{"objects":{}}'));
   const r = parseImport(text, T0 + 9 * DAY);
   check('导出再导入，进度一样', r.ok && r.state.fish === 321 && near(r.state.pets[0].food, s.pets[0].food) && r.state.clock === s.clock);
@@ -242,7 +278,7 @@ console.log('存档');
 
 console.log('提醒');
 {
-  const s = sim.newState(T0); s.inv.kibble = 1; sim.dispatch(s, { petIds: [s.pets[0].id], bento: 'kibble', tool: null, goods: [] });
+  const s = blank(); s.inv.kibble = 1; sim.dispatch(s, { petIds: [s.pets[0].id], bento: 'kibble', tool: null, goods: [] });
   const home = () => sim.planReminders(s).find((r) => r.title.includes('回家'))!.inMs;
   const normal = home();
   s.dev.enabled = true; s.dev.speed = 60;
@@ -253,14 +289,14 @@ console.log('提醒');
   check('关掉开发者模式后恢复 1 倍', sim.awaySpeed(s) === 1);
 }
 {
-  const s = sim.newState(T0); const p = s.pets[0]; s.inv.kibble = 2;
+  const s = blank(); const p = s.pets[0]; s.inv.kibble = 2;
   let plan = sim.planReminders(s);
   const hungry = plan.find((r) => r.title.includes('饿了'))!;
   check('会在饱食降到提醒线的时候提醒', !!hungry && near(hungry.inMs, ((p.food - CONFIG.stats.notifyFoodBelow) / sim.foodRate(s, p)) * HOUR, 1));
   sim.advance(s, hungry.inMs + MIN); check('到了那个时间，饱食确实降到提醒线以下', p.food < CONFIG.stats.notifyFoodBelow && p.food > CONFIG.stats.notifyFoodBelow - 1);
-  const s2 = sim.newState(T0); s2.owned.feeder = true;
+  const s2 = blank(); s2.owned.feeder = true;
   check('有喂食机就不发饿了的提醒', sim.planReminders(s2).length === 0);
-  const s3 = sim.newState(T0); s3.inv.kibble = 1; sim.dispatch(s3, { petIds: [s3.pets[0].id], bento: 'kibble', tool: null, goods: [] });
+  const s3 = blank(); s3.inv.kibble = 1; sim.dispatch(s3, { petIds: [s3.pets[0].id], bento: 'kibble', tool: null, goods: [] });
   plan = sim.planReminders(s3);
   check('出门的宠物提醒两次：路上寄信、回家', plan.length === 2 && plan[0].title.includes('寄来') && plan[1].title.includes('回家') && plan[1].inMs === s3.trips[0].returnAt - s3.clock && plan[0].inMs === s3.trips[0].letterAt - s3.clock);
 }

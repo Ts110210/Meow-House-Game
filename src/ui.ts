@@ -1,5 +1,5 @@
 // 界面：顶部和底部的按钮，以及所有从下方弹出的面板。
-import { ZONES, CONFIG, DAY, DESTS, TREAT, TIME_NAMES, SEASON_NAMES, FOODS, FRY, FUR_COLORS, PATTERN_NAMES, DEFAULT_LOOK, encodeLook, decodeLook, type Look, type CoatPattern, GEAR, GOODS, HOUR, MIN, SOUVENIRS, SPRITE, TOOLS, type ActionName } from './config';
+import { ZONES, CONFIG, DAY, DESTS, TREAT, TIME_NAMES, SEASON_NAMES, FOODS, FRY, FUR_COLORS, TRAITS, TRAIT_IDS, type Trait, PATTERN_NAMES, DEFAULT_LOOK, encodeLook, decodeLook, type Look, type CoatPattern, GEAR, GOODS, HOUR, MIN, SOUVENIRS, SPRITE, TOOLS, type ActionName } from './config';
 import { renderPostcard } from './art/postcard';
 import { drawDefaultSheet } from './art/defaultPet';
 import type { Game } from './game';
@@ -381,6 +381,14 @@ export class UI {
       h('button', { class: 'act', onclick: () => doAct((st) => sim.petPet(st, id), 'happy') }, '摸摸', mult('pet') ?? h('small', null, `心情 +${CONFIG.actions.petMood}`)),
       h('button', { class: 'act', onclick: () => doAct((st) => sim.bath(st, id), 'bath') }, '洗澡', mult('bath') ?? h('small', null, `干净 +${CONFIG.actions.bathClean}`)),
       h('button', { class: 'act', onclick: () => doAct((st) => sim.play(st, id), 'play') }, '玩耍', mult('play') ?? h('small', null, s.owned.wand ? `逗猫棒 · 心情 +${CONFIG.actions.playMoodWand}` : `心情 +${CONFIG.actions.playMoodHand}`))));
+    // 性格和朋友
+    const tr = TRAITS[p.trait]; const friends = sim.friendsOf(s, id);
+    out.push(h('div', { class: 'card', style: 'margin-top:12px' },
+      h('div', { class: 'item' }, h('span', { class: 'ico' }, tr.icon), h('div', { class: 'txt' }, h('b', null, `性格：${tr.name}`), h('span', { class: 'soft' }, tr.desc))),
+      friends.map((f) => h('div', { class: 'item' }, h('span', { class: 'ico' }, h('span', { class: 'chip', style: 'padding:0;box-shadow:none;background:none' }, this.avatarCanvas(f.pet, 56))),
+        h('div', { class: 'txt' }, h('b', null, f.best ? `和${f.pet.name}是好朋友 ❤` : `和${f.pet.name}`),
+          f.best ? h('span', { class: 'soft' }, `一起玩心情加倍，结伴出门更容易带回纪念品`) : h('span', { class: 'soft' }, `友情 ${Math.round(f.value)} / ${CONFIG.friendship.best}　一起出门、一起玩会增加`),
+          h('div', { class: 'fbar' }, h('i', { style: `width:${(f.value / CONFIG.friendship.best) * 100}%` })))))));
     if (sim.isProtected(s, p)) out.push(h('p', { class: 'soft' }, '新手保护：它还小，是家里的第一只，长大前饿得比较慢。'));
     if (!s.owned.wand) out.push(h('p', { class: 'soft' }, `现在是空手逗它。商店里有逗猫棒，买了以后玩耍变成心情 +${CONFIG.actions.playMoodWand}。`));
     out.push(h('p', null, h('button', { class: 'btn block', onclick: () => { this.plan = { petIds: [id], bento: this.plan.bento, tool: null, goods: [] }; this.openDoor(); } }, '派它出门')));
@@ -696,7 +704,7 @@ export class UI {
   openAdopt() {
     const keys = Object.keys(FUR_COLORS);
     this.adoptForm = { name: '', color: keys[sim.alivePets(this.game.state).length % keys.length] };
-    let look: Look | null = null;
+    let look: Look | null = null; let trait: Trait | null = null;
     this.open({ title: '领养新宠物', render: () => {
       const f = this.adoptForm; const sid = look ? encodeLook(look) : 'default:' + f.color;
       return [
@@ -706,9 +714,12 @@ export class UI {
         h('div', { class: 'seg' }, Object.entries(FUR_COLORS).map(([k, v]) => h('button', { class: 'chip' + (!look && f.color === k ? ' on' : ''), onclick: () => { f.color = k; look = null; this.refresh(true); } }, v.name)),
           h('button', { class: 'chip' + (look ? ' on' : ''), onclick: () => { look = look ?? this.lookOfCoat(f.color); this.refresh(true); } }, '自己捏一只')),
         ...(look ? this.lookEditor(look, () => this.refresh(true)) : []),
+        h('h3', null, '性格'),
+        h('div', { class: 'seg' }, h('button', { class: 'chip' + (trait === null ? ' on' : ''), onclick: () => { trait = null; this.refresh(true); } }, '随缘'), TRAIT_IDS.map((k) => h('button', { class: 'chip' + (trait === k ? ' on' : ''), onclick: () => { trait = k; this.refresh(true); } }, `${TRAITS[k].icon} ${TRAITS[k].name}`))),
+        h('p', { class: 'soft' }, trait ? TRAITS[trait].desc : '不选的话，领回家才知道它是什么性格。'),
         h('p', null, h('button', { class: 'btn primary block', onclick: async () => {
           await this.game.ensureSprite(sid);
-          const r = this.game.act((s) => sim.adopt(s, f.name, sid)); this.say(r);
+          const r = this.game.act((s) => sim.adopt(s, f.name, sid, trait ?? undefined)); this.say(r);
           if (r.ok && r.petId) this.openPet(r.petId);
         } }, '领养')),
         h('p', { class: 'soft' }, '领养之后还可以再换样子，也可以在宠物面板里给它换一张自己的头像。')];

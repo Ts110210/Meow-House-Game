@@ -5,7 +5,7 @@
 //   2. 在 MIGRATIONS 里加一条「从上一个版本升到这个版本」的函数
 //   3. 在 repair() 里给新字段补默认值
 // 旧存档会在打开时自动一步一步升上来，升级前的原样会另存一份。
-import { CONFIG, DESTS, FOODS, SOUVENIRS } from './config';
+import { CONFIG, DESTS, FOODS, SOUVENIRS, TRAIT_IDS } from './config';
 import { kv } from './platform/storage';
 import type { GameState, Pet, Postcard, Trip } from './types';
 
@@ -50,6 +50,8 @@ export function repair(raw: Raw, now = Date.now()): GameState {
   const clock = num(raw.clock, now);
   const pets: Pet[] = arr(raw.pets).filter((p) => p && typeof p.id === 'string').map((p) => ({
     id: p.id, name: str(p.name, '宠物').slice(0, 8) || '宠物', spriteId: str(p.spriteId, 'default:orange'),
+    // 旧存档里的宠物没有性格：按编号算一个，每次读档都一样
+    trait: TRAIT_IDS.includes(p.trait) ? p.trait : TRAIT_IDS[[...String(p.id)].reduce((a, ch) => a + ch.charCodeAt(0), 0) % TRAIT_IDS.length], lastCare: num(p.lastCare, clock),
     age: num(p.age, 0, 0), food: num(p.food, 50, 0, 100), mood: num(p.mood, 50, 0, 100), clean: num(p.clean, 50, 0, 100),
     weakSince: typeof p.weakSince === 'number' && isFinite(p.weakSince) ? p.weakSince : null,
     dead: !!p.dead, ...(p.dead ? { diedAt: num(p.diedAt, clock) } : {}),
@@ -87,6 +89,7 @@ export function repair(raw: Raw, now = Date.now()): GameState {
     fish: Math.floor(num(raw.fish, 0, 0)), slots: Math.floor(num(raw.slots, 1, Math.max(1, Math.min(aliveCount, CONFIG.maxPets)), CONFIG.maxPets)),
     pets, trips, postcards, souvenirs, inv: counts(raw.inv), owned, pond,
     lastCheckin: str(raw.lastCheckin, ''),
+    friends: Object.fromEntries(Object.entries(obj(raw.friends)).filter(([k, v]) => typeof v === 'number' && k.split('|').length === 2 && k.split('|').every((id) => pets.some((p) => p.id === id))).map(([k, v]) => [k, Math.max(0, Math.min(CONFIG.friendship.best, v as number))])),
     display: { souvenirs: arr(display.souvenirs).filter((id) => souvenirs[id]).slice(0, CONFIG.travel.displaySouvenirs), postcards: arr(display.postcards).filter((id) => postcards.some((c) => c.id === id)).slice(0, CONFIG.travel.displayPostcards) },
     pendingReturns: arr(raw.pendingReturns).filter((id) => postcards.some((c) => c.id === id)),
     dev: { enabled: !!dev.enabled, background: !!dev.background, time: ['day', 'dusk', 'night'].includes(dev.time) ? dev.time : 'auto', season: ['spring', 'summer', 'autumn', 'winter'].includes(dev.season) ? dev.season : 'auto', speed: num(dev.speed, 1, 1, 100000), growth: num(dev.growth, 1, 0, 100000), decay: { food: num(decay.food, 1, 0, 1000), mood: num(decay.mood, 1, 0, 1000), clean: num(decay.clean, 1, 0, 1000) } },
