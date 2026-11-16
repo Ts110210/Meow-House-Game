@@ -63,14 +63,19 @@ export const ASSETS = {
     door: { src: 'objects/door.png', zone: 'door', x: 216, y: 562, height: 392, label: '门', partOfBackground: true },
     bowl: { src: 'objects/bowl.png', zone: 'kitchen', x: 340, y: 634, height: 44, label: '饭碗' },
     feeder: { src: 'objects/feeder.png', zone: 'kitchen', x: 262, y: 564, height: 128, label: '自动喂食机', needsOwned: 'feeder' },
-    scratcher: { src: 'objects/scratcher.png', zone: 'living', x: 374, y: 568, height: 160, label: '猫抓板', needsOwned: 'scratcher' },
+    pendantDoor: { src: 'objects/pendantDoor.png', zone: 'door', x: 66, y: 194, height: 194, label: '门口吊灯', needsOwned: 'pendantDoor', light: [0.5, 0.88] },
+    counter: { src: 'objects/counter.png', zone: 'kitchen', x: 122, y: 548, height: 190, label: '橱柜', partOfBackground: true },
+    sofa: { src: 'objects/sofa.png', zone: 'living', x: 150, y: 562, height: 144, label: '沙发', partOfBackground: true },
+    scratcher: { src: 'objects/scratcher.png', zone: 'living', x: 300, y: 606, height: 160, label: '猫抓板', needsOwned: 'scratcher' },
     ball: { src: 'objects/ball.png', zone: 'living', x: 120, y: 690, height: 32, label: '玩具球', needsOwned: 'ball' },
-    lamp: { src: 'objects/lamp.png', zone: 'living', x: 60, y: 566, height: 250, label: '落地灯', needsOwned: 'lamp', light: [0.5, 0.14] },
     tub: { src: 'objects/tub.png', zone: 'bath', x: 216, y: 576, height: 128, label: '浴缸', partOfBackground: true, frontFrom: 0.2 },
+    nightstand: { src: 'objects/nightstand.png', zone: 'bedroom', x: 49, y: 548, height: 70, label: '床头柜', partOfBackground: true },
+    bedlamp: { src: 'objects/bedlamp.png', zone: 'bedroom', x: 49, y: 482, height: 74, label: '床头灯', needsOwned: 'bedlamp', light: [0.5, 0.28] },
     bed: { src: 'objects/bed.png', zone: 'bedroom', x: 240, y: 566, height: 150, label: '小床', partOfBackground: true },
     cabinet: { src: 'objects/cabinet.png', zone: 'shelf', x: 130, y: 564, height: 280, label: '收藏柜', partOfBackground: true },
     album: { src: 'objects/album.png', zone: 'shelf', x: 318, y: 384, height: 170, label: '相册', partOfBackground: true },
-    pond: { src: 'objects/pond.png', zone: 'garden', x: 230, y: 690, height: 104, label: '鱼塘', partOfBackground: true },
+    pendantShelf: { src: 'objects/pendantShelf.png', zone: 'shelf', x: 340, y: 194, height: 194, label: '收藏柜吊灯', needsOwned: 'pendantShelf', light: [0.5, 0.88] },
+    pond: { src: 'objects/pond.png', zone: 'garden', x: 262, y: 700, height: 84, label: '鱼塘', partOfBackground: true },
   } as Record<string, ObjectDef>,
 
   // ---------- 默认宠物的精灵图（上传规范：4 列，每格 256×256，每行一个动作） ----------
@@ -83,7 +88,7 @@ export const ASSETS = {
   /** 装饰的图片。没有图片就用代码画的占位图。加新装饰时在这里加一行 */
   decor: {
     cushion: 'decor/cushion.png', mat: 'decor/mat.png', poster: 'decor/poster.png', plant: 'decor/plant.png', rug: 'decor/rug.png', painting: 'decor/painting.png',
-    nightlight: 'decor/nightlight.png', bigplant: 'decor/bigplant.png', shelf: 'decor/shelf.png', globe: 'decor/globe.png', goldframe: 'decor/goldframe.png', trophy: 'decor/trophy.png',
+    lamp: 'decor/lamp.png', sidelamp: 'decor/sidelamp.png', nightlight: 'decor/nightlight.png', bigplant: 'decor/bigplant.png', shelf: 'decor/shelf.png', globe: 'decor/globe.png', goldframe: 'decor/goldframe.png', trophy: 'decor/trophy.png',
   } as Record<string, string>,
   postcards: {
     singapore: 'postcards/singapore.png', penang: 'postcards/penang.png', langkawi: 'postcards/langkawi.png', bangkok: 'postcards/bangkok.png', chiangmai: 'postcards/chiangmai.png',

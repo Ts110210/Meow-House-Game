@@ -341,7 +341,9 @@ export const GEAR: GearDef[] = [
   { id: 'wand', name: '逗猫棒', icon: '🪶', price: 60, desc: '陪它玩的时候用：玩耍从 +10 心情变成 +24' },
   { id: 'scratcher', name: '猫抓板', icon: '🪵', price: 120, desc: '放在客厅，宠物会自己去抓，心情不会低于 15' },
   { id: 'ball', name: '玩具球', icon: '⚽', price: 40, desc: '宠物会自己追着玩，两只还会一起玩；心情不会低于 15' },
-  { id: 'lamp', name: '落地灯', icon: '💡', price: 80, desc: '放在客厅，天黑了会亮' },
+  { id: 'pendantDoor', name: '门口吊灯', icon: '💡', price: 100, desc: '挂在门口的天花板上，天黑了会亮' },
+  { id: 'pendantShelf', name: '收藏柜吊灯', icon: '🏮', price: 100, desc: '挂在收藏柜那一间，天黑了会亮' },
+  { id: 'bedlamp', name: '床头灯', icon: '🛋️', price: 70, desc: '放在卧室的床头柜上，天黑了会亮' },
 ];
 
 // ============================================================
@@ -496,6 +498,8 @@ export const DECOR: Record<string, DecorDef> = {
   plant: { name: '小盆栽', icon: '🪴', price: 80, height: 90, layer: 'stand', desc: '一小盆绿叶' },
   rug: { name: '编织地毯', icon: '🧶', price: 120, height: 64, layer: 'floor', desc: '椭圆的大地毯' },
   painting: { name: '风景挂画', icon: '🖼️', price: 150, height: 120, layer: 'wall', desc: '远山和太阳' },
+  lamp: { name: '落地灯', icon: '💡', price: 80, height: 250, layer: 'stand', desc: '摆在地上，天黑了会亮', light: [0.5, 0.14] },
+  sidelamp: { name: '小落地灯', icon: '🕯️', price: 60, height: 200, layer: 'stand', desc: '细细的一盏，放沙发旁边正好', light: [0.5, 0.12] },
   nightlight: { name: '小夜灯', icon: '🌙', price: 180, height: 70, layer: 'stand', desc: '天黑了会亮', light: [0.5, 0.4] },
   bigplant: { name: '龟背竹', icon: '🌿', price: 200, height: 210, layer: 'stand', desc: '一大盆，很占地方' },
   shelf: { name: '小书架', icon: '📚', price: 300, height: 190, layer: 'stand', desc: '摆满了书和小东西' },

@@ -4,7 +4,7 @@ import 'pixi.js/unsafe-eval';
 import { Application, Circle, Container, Graphics, Rectangle, Sprite, Text, Texture, type FederatedPointerEvent } from 'pixi.js';
 import { ASSETS, type ObjectDef } from './assets.config';
 import type { AssetStore } from './assets';
-import { drawObject, drawZone, groundColor, objectAspect, ZONE_LIGHTS, type Env } from './art/room';
+import { drawObject, drawZone, groundColor, objectAspect, type Env } from './art/room';
 import { renderPostcard } from './art/postcard';
 import { CONFIG, DECOR, PALETTE, SOUVENIRS, SPRITE, VISITORS, ZONES, type ActionName } from './config';
 import { drawDecor } from './art/decor';
@@ -13,7 +13,7 @@ import { BASE_FY, BASE_ZW, geo, recompute } from './geo';
 import * as sim from './sim';
 import { frameIndex, rowFor } from './sprites';
 
-export type ObjectKind = 'door' | 'bowl' | 'tub' | 'bed' | 'cabinet' | 'album' | 'pond' | 'scratcher' | 'feeder' | 'ball' | 'npc' | 'visitor';
+export type ObjectKind = 'door' | 'bowl' | 'tub' | 'bed' | 'cabinet' | 'album' | 'pond' | 'scratcher' | 'feeder' | 'ball' | 'sofa' | 'counter' | 'nightstand' | 'bedlamp' | 'pendantDoor' | 'pendantShelf' | 'cattree' | 'npc' | 'visitor';
 
 /** 家具旁边的位置：每件家具能同时容纳几只、各自站在哪（离家具中心的距离）、脸朝哪边。
  *  有位置才过去，位置满了就不去挤，所以不会重叠，也不会互相打断。 */
@@ -704,15 +704,14 @@ export class Scene {
     if (idle.length) this.follow = { id: idle[0].id, until: this.now + 5000 };
   }
 
-  /** 天黑了，灯的周围画一圈暖色光晕：会发光的物品（落地灯、小夜灯）和代码画的背景里的灯（吊灯、落地灯、台灯）。
-   *  物品的光跟着物品走，物品挪到哪光到哪。 */
+  /** 天黑了，灯的周围画一圈暖色光晕：买了的吊灯和床头灯、摆出来的落地灯和小夜灯。
+   *  光跟着物品走，物品挪到哪光到哪；没买、没摆出来的灯不会亮。 */
   private drawGlow(env: Env) {
     const g = this.glow.clear(); if (env.time === 'day') return;
     const G = CONFIG.light.glow; const strength = G.strength * (env.time === 'night' ? 1 : G.duskStrength); const color = hex(G.color);
     const lit: [number, number][] = [];
     for (const [kind, sp] of this.objSprites) { const light = ASSETS.objects[kind]?.light; if (light && sp.alpha !== 0) lit.push([sp.x - sp.width / 2 + sp.width * light[0], sp.y - sp.height + sp.height * light[1]]); }
     for (const d of this.game.state.decor) { const sp = this.decorSprites.get(d.id), light = DECOR[d.kind]?.light; if (sp && light) lit.push([sp.x - sp.width / 2 + sp.width * light[0], sp.y - sp.height + sp.height * light[1]]); }
-    this.zoneSprites.forEach((z, i) => { if (z?.code) for (const [x, y] of ZONE_LIGHTS[ZONES[i].id] ?? []) lit.push([zx(i) + x * (zw(i) / BASE_ZW), y + geo.floorY - BASE_FY]); });
     const n = 26;
     for (const [x, y] of lit) {
       // 很多层很淡的圆叠起来：越靠近灯越亮，边缘慢慢淡出，看不出一圈一圈；光稍微往下落一点

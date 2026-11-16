@@ -31,6 +31,15 @@ const ART: Record<string, { w: number; h: number; draw(s: Sketch): void }> = {
     for (const y of [16, 76]) for (let i = 0; i < 6; i++) s.rect(20 + i * 15, y + 10 + (i % 3) * 4, 12, 40 - (i % 3) * 4, { fill: cols[(i + y) % 5] });
     s.ellipse(44, 170, 16, 12, { fill: P.sage }); s.rect(72, 150, 30, 36, { fill: P.coral, r: 3 });
   } },
+  // 两盏可以自己摆的落地灯
+  lamp: { w: 96, h: 250, draw(s) {
+    s.rect(44, 60, 8, 176, { fill: P.woodDark, r: 3 }); s.rect(24, 232, 48, 14, { fill: P.woodDark, r: 6 });
+    s.poly([[26, 6], [70, 6], [88, 66], [8, 66]], { fill: P.mustard });
+  } },
+  sidelamp: { w: 52, h: 200, draw(s) {
+    s.line(26, 46, 26, 194, P.woodDark, 3); s.ellipse(26, 195, 16, 5, { fill: P.woodDark, width: 1.2 });
+    s.poly([[4, 46], [48, 46], [38, 2], [14, 2]], { fill: P.mustard });
+  } },
   // 里程碑奖励的特殊装饰
   globe: { w: 80, h: 100, draw(s) { s.rect(34, 78, 12, 14, { fill: P.woodDark }); s.rect(20, 90, 40, 8, { fill: P.woodDark, r: 4 }); s.ellipse(40, 44, 32, 32, { fill: P.mist }); s.poly([[22, 36], [36, 26], [44, 40], [34, 56], [24, 50]], { fill: P.sage }); s.poly([[48, 46], [60, 40], [62, 56], [52, 62]], { fill: P.sage }); } },
   goldframe: { w: 110, h: 130, draw(s) { s.rect(4, 4, 102, 122, { fill: '#E3B341', r: 6 }); s.rect(16, 16, 78, 98, { fill: '#FBF6EC' }); s.ellipse(55, 58, 22, 20, { fill: P.coral }); s.poly([[38, 44], [44, 26], [52, 44]], { fill: P.coral }); s.poly([[58, 44], [66, 26], [72, 44]], { fill: P.coral }); s.rect(30, 86, 50, 16, { fill: P.coral, r: 8 }); } },

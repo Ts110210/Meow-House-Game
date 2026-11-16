@@ -124,42 +124,24 @@ const ZONE_ART: Record<ZoneId, (s: Sketch) => void> = {
     // 地垫
     s.ellipse(216, 630, 132, 20, { fill: P.mist });
     s.ellipse(216, 630, 100, 12, { fill: lighten(P.mist, 0.3), width: 1 });
-    // 门上方的小灯
-    s.line(66, 0, 66, 150, P.ink, 1.3); s.poly([[44, 190], [88, 190], [78, 150], [54, 150]], { fill: P.mustard });
   },
   kitchen(s) {
     windowPane(s, 46, 174, 150, 124, lighten(SKY[ENV.time], ENV.time === 'night' ? 0 : 0.25), P.mustard);
     if (ENV.time === 'night') { stars(s, 50, 178, 142, 116, 9); moon(s, 160, 208, 13); } else s.ellipse(150, 268, 34, 22, { fill: sea().hill2, width: 1 });
-    plant(s, 120, 304, 30, P.coral, 5);
-    // 置物架和瓶瓶罐罐
+    // 置物架和瓶瓶罐罐（窗台空着：猫会跳上去看外面）
     shelf(s, 238, 224, 168);
     s.rect(250, 190, 26, 34, { fill: P.coral, r: 4 }); s.rect(284, 198, 22, 26, { fill: P.white, r: 4 }); s.rect(314, 184, 28, 40, { fill: P.sage, r: 4 }); s.ellipse(374, 210, 16, 14, { fill: P.mist });
     shelf(s, 238, 316, 168);
     s.rect(252, 292, 44, 24, { fill: P.mustard, r: 5 }); s.ellipse(330, 302, 16, 14, { fill: P.white }); s.rect(362, 286, 24, 30, { fill: P.coral, r: 4 });
-    // 柜子
-    s.rect(24, 402, 196, 14, { fill: P.white, r: 3 });
-    s.rect(30, 416, 184, 130, { fill: P.sage, r: 4 });
-    s.line(122, 420, 122, 542, P.ink, 1.3, 0.6); s.ellipse(108, 476, 4.5, 4.5, { fill: P.white, width: 1 }); s.ellipse(136, 476, 4.5, 4.5, { fill: P.white, width: 1 });
-    // 柜子上的水壶和碗
-    s.rect(50, 366, 40, 36, { fill: P.mist, r: 8 }); s.curve([[90, 374], [104, 366]], P.ink, 2); s.rect(62, 358, 16, 8, { fill: P.woodDark, r: 3 });
-    s.poly([[140, 384], [196, 384], [186, 402], [150, 402]], { fill: P.coral });
+    // 橱柜是单独的家具（见下面的 counter）
     // 地上的小垫子
     s.ellipse(330, 650, 84, 14, { fill: lighten(P.sage, 0.15) });
   },
   living(s) {
     frame(s, 44, 176, 130, 104, P.mist, 'hill'); frame(s, 190, 200, 76, 92, P.coral, 'sun'); frame(s, 196, 306, 64, 52, P.mustard, 'fish');
-    shelf(s, 292, 250, 120);
-    for (const [x, w, h, c] of [[300, 14, 44, P.coral], [316, 12, 36, P.mist], [330, 16, 48, P.sage], [348, 12, 40, P.mustard]] as [number, number, number, string][]) s.rect(x, 250 - h, w, h, { fill: c, width: 1.2 });
-    plant(s, 390, 250, 28, P.white, 5);
     // 地毯
     s.ellipse(210, 646, 176, 30, { fill: P.mist }); s.ellipse(210, 646, 140, 20, { fill: lighten(P.mist, 0.3), width: 1 });
-    // 沙发
-    s.rect(28, 418, 262, 128, { fill: P.sage, r: 26 });
-    s.rect(42, 478, 234, 58, { fill: lighten(P.sage, 0.28), r: 16 });
-    s.rect(58, 436, 64, 56, { fill: P.coral, r: 14 }); s.rect(196, 442, 58, 50, { fill: P.mustard, r: 14 });
-    s.rect(46, 544, 12, 16, { fill: P.woodDark, width: 1.2 }); s.rect(260, 544, 12, 16, { fill: P.woodDark, width: 1.2 });
-    // 落地灯
-    s.line(306, 400, 306, 552, P.woodDark, 3); s.poly([[284, 400], [328, 400], [318, 356], [294, 356]], { fill: P.mustard }); s.ellipse(306, 554, 16, 5, { fill: P.woodDark, width: 1.2 });
+    // 沙发、猫爬架是单独的家具；右边的墙空着留给猫爬架。落地灯是可以自己摆的装饰
   },
   bath(s) {
     // 下半墙的瓷砖
@@ -179,13 +161,10 @@ const ZONE_ART: Record<ZoneId, (s: Sketch) => void> = {
     if (ENV.time === 'night') { stars(s, 254, 178, 132, 122, 10); moon(s, 350, 214, 15); }
     else { s.ellipse(350, 214, 15, 15, { fill: ENV.time === 'dusk' ? '#F0A46A' : '#F4E3A6', width: 1.1 }); s.ellipse(300, 284, 40, 18, { fill: sea().hill2, width: 1 }); }
     frame(s, 64, 200, 110, 82, P.sage, 'hill'); frame(s, 80, 300, 70, 56, P.mist, 'fish');
-    // 床头柜和台灯
-    s.rect(18, 480, 62, 66, { fill: P.wood, r: 4 }); s.line(22, 512, 76, 512, P.ink, 1.2, 0.6); s.ellipse(49, 498, 4, 4, { fill: P.mustard, width: 1 });
-    s.line(49, 446, 49, 480, P.woodDark, 3); s.poly([[30, 446], [68, 446], [60, 410], [38, 410]], { fill: P.mustard });
+    // 床头柜和床头灯是单独的家具
     s.ellipse(250, 652, 150, 22, { fill: lighten(P.coral, 0.35) });
   },
   shelf(s) {
-    s.line(340, 0, 340, 150, P.ink, 1.3); s.poly([[314, 192], [366, 192], [354, 150], [326, 150]], { fill: P.coral });
     shelf(s, 236, 420, 170); plant(s, 276, 420, 30, P.mustard, 5); s.rect(316, 388, 30, 32, { fill: P.mist, r: 4 }); s.rect(354, 380, 34, 40, { fill: P.sage, r: 4 });
     plant(s, 318, 546, 70, P.coral, 8);
     s.ellipse(320, 650, 92, 15, { fill: lighten(P.mustard, 0.2) });
@@ -232,12 +211,6 @@ const ZONE_ART: Record<ZoneId, (s: Sketch) => void> = {
   },
 };
 
-/** 背景里画着的灯（吊灯、落地灯、台灯）的发光位置，天黑了在这里画光晕。坐标和上面画灯的位置对应；
- *  只对代码画的占位背景有用，换成背景图后不再使用。 */
-export const ZONE_LIGHTS: Partial<Record<ZoneId, Pt[]>> = {
-  door: [[66, 176]], living: [[306, 384]], bedroom: [[49, 432]], shelf: [[340, 176]],
-};
-
 /** 每个区域的地面颜色（院子是草地，其他是木地板）。画面底部往下延伸时用。 */
 export const groundColor = (id: ZoneId, env: Env) => (id === 'garden' ? SEASON[env.season].ground : P.floor);
 
@@ -270,10 +243,32 @@ const OBJECT_ART: Record<string, { w: number; h: number; draw: (s: Sketch) => vo
     for (let y = 30; y < 144; y += 11) s.line(29, y, 55, y + 4, P.woodDark, 1.1, 0.6);
     s.rect(14, 4, 56, 16, { fill: P.mustard, r: 7 }); s.rect(6, 144, 72, 14, { fill: P.mustard, r: 6 });
   } },
-  lamp: { w: 96, h: 250, draw(s) {
-    s.rect(44, 60, 8, 176, { fill: P.woodDark, r: 3 }); s.rect(24, 232, 48, 14, { fill: P.woodDark, r: 6 });
-    s.poly([[26, 6], [70, 6], [88, 66], [8, 66]], { fill: P.mustard });
+  // 沙发：猫可以跳上去。坐垫在图片高度的一半左右
+  sofa: { w: 262, h: 144, draw(s) {
+    s.rect(18, 126, 12, 16, { fill: P.woodDark, width: 1.2 }); s.rect(232, 126, 12, 16, { fill: P.woodDark, width: 1.2 });
+    s.rect(1, 1, 260, 128, { fill: P.sage, r: 26 });
+    s.rect(14, 60, 234, 58, { fill: lighten(P.sage, 0.28), r: 16 });
+    s.rect(30, 18, 64, 56, { fill: P.coral, r: 14 }); s.rect(168, 24, 58, 50, { fill: P.mustard, r: 14 });
   } },
+  // 橱柜：台面上放着水壶和碗
+  counter: { w: 200, h: 190, draw(s) {
+    s.rect(28, 8, 40, 36, { fill: P.mist, r: 8 }); s.curve([[68, 16], [82, 8]], P.ink, 2); s.rect(40, 1, 16, 8, { fill: P.woodDark, r: 3 });
+    s.poly([[118, 26], [174, 26], [164, 44], [128, 44]], { fill: P.coral });
+    s.rect(2, 44, 196, 14, { fill: P.white, r: 3 });
+    s.rect(8, 58, 184, 130, { fill: P.sage, r: 4 });
+    s.line(100, 62, 100, 184, P.ink, 1.3, 0.6); s.ellipse(86, 118, 4.5, 4.5, { fill: P.white, width: 1 }); s.ellipse(114, 118, 4.5, 4.5, { fill: P.white, width: 1 });
+  } },
+  nightstand: { w: 66, h: 70, draw(s) {
+    s.rect(2, 2, 62, 66, { fill: P.wood, r: 4 }); s.line(6, 34, 60, 34, P.ink, 1.2, 0.6); s.ellipse(33, 20, 4, 4, { fill: P.mustard, width: 1 });
+  } },
+  // 床头灯：放在床头柜上（底边 = 床头柜的台面）
+  bedlamp: { w: 44, h: 74, draw(s) {
+    s.line(22, 38, 22, 70, P.woodDark, 3); s.ellipse(22, 70, 10, 3, { fill: P.woodDark, width: 1 });
+    s.poly([[3, 38], [41, 38], [33, 2], [11, 2]], { fill: P.mustard });
+  } },
+  // 吊灯：图片最上面顶着天花板，电线也画在图里
+  pendantDoor: { w: 56, h: 194, draw(s) { s.line(28, 0, 28, 150, P.ink, 1.3); s.poly([[6, 190], [50, 190], [40, 150], [16, 150]], { fill: P.mustard }); } },
+  pendantShelf: { w: 60, h: 194, draw(s) { s.line(30, 0, 30, 150, P.ink, 1.3); s.poly([[4, 192], [56, 192], [44, 150], [16, 150]], { fill: P.coral }); } },
   ball: { w: 32, h: 32, draw(s) { s.ellipse(16, 16, 13, 13, { fill: P.coral }); s.curve([[6, 12], [16, 16], [26, 10]], P.white, 2.5, 0.8); } },
   tub: { w: 260, h: 128, draw(s) {
     s.line(226, 4, 226, 40, P.ink, 3); s.curve([[226, 6], [204, 6], [204, 20]], P.ink, 3); s.ellipse(226, 26, 8, 8, { fill: P.mustard });
