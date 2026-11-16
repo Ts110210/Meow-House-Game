@@ -11,6 +11,7 @@ import { loadSave } from './save';
 import * as sim from './sim';
 import { drawFrame, frameIndex, loadImage, normalizeSheet, previewSet, type SpriteSet } from './sprites';
 import type { GameState, Pet } from './types';
+import { BACK_MODES, backMode, type BackModeView } from './backscreenModes';
 
 const STAT_COLOR = { food: '#d9a94a', mood: '#e08e79', clean: '#9fb4c7' };
 const STAT_NAME = { food: '饱食', mood: '心情', clean: '干净' };
@@ -20,7 +21,9 @@ function dur(ms: number): string {
   return h > 0 ? `${h} 小时 ${m} 分` : `${Math.max(1, m)} 分钟`;
 }
 
-export interface BackView { state: GameState; pet: Pet | undefined; set: SpriteSet | undefined; happy: boolean; card: { image: HTMLCanvasElement; text: string } | null; hideCameraHint?: boolean }
+export interface BackView { state: GameState; pet: Pet | undefined; set: SpriteSet | undefined; happy: boolean; card: { image: HTMLCanvasElement; text: string } | null; hideCameraHint?: boolean;
+  /** 画哪一种画面（backscreenModes.ts 里的 id）；不写 = 宠物。小剧场和时钟要用到 setOf、doing */
+  mode?: string; setOf?: BackModeView['setOf']; doing?: BackModeView['doing'] }
 
 export function drawBackScreen(ctx: CanvasRenderingContext2D, t: number, v: BackView) {
   const B = CONFIG.backScreen; const s = v.state; const cam = B.cameraArea;
@@ -40,6 +43,8 @@ export function drawBackScreen(ctx: CanvasRenderingContext2D, t: number, v: Back
     ctx.fillStyle = '#5b4634'; ctx.font = 'bold 30px sans-serif'; ctx.fillText(v.card.text, cx, 70 + ch + 44);
     return;
   }
+  // 别的画面（小剧场、时钟……）：交给 backscreenModes.ts 里对应的那一种去画
+  if (v.mode && v.mode !== 'pet') { backMode(v.mode).draw(ctx, t, { state: s, pet: v.pet, setOf: v.setOf ?? (() => v.set), doing: v.doing, area: { x: x0, w, h: B.height } }); ctx.textAlign = 'center'; return; }
   const p = v.pet;
   if (!p) { ctx.fillStyle = '#8f7b66'; ctx.font = '32px sans-serif'; ctx.fillText('家里还没有宠物', cx, B.height / 2); return; }
   ctx.fillStyle = '#c99a6b'; ctx.fillRect(x0, 470, w, B.height - 470);
@@ -108,6 +113,8 @@ export async function bootBackScreen() {
   };
 
   let state: GameState | null = null; let petIndex = 0; let happyUntil = 0;
+  // 画面的种类记在本机；点右上角换下一种
+  const MODE = 'pet-game-back-mode'; let mode = backMode(kv.get(MODE) ?? 'pet').id;
   let lastCardId = ''; let card: { image: HTMLCanvasElement; text: string } | null = null; let cardUntil = 0; let first = true;
   const poll = async () => {
     const loaded = loadSave(); if (!loaded) { state = null; return; }
@@ -132,7 +139,9 @@ export async function bootBackScreen() {
   cv.addEventListener('click', (e) => {
     if (card && performance.now() < cardUntil) { cardUntil = 0; return; }
     const list = alive(); if (!list.length) return;
-    const r = cv.getBoundingClientRect(); const y = ((e.clientY - r.top) / r.height) * B.height;
+    const r = cv.getBoundingClientRect(); const y = ((e.clientY - r.top) / r.height) * B.height; const x = ((e.clientX - r.left) / r.width) * B.width;
+    if (y < 110 && x > B.width - 200) { mode = BACK_MODES[(BACK_MODES.findIndex((m) => m.id === mode) + 1) % BACK_MODES.length].id; kv.set(MODE, mode); return; } // 点右上角：换一种画面
+    if (mode !== 'pet') return;
     if (y < 110) { petIndex = (petIndex + 1) % list.length; return; } // 点名字那一行：换一只
     const p = list[petIndex % list.length]; if (p.tripId) return;
     pushBackTap(p.id); happyUntil = performance.now() + 1600;
@@ -140,7 +149,7 @@ export async function bootBackScreen() {
   const loop = (t: number) => {
     if (state) {
       const list = alive(); const pet = list.length ? list[petIndex % list.length] : undefined;
-      drawBackScreen(ctx, t, { state, pet, set: pet ? sets.get(pet.spriteId) : undefined, happy: performance.now() < happyUntil, card: card && performance.now() < cardUntil ? card : null, hideCameraHint: true });
+      drawBackScreen(ctx, t, { state, pet, set: pet ? sets.get(pet.spriteId) : undefined, happy: performance.now() < happyUntil, card: card && performance.now() < cardUntil ? card : null, hideCameraHint: true, mode, setOf: (p) => sets.get(p.spriteId) });
     } else { ctx.fillStyle = '#000'; ctx.fillRect(0, 0, B.width, B.height); ctx.fillStyle = '#fff'; ctx.font = '30px sans-serif'; ctx.textAlign = 'center'; ctx.fillText('先在主屏打开一次游戏', B.cameraArea.w + (B.width - B.cameraArea.w) / 2, B.height / 2); }
     requestAnimationFrame(loop);
   };

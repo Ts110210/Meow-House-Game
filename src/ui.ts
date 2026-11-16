@@ -8,6 +8,7 @@ import type { ObjectKind, Scene } from './scene';
 import * as sim from './sim';
 import { audioSettings, meow, setVolume, sfx } from './audio';
 import { drawBackScreen, takeBackTaps } from './backscreen';
+import { BACK_MODES } from './backscreenModes';
 import { ASSETS } from './assets.config';
 import { renderMoment } from './art/moment';
 import { exportLayout, isChanged, resetBackground, resetObjects, saveLayout } from './layout';
@@ -61,7 +62,7 @@ export class UI {
   private preview: { petId: string; action: ActionName; until: number } | null = null;
   private plan: sim.DispatchPlan = { petIds: [], bento: '', tool: null, goods: [] };
   private albumFilter = 'all';
-  private backPet = ''; private backCard: { id: string; until: number } | null = null; private backHappy = 0;
+  private backMode = 'pet'; private backPet = ''; private backCard: { id: string; until: number } | null = null; private backHappy = 0;
   private verTaps = 0; private resetArmed = false;
   private imp: { sheet?: HTMLCanvasElement; rows?: number; set?: SpriteSet; removeWhite: boolean; avatar?: HTMLCanvasElement; name: string; error?: string; srcUrl?: string; busy?: boolean } = { removeWhite: true, name: '' };
   private adoptForm = { name: '', color: 'grey' };
@@ -992,14 +993,17 @@ export class UI {
       const cv = h('canvas', { width: B.width, height: B.height }) as HTMLCanvasElement; const ctx = cv.getContext('2d')!;
       cv.addEventListener('click', () => {
         if (this.backCard && performance.now() < this.backCard.until) { this.backCard = null; return; }
-        const p = this.game.pet(this.backPet); if (!p || p.tripId) return;
+        if (this.backMode !== 'pet') return;
+        const p = this.game.pet(this.backPet); if (!p || p.tripId || p.outing) return;
         const r = sim.petPet(s, p.id, B.petMood); if (r.ok) { this.backHappy = performance.now() + 1600; this.game.save(); }
       });
       this.anims.push((t) => this.drawBack(ctx, t));
       const idx = alive.findIndex((p) => p.id === this.backPet);
       const sw = (d: number) => { if (alive.length) { this.backPet = alive[(idx + d + alive.length) % alive.length].id; this.refresh(true); } };
       const last = s.postcards[s.postcards.length - 1];
-      return [h('div', { class: 'backwrap' }, cv),
+      return [h('div', { class: 'seg', style: 'margin-bottom:8px' }, BACK_MODES.map((m) => h('button', { class: 'chip' + (this.backMode === m.id ? ' on' : ''), onclick: () => { this.backMode = m.id; this.refresh(true); } }, m.name))),
+        h('div', { class: 'backwrap' }, cv),
+        h('p', { class: 'soft center' }, BACK_MODES.find((m) => m.id === this.backMode)?.desc ?? '', this.backMode === 'pet' ? '' : '（预览：只是先确定背屏上放什么，画面之后还会改）'),
         h('p', { class: 'row', style: 'justify-content:center' }, h('button', { class: 'btn small', disabled: alive.length < 2, onclick: () => sw(-1) }, '上一只'), h('button', { class: 'btn small', disabled: alive.length < 2, onclick: () => sw(1) }, '下一只'),
           h('button', { class: 'btn small', disabled: !last, onclick: () => { if (last) this.backCard = { id: last.id, until: performance.now() + 9000 }; } }, '重看回家画面')),
         h('p', { class: 'soft' }, `按 ${B.width}×${B.height} 的实际比例模拟。点一下宠物 = 摸摸（心情 +${B.petMood}）。宠物回家时这里会展示明信片。左边灰色是摄像头占位，具体位置要以实机截图为准。`)];
@@ -1010,7 +1014,7 @@ export class UI {
     const s = this.game.state; const now = performance.now();
     const card = this.backCard && now < this.backCard.until ? s.postcards.find((c) => c.id === this.backCard!.id) : undefined;
     const pet = this.game.pet(this.backPet);
-    drawBackScreen(ctx, t, { state: s, pet, set: this.game.spriteOf(pet), happy: now < this.backHappy,
+    drawBackScreen(ctx, t, { state: s, pet, set: this.game.spriteOf(pet), happy: now < this.backHappy, mode: this.backMode, setOf: (p) => this.game.spriteOf(p) ?? undefined, doing: (p) => this.scene.doingOf(p.id),
       card: card ? { image: this.cardCanvas(card), text: `${card.petIds.map((id) => this.game.pet(id)?.name).join(' 和 ')}从${DESTS.find((d) => d.id === card.destId)?.name ?? ''}回来了` } : null });
   }
 

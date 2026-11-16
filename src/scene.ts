@@ -693,6 +693,16 @@ export class Scene {
   }
   private lastFrameReal = 0; private greeted = false;
   private findSprites: Text[] = [];
+  /** 这只宠物此刻在做什么（给背屏的「小剧场」用）。不在家就是 null */
+  doingOf(petId: string): { action: ActionName; text: string } | null {
+    const a = this.actors.get(petId); if (!a) return null;
+    const where: Record<string, string> = { bed: '床上', sofa: '沙发上', cattree: '猫爬架上', kitchenWindow: '厨房的窗台上', bedroomWindow: '卧室的窗台上', box: '纸箱里', basket: '洗衣篮里', tunnel: '隧道里', counter: '橱柜台面上', cabinet: '收藏柜顶上', tub: '浴缸里' };
+    const act = a.inter?.action ?? (a.hop ? 'jump' : a.action); const at = a.perch ? where[a.perch.kind] ?? '' : '';
+    const text = a.sulkUntil > this.now ? '在闹脾气' : act === 'sleep' ? `在${at || '地上'}睡觉` : act === 'fish' ? (a.station === 'pond' ? '在鱼塘边捞鱼' : '在院子里扑蝴蝶') : act === 'scratch' ? '在抓猫抓板' : act === 'eat' ? (a.station === 'catgrass' ? '在啃猫草' : '在吃饭') : act === 'bath' ? '在泡澡'
+      : act === 'groom' ? '在和同伴蹭来蹭去' : act === 'play' ? '在玩' : act === 'lick' ? '在舔毛' : act === 'beg' ? '站起来讨吃的' : act === 'yawn' ? '打了个哈欠' : act === 'stretch' ? '在伸懒腰' : act === 'jump' ? '跳了一下'
+      : act === 'sit' ? (a.station?.startsWith('roof') ? '在屋顶上看星星' : at ? `蹲在${at}` : '端坐着') : act === 'walk' ? '在家里走来走去' : at ? `待在${at}` : '在发呆';
+    return { action: act, text };
+  }
   /** 瞬间相册：每两秒看一眼家里有没有值得抓拍的画面（同一种瞬间多久拍一次由规则那边管） */
   private momentAt = 0;
   private snap(kind: string, list: Actor[], extra?: string) {
