@@ -744,7 +744,8 @@ export class Scene {
       a.pending = { action: 'eat', dur: 5000 };
     } else if (night) {
       // 晚上：先睡自己在猫爬架上的那一层；没有就上床、上沙发；都满了在床边的地上睡
-      if (mine >= 0 && lounge('cattree', 'sleep', 9000, mine)) { /* 睡在自己的位置 */ }
+      if (was && was.kind !== 'tub' && lounge(was.kind, 'sleep', 9000, was.slot)) { /* 已经睡在床、沙发、猫爬架或窗台上了：接着睡，不换地方 */ }
+      else if (mine >= 0 && lounge('cattree', 'sleep', 9000, mine)) { /* 睡在自己的位置 */ }
       else if (lounge('bed', 'sleep', 9000) || lounge('sofa', 'sleep', 9000)) { /* 睡在床上或沙发上 */ }
       else { const spot = goNear('bed', 170 + a.lane * 26); if (near(spot)) this.setAction(a, 'sleep', 9000); else this.go(a, spot); }
     } else if (p.clean < low) {
@@ -958,7 +959,7 @@ export class Scene {
           a.pending = null; a.fast = false;
         }
       }
-      else if (this.now >= a.until) { if (a.action === 'walk') { a.action = 'idle'; a.t0 = this.now; } this.think(a); if (!this.far(a) && this.now >= a.until) this.setAction(a, 'idle', 1200); }
+      else if (this.now >= a.until) { if (a.action === 'walk') { a.action = 'idle'; a.t0 = this.now; } this.think(a); if (!this.far(a) && this.now >= a.until && !a.pending) this.setAction(a, 'idle', 1200); } // 已经定好下一件事（比如接着睡）就不要先站起来一下
       else if (a.action === 'walk') { a.action = 'idle'; a.t0 = this.now; }
 
       // 画在哪：平时在地板上；在家具上就用家具的落脚点；跳上跳下时沿一条弧线过去
