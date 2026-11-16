@@ -35,6 +35,8 @@ const STATIONS: Record<string, Station[]> = {
   pond: [{ dx: -178, dir: 1, at: 0.45 }, { dx: -72, dir: 1, at: 1.12 }, { dx: 72, dir: -1, at: 1.12 }], // 鱼塘边捞鱼：左边一只、后面两只，都在岸上
 };
 /** 猫会自己跳上去待着的地方（猫爬架另算：可以指定谁待在哪一层） */
+/** 露天的区域：下雨时宠物不去 */
+const OUTDOOR: string[] = ['balcony', 'garden'];
 const LOUNGE = ['sofa', 'bed', 'kitchenWindow', 'bedroomWindow', 'cattree'];
 /** 跳上、跳下家具的过渡动画要多久（毫秒） */
 const HOP_MS = 460;
@@ -71,7 +73,12 @@ interface Actor {
   perch: { kind: string; slot: number } | null;
   /** 正在跳上或跳下家具 */
   hop: { t0: number; up: boolean; kind: string; slot: number } | null;
-  pending: { action: ActionName; dur: number; ball?: boolean } | null; fast: boolean;
+  /** 插进来的一小段动作：睡前打哈欠、睡醒伸懒腰。做完之前不走也不跳 */
+  inter: { action: ActionName; t0: number; until: number } | null;
+  /** 闹脾气到什么时候（主人离开太久）。摸一下就好 */
+  sulkUntil: number;
+  /** meet = 走到这只同伴身边再开始；partner = 到了之后同伴做什么动作 */
+  pending: { action: ActionName; dur: number; ball?: boolean; meet?: string; partner?: ActionName } | null; fast: boolean;
   /** 正在追球：到什么时候为止、是不是带球的那只、刚跑到位要不要先扑一下 */
   ball: { until: number; leader: boolean; hop: boolean } | null;
   /** 主人正在陪它玩（逗猫棒）到什么时候 */
@@ -178,7 +185,7 @@ export class Scene {
 
     const strip = this.roomPic('room.strip'); const room = this.room(); this.roomSig = room;
     recompute(strip);
-    const env = this.env(); this.envSig = env.time + env.season;
+    const env = this.env(); this.envSig = this.envKey(env);
     const cover = Math.min(N, ASSETS.room.strip.coverZones);
     this.stripSprite = strip ? new Sprite(this.tex(strip)) : null;
     if (this.stripSprite) this.bgLayer.addChild(this.stripSprite);
@@ -194,7 +201,8 @@ export class Scene {
     if (this.bgMode) this.setBgMode(true);
   }
 
-  private env(): Env { return { time: sim.dayTime(this.game.state), season: sim.season(this.game.state) }; }
+  private env(): Env { return { time: sim.dayTime(this.game.state), season: sim.season(this.game.state), weather: sim.weather(this.game.state) }; }
+  private envKey(env: Env) { return env.time + env.season + env.weather; }
 
   /** 昼夜或季节变了：只重画代码画的那些区域（窗外、阳台、院子会变样） */
   private redrawForEnv() {
@@ -222,7 +230,7 @@ export class Scene {
       const tone = CONFIG.light[env.time];
       ZONES.forEach((z, i) => {
         const x0 = i === 0 ? -3000 : zx(i), x1 = i === N - 1 ? W + 3000 : zx(i + 1);
-        const outdoor = z.id === 'balcony' || z.id === 'garden';
+        const outdoor = OUTDOOR.includes(z.id);
         // 阳台有屋檐，木地板和屋里连着：地板以下用屋里的颜色，不然和隔壁的地板接不上
         const split = z.id === 'balcony' ? fy : outdoor ? 6000 + H : -3000;
         if (split > -3000) this.shade.rect(x0, -3000, x1 - x0, split + 3000).fill(hex(tone.outdoor));
@@ -617,10 +625,12 @@ export class Scene {
     sprite.on('pointertap', this.tap(() => this.hooks.onPet(id)));
     (root as any).isActor = true; root.visible = !this.editMode; this.objects.addChild(root); // 和家具在同一层，按脚底的位置排前后
     const x = SPOT.living - 120 + index * 70 + Math.random() * 40, y = this.homeY(index);
-    return { id, root, sprite, tag, tagText, fx, x, y, lane: index, tx: x, ty: y, perch: null, hop: null, dir: 1, action: 'idle', t0: this.now, until: this.now + 1500, pending: null, fast: false, ball: null, wandUntil: 0, want: null, station: null, slot: 0, selfPlayAt: -SELF_PLAY_COOLDOWN };
+    return { id, root, sprite, tag, tagText, fx, x, y, lane: index, tx: x, ty: y, perch: null, hop: null, inter: null, sulkUntil: 0, dir: 1, action: 'idle', t0: this.now, until: this.now + 1500, pending: null, fast: false, ball: null, wandUntil: 0, want: null, station: null, slot: 0, selfPlayAt: -SELF_PLAY_COOLDOWN };
   }
 
   private setAction(a: Actor, action: ActionName, dur: number) {
+    // 刚要睡下：先打个哈欠（虚弱得直接倒下的不打）
+    if (action === 'sleep' && a.action !== 'sleep' && dur > 1500) a.inter = { action: 'yawn', t0: this.now, until: this.now + 1300 };
     if (a.action !== action) { a.action = action; a.t0 = this.now; }
     a.until = this.now + dur;
   }
@@ -635,6 +645,30 @@ export class Scene {
     const out = Math.max(sp.x - sp.width / 2 - x, x - (sp.x + sp.width / 2), 0); const back = Math.max(depthMin(), sp.y - sp.height - 6);
     return out >= 60 ? depthMax() : back + (out / 60) * (depthMax() - back);
   }
+  /** 屏幕正中间对应房间里的哪个位置 */
+  private viewCenter() { return (this.app.screen.width / 2 - this.world.x) / this.scale; }
+  private isOutdoor(x: number) { return OUTDOOR.includes(ZONES[zoneAt(x)]?.id); }
+  /** 可以挨着睡的同伴：正在地上睡觉、离得不太远，而且关系够好（冬天怕冷，不管关系） */
+  private napBuddy(a: Actor): Actor | null {
+    const s = this.game.state; const winter = sim.season(s) === 'winter';
+    return [...this.actors.values()].find((o) => o !== a && o.action === 'sleep' && !o.perch && !o.hop && !this.far(o) && Math.abs(o.x - a.x) < zw(2) * 2 && !this.isOutdoor(o.x)
+      && (winter || sim.friendship(s, a.id, o.id) >= CONFIG.friendship.close) && ![...this.actors.values()].some((q) => q !== a && q !== o && Math.abs(q.x - o.x) < 90 && Math.abs(q.y - o.y) < 20)) ?? null;
+  }
+  /** 主人回来了。离开得够久：在家的宠物跑到屏幕中间站起来迎接；离开太久：黏人的那只（没有就是心情最差的）背对着你闹脾气 */
+  greet(awayMs: number) {
+    const s = this.game.state; if (awayMs < CONFIG.greet.after || this.editMode) return;
+    const free = [...this.actors.values()].filter((a) => { const p = this.game.pet(a.id); return p && !sim.isWeak(p) && !this.busy(a.id) && p.food >= CONFIG.stats.lowThreshold; });
+    let sulker: Actor | null = null;
+    if (awayMs >= CONFIG.greet.sulkAfter && free.length) {
+      const pets = free.map((a) => this.game.pet(a.id)!); const pick = pets.find((p) => p.trait === 'clingy') ?? [...pets].sort((m, n) => m.mood - n.mood)[0];
+      sulker = this.actors.get(pick.id) ?? null;
+      if (sulker) { this.release(sulker); sulker.pending = null; sulker.inter = null; this.stop(sulker); sulker.sulkUntil = this.now + CONFIG.greet.sulkFor; sulker.until = this.now; }
+    }
+    if (sim.dayTime(s) === 'night') return; // 夜里都睡了，不起来迎接
+    const cx = this.isOutdoor(this.viewCenter()) && sim.weather(s) === 'rain' ? SPOT.living : this.viewCenter();
+    free.filter((a) => a !== sulker).forEach((a, i) => { this.release(a); a.inter = null; this.go(a, cx + (i - (free.length - 1) / 2) * 96, depthMax() - 10 - (i % 2) * 14); a.fast = true; a.pending = { action: 'beg', dur: 2800 }; });
+  }
+  private lastFrameReal = 0; private greeted = false;
   private go(a: Actor, x: number, y: number = this.homeY(a.lane)) { a.tx = clampX(x); a.ty = Math.min(clampY(y), this.depthLimit(a.tx)); }
   private stop(a: Actor) { a.tx = a.x; a.ty = a.y; }
   private far(a: Actor) { return Math.abs(a.tx - a.x) > 4 || Math.abs(a.ty - a.y) > 4; }
@@ -697,7 +731,8 @@ export class Scene {
     const a = this.actors.get(petId); if (!a) return;
     // 待在沙发、床、猫爬架上被摸：不用跳下来
     if (!(action === 'happy' && a.perch && a.perch.kind !== 'tub')) this.release(a);
-    a.pending = null; a.want = null; this.stop(a); a.wandUntil = 0;
+    a.pending = null; a.want = null; this.stop(a); a.wandUntil = 0; a.inter = null;
+    if (a.sulkUntil > this.now) { a.sulkUntil = 0; if (action === 'happy') this.floatText(petId, '哼……原谅你了'); }
     if (action === 'eat') this.reserveOrWait(a, 'bowl');
     else if (action === 'bath') this.reserveOrWait(a, 'tub');
     // 主人陪玩：就在原地逗它，不用走到玩具那里（猫抓板和球是它自己玩的）
@@ -735,7 +770,14 @@ export class Scene {
     const night = sim.dayTime(s) === 'night';
     a.fast = false;
     const low = CONFIG.stats.lowThreshold;
-    if (p.food < low) {
+    const rain = sim.weather(s) === 'rain'; const outside = this.isOutdoor(a.x);
+    if (a.sulkUntil > this.now) {
+      // 闹脾气：背对着屏幕中间坐着不理人，直到被摸一下
+      a.dir = a.x < this.viewCenter() ? -1 : 1; this.setAction(a, 'sit', 4000);
+    } else if (rain && outside) {
+      // 下雨了：在外面的赶紧跑回屋里
+      a.fast = true; this.go(a, zx(2) + zw(2) * (0.2 + Math.random() * 0.6), depthMin() + Math.random() * (depthMax() - depthMin()));
+    } else if (p.food < low) {
       // 饿了：去饭碗旁边蹲着等
       const spot = goNear('bowl', -150 - a.lane * 30);
       if (near(spot)) { a.dir = 1; this.setAction(a, 'idle', 3000); } else this.go(a, spot);
@@ -760,16 +802,29 @@ export class Scene {
       // 三样共用一个冷却时间，位置被占了就不去，所以不会卡在里面，也不会挤在一起。
       const fun = [...(s.owned.scratcher ? ['scratcher'] : []), ...(s.owned.ball ? ['ball'] : []), ...(s.pond.some((x) => x != null) ? ['pond'] : [])].sort(() => Math.random() - 0.5);
       const rest = (): ActionName => (['idle', 'sleep', 'lick'] as ActionName[])[Math.floor(Math.random() * 3)];
-      if (was && LOUNGE.includes(was.kind) && Math.random() < 0.4 && lounge(was.kind, 'idle', between(D.perch), was.slot)) { /* 还想在上面再待一会儿 */ }
+      const trait = p.trait;
+      const sleeper = this.napBuddy(a);
+      if (was && LOUNGE.includes(was.kind) && Math.random() < 0.4 && lounge(was.kind, was.kind.endsWith('Window') ? 'sit' : 'idle', between(D.perch), was.slot)) { /* 还想在上面再待一会儿 */ }
+      // 下雨天爱趴在窗台上看雨
+      else if (rain && Math.random() < 0.35 && ['kitchenWindow', 'bedroomWindow'].sort(() => Math.random() - 0.5).some((k) => lounge(k, 'sit', between(D.perch) * 1.5))) { /* 看雨 */ }
+      // 性格：贪吃的没事就去饭碗边站起来讨吃的；爱干净的动不动就舔毛；黏人的走到屏幕中间坐下看着你
+      else if (trait === 'glutton' && Math.random() < 0.2) { this.go(a, goNear('bowl', -110 - a.lane * 26), objPos(ASSETS.objects.bowl).y + 6); a.pending = { action: 'beg', dur: 3200 }; }
+      else if (trait === 'tidy' && Math.random() < 0.2) this.setAction(a, 'lick', 3600);
+      else if (trait === 'clingy' && Math.random() < 0.2 && !this.isOutdoor(this.viewCenter())) { this.go(a, this.viewCenter() + (a.lane - 2) * 60, depthMax() - 14 - a.lane * 6); a.pending = { action: 'sit', dur: 5000 }; }
+      // 关系好的（冬天不管关系）白天也爱挨着睡
+      else if (sleeper && Math.random() < 0.3) { this.go(a, sleeper.x + (a.x < sleeper.x ? -66 : 66), sleeper.y + 3); a.pending = { action: 'sleep', dur: 7000 + Math.random() * 4000 }; }
       else if (mine >= 0 && Math.random() < 0.4 && lounge('cattree', rest(), between(D.perch), mine)) { /* 回自己在猫爬架上的位置 */ }
       else if (fun.length && r > 0.78 && this.now - a.selfPlayAt > SELF_PLAY_COOLDOWN && fun.some((k) => this.reserve(a, k))) {
         a.selfPlayAt = this.now;
-        a.pending = a.station === 'ball' ? { action: 'play', dur: between(D.ball), ball: true } : { action: 'play', dur: between(a.station === 'pond' ? D.fish : D.scratcher) };
+        a.pending = a.station === 'ball' ? { action: 'play', dur: between(D.ball), ball: true } : a.station === 'pond' ? { action: 'fish', dur: between(D.fish) } : { action: 'scratch', dur: between(D.scratcher) };
       } else if (r < 0.4) {
         // 随便走走：客厅去得多一些，也会自己走到阳台和院子里
-        const z = Math.random() < 0.45 ? 2 : Math.floor(Math.random() * N);
+        // 爱冒险的更爱往外跑；下雨天谁都不出门
+        const inside = ZONES.map((_, i) => i).filter((i) => !OUTDOOR.includes(ZONES[i].id)), out = ZONES.map((_, i) => i).filter((i) => OUTDOOR.includes(ZONES[i].id));
+        const pool = rain ? inside : trait === 'adventurer' && Math.random() < 0.5 && out.length ? out : ZONES.map((_, i) => i);
+        const z = Math.random() < (trait === 'adventurer' ? 0.2 : 0.45) ? 2 : pool[Math.floor(Math.random() * pool.length)];
         this.go(a, zx(z) + zw(z) * (0.14 + Math.random() * 0.72), depthMin() + Math.random() * (depthMax() - depthMin()));
-      } else if (r < 0.6 && [...LOUNGE].sort(() => Math.random() - 0.5).some((k) => lounge(k, k.endsWith('Window') ? 'idle' : rest(), between(D.perch)))) { /* 跳到沙发、床、窗台或猫爬架上待一会儿 */ }
+      } else if (r < 0.6 && [...LOUNGE].sort(() => Math.random() - 0.5).some((k) => lounge(k, k.endsWith('Window') ? 'sit' : rest(), between(D.perch)))) { /* 跳到沙发、床、窗台或猫爬架上待一会儿 */ }
       else if (r < 0.68) this.setAction(a, 'sleep', 5000 + Math.random() * 4000);
       else this.setAction(a, 'idle', 2000 + Math.random() * 3500);
     }
@@ -783,7 +838,14 @@ export class Scene {
     if (ok.length < 2 || Math.random() > 0.3) return;
     const a = ok[0]; const b = ok.slice(1).sort((m, n) => Math.abs(m.x - a.x) - Math.abs(n.x - a.x))[0];
     if (Math.abs(a.x - b.x) > zw(2) * 1.5) return; // 离得太远就算了
-    if (s.owned.ball && this.reserve(a, 'ball') && this.reserve(b, 'ball')) { const dur = between(D.ball); a.pending = { action: 'play', dur, ball: true }; b.pending = { action: 'play', dur, ball: true }; }
+    const close = sim.friendship(s, a.id, b.id) >= CONFIG.friendship.close;
+    if (close && Math.random() < 0.6) {
+      // 关系好：一只走到另一只身边，给它舔毛（被舔的眯着眼享受），或者互相蹭头
+      const nuzzle = Math.random() < 0.45; const side = a.x < b.x ? -1 : 1;
+      this.release(a); this.release(b); this.stop(b); b.dir = side === -1 ? -1 : 1; this.setAction(b, 'idle', 9000);
+      this.go(a, b.x + side * 74, b.y + 2); a.pending = { action: 'groom', dur: nuzzle ? 3600 : 5600, meet: b.id, partner: nuzzle ? 'groom' : 'happy' };
+    }
+    else if (s.owned.ball && this.reserve(a, 'ball') && this.reserve(b, 'ball')) { const dur = between(D.ball); a.pending = { action: 'play', dur, ball: true }; b.pending = { action: 'play', dur, ball: true }; }
     else { this.release(a); this.release(b); this.stop(a); this.stop(b); a.dir = a.x < b.x ? 1 : -1; b.dir = a.dir === 1 ? -1 : 1; this.setAction(a, 'play', 6000); this.setAction(b, 'play', 6000); }
     a.selfPlayAt = b.selfPlayAt = this.now;
     sim.companionPlay(s, a.id, b.id); this.game.touch();
@@ -860,10 +922,28 @@ export class Scene {
   private drawWeather(env: Env) {
     const g = this.weather.clear();
     const first = zoneIndex('balcony'); if (first < 0) return;
+    const rain = env.weather === 'rain';
+    // 下雨：院子和阳台上的雨丝，还有屋里窗玻璃上的雨丝。冬天不下雨，改成雪下得更大
+    if (rain && env.season !== 'winter') {
+      const t = this.now / 1000, x0 = zx(first) + 18, w = worldW() - x0, bottom = geo.floorY + 110;
+      for (let i = 0; i < 90; i++) {
+        const x = x0 + ((i * 97.3 + t * 60) % w), y = ((i * 53.7 + t * (520 + (i % 5) * 40)) % bottom);
+        if (zoneAt(x) === first && y > 430) continue;
+        g.moveTo(x, y).lineTo(x - 5, y + 20).stroke({ width: 1.6, color: 0xdfeaf2, alpha: 0.75 });
+      }
+      for (const win of ASSETS.windows) {
+        const zi = zoneIndex(win.zone); if (zi < 0 || !this.zoneSprites[zi]) continue; const k = zw(zi) / BASE_ZW, oy = geo.floorY - BASE_FY;
+        for (let i = 0; i < 12; i++) {
+          const x = zx(zi) + (win.x + ((i * 37.1 + t * 14) % win.w)) * k, y = oy + win.y + ((i * 29.3 + t * (190 + (i % 4) * 30)) % (win.h - 16));
+          g.moveTo(x, y).lineTo(x - 2, y + 13).stroke({ width: 1.4, color: 0xe6f0f6, alpha: 0.8 });
+        }
+      }
+      return;
+    }
     const kind = env.season === 'spring' ? 'petal' : env.season === 'autumn' ? 'leaf' : env.season === 'winter' ? 'snow' : env.time === 'night' ? 'firefly' : '';
     if (!kind) return;
     const x0 = zx(first) + 18, x1 = worldW(), w = x1 - x0, top = 40, bottom = geo.floorY + 60; const t = this.now / 1000;
-    for (let i = 0; i < 34; i++) {
+    for (let i = 0; i < (rain && kind === 'snow' ? 90 : 34); i++) {
       const seed = i * 127.1; const speed = kind === 'snow' ? 26 + (i % 5) * 6 : kind === 'firefly' ? 0 : 40 + (i % 7) * 9;
       let x = x0 + ((seed * 3.7 + Math.sin(t * 0.7 + i) * 30 + t * (kind === 'leaf' ? 14 : 5)) % w + w) % w;
       let y = top + ((seed * 1.9 + t * speed) % (bottom - top));
@@ -882,7 +962,7 @@ export class Scene {
     this.game.tick();
     const env = this.env();
     if (this.room() !== this.roomSig) this.rebuildArt(); // 换了房间风格：背景整套重画
-    if (env.time + env.season !== this.envSig) { this.envSig = env.time + env.season; this.redrawForEnv(); }
+    if (this.envKey(env) !== this.envSig) { this.envSig = this.envKey(env); this.redrawForEnv(); }
     this.rebuildObjects();
     // 新买的家具
     const owned = Object.keys(this.game.state.owned).sort().join(',');
@@ -901,6 +981,10 @@ export class Scene {
       this.camX += this.vel * dt; this.vel *= Math.pow(0.994, dt); this.applyCam();
     }
 
+    // 主人回来了（刚打开，或者从后台切回来隔了一阵）：迎接一下
+    const real = Date.now(); const gap = this.lastFrameReal ? real - this.lastFrameReal : 0; this.lastFrameReal = real;
+    if (!this.greeted && this.actors.size) { this.greeted = true; this.greet(this.game.awayMs); } else if (gap > 60_000) this.greet(gap);
+
     // 宠物
     const s = this.game.state;
     const home = sim.homePets(s);
@@ -913,7 +997,9 @@ export class Scene {
       const set = this.game.spriteOf(p); if (!set) return;
       const weak = sim.isWeak(p);
       const sc = PET_BASE * ASSETS.petScale * CONFIG.growth.stageScale[sim.stageOf(p)];
-      if (a.hop) {
+      if (a.inter && this.now >= a.inter.until) a.inter = null;
+      if (a.inter && !weak) { /* 正在打哈欠或伸懒腰：做完再说 */ }
+      else if (a.hop) {
         // 正在跳上或跳下家具：跳完再做别的
         if (this.now - a.hop.t0 >= HOP_MS) { a.perch = a.hop.up ? { kind: a.hop.kind, slot: a.hop.slot } : null; a.hop = null; }
       } else if (a.perch && (weak || a.station !== a.perch.kind || a.slot !== a.perch.slot)) {
@@ -955,11 +1041,22 @@ export class Scene {
           if (st) a.dir = st.dir;
           if (a.pending.ball && a.station === 'ball') { a.ball = { until: this.now + a.pending.dur, leader: ![...this.actors.values()].some((o) => o !== a && o.ball?.leader), hop: true }; this.setAction(a, 'play', 1100); }
           else this.setAction(a, a.pending.action, a.pending.dur);
+          if (a.pending.meet) {
+            // 走到同伴身边了：两只面对面，同伴做它那一半的动作
+            const b = this.actors.get(a.pending.meet);
+            if (b && !b.station && !b.pending && Math.abs(b.x - a.x) < 140) { a.dir = b.x >= a.x ? 1 : -1; b.dir = a.dir === 1 ? -1 : 1; b.inter = null; this.setAction(b, a.pending.partner ?? 'happy', a.pending.dur); }
+            else this.setAction(a, 'idle', 800); // 同伴走开了，算了
+          }
           if (a.wandUntil) a.wandUntil = a.until;
           a.pending = null; a.fast = false;
         }
       }
-      else if (this.now >= a.until) { if (a.action === 'walk') { a.action = 'idle'; a.t0 = this.now; } this.think(a); if (!this.far(a) && this.now >= a.until && !a.pending) this.setAction(a, 'idle', 1200); } // 已经定好下一件事（比如接着睡）就不要先站起来一下
+      else if (this.now >= a.until) {
+        const wasAsleep = a.action === 'sleep';
+        if (a.action === 'walk') { a.action = 'idle'; a.t0 = this.now; } this.think(a);
+        // 睡醒了要去做别的：先伸个懒腰（接着睡的不伸）
+        if (wasAsleep && (a.pending as Actor['pending'])?.action !== 'sleep' && !(a.action === 'sleep' && this.now < a.until)) a.inter = { action: 'stretch', t0: this.now, until: this.now + 1150 }; if (!this.far(a) && this.now >= a.until && !a.pending) this.setAction(a, 'idle', 1200); // 已经定好下一件事（比如接着睡）就不要先站起来一下
+      }
       else if (a.action === 'walk') { a.action = 'idle'; a.t0 = this.now; }
 
       // 画在哪：平时在地板上；在家具上就用家具的落脚点；跳上跳下时沿一条弧线过去
@@ -969,19 +1066,22 @@ export class Scene {
         const t0 = Math.min(1, (this.now - a.hop.t0) / HOP_MS), t = a.hop.up ? t0 : 1 - t0, e = t * t * (3 - 2 * t);
         px = a.x + (spot.x - a.x) * e; py = a.y + (spot.y - a.y) * e - Math.sin(Math.PI * t) * 46;
         // 跳的时候排在前面；进浴缸的后半程要落到浴缸前面那一层的后面
-        z = a.hop.kind === 'tub' && t > 0.5 ? spot.z : Math.max(a.y, spot.z); shown = 'play';
+        z = a.hop.kind === 'tub' && t > 0.5 ? spot.z : Math.max(a.y, spot.z); shown = 'jump';
         if (Math.abs(spot.x - a.x) > 6) a.dir = (spot.x > a.x) === a.hop.up ? 1 : -1;
       } else if (a.perch && spot) { px = spot.x; py = spot.y; z = spot.z; }
       else if (on) { a.perch = null; a.hop = null; } // 家具不在了（收起来了、进了调整模式）：回到地上
       if (spot && on!.kind === 'tub') bathing = true;
-      a.sprite.texture = set.tex[rowFor(set, shown)][frameIndex(shown, this.now - a.t0)];
+      if (a.inter && !a.hop) shown = a.inter.action;
+      // 跳跃的四帧跟着跳的进度走（蹲、蹬、腾空、落地），不是按时间循环
+      const frame = a.hop ? Math.min(3, Math.floor(((this.now - a.hop.t0) / HOP_MS) * 4)) : frameIndex(shown, this.now - (a.inter ? a.inter.t0 : a.t0));
+      a.sprite.texture = set.tex[rowFor(set, shown)][frame];
       a.sprite.scale.set(sc * a.dir, sc);
       a.sprite.alpha = weak ? 0.75 : 1;
       a.root.position.set(px, py); a.root.zIndex = z;
 
       // 头顶的小提示
       const low = CONFIG.stats.lowThreshold;
-      const text = weak ? '虚弱' : p.food < low ? '饿' : p.clean < low ? '脏' : p.mood < low ? '闷' : '';
+      const text = weak ? '虚弱' : a.sulkUntil > this.now ? '哼' : p.food < low ? '饿' : p.clean < low ? '脏' : p.mood < low ? '闷' : '';
       a.tag.visible = !!text;
       if (text && a.tagText.text !== text) {
         a.tagText.text = text;
@@ -1000,7 +1100,11 @@ export class Scene {
         if (wand) a.fx.ellipse(tx, ty + 8, 9, 15).fill(hex(PALETTE.coral)).ellipse(tx - 7, ty + 6, 5, 11).fill(hex(PALETTE.mustard));
         else a.fx.ellipse(tx, ty + 4, 5, 8).fill(0x93b893);
       }
-      if (a.action === 'play' && a.station === 'pond' && !a.hop) {
+      if (a.action === 'groom' && !a.inter) { // 给同伴舔毛、蹭头：头顶飘一颗小爱心
+        const ph = (this.now / 1200) % 1, hx = a.dir * 96 * sc, hy = -210 * sc - ph * 26, al = 1 - ph;
+        a.fx.circle(hx - 5, hy, 6).fill({ color: 0xf2788a, alpha: al }).circle(hx + 5, hy, 6).fill({ color: 0xf2788a, alpha: al }).poly([hx - 10, hy + 3, hx + 10, hy + 3, hx, hy + 14]).fill({ color: 0xf2788a, alpha: al });
+      }
+      if (a.action === 'fish' && a.station === 'pond' && !a.hop) {
         // 在鱼塘边用爪子捞鱼：溅起来的水珠和一圈圈水纹。站在后面岸上的两只，水花在它们脚前面（往下一点）
         const down = a.slot === 0 ? 0 : 26;
         for (let k = 0; k < 5; k++) {

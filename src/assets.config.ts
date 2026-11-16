@@ -86,6 +86,13 @@ export const ASSETS = {
     bedroomWindow: { zone: 'bedroom', x: 320, y: 312, label: '卧室窗台' },
   } as Record<string, { zone: ZoneId; x: number; y: number; label: string }>,
 
+  // ---------- 屋里的窗户：下雨时在这几块玻璃上画雨丝 ----------
+  // x、y = 玻璃左上角，w、h = 玻璃的大小（按 432 宽的区域、地板线在 560 算）。换了背景图、窗户位置变了，改这里。
+  windows: [
+    { zone: 'kitchen', x: 46, y: 174, w: 150, h: 124 },
+    { zone: 'bedroom', x: 250, y: 174, w: 140, h: 130 },
+  ] as { zone: ZoneId; x: number; y: number; w: number; h: number }[],
+
   // ---------- 默认宠物的精灵图（上传规范：4 列，每格 256×256，每行一个动作） ----------
   pets: {
     orange: 'pets/orange.png', grey: 'pets/grey.png', cream: 'pets/cream.png', black: 'pets/black.png', tabby: 'pets/tabby.png',

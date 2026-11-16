@@ -15,7 +15,7 @@ const darken = (hex: string, t: number) => { const n = parseInt(hex.slice(1), 16
 
 // ---------- 昼夜和季节：窗外、阳台、院子的颜色跟着变 ----------
 
-export interface Env { time: DayTime; season: Season }
+export interface Env { time: DayTime; season: Season; weather?: 'clear' | 'rain' }
 let ENV: Env = { time: 'day', season: 'summer' };
 const SKY: Record<DayTime, string> = { day: '#D5E3EA', dusk: '#F2C9A4', night: '#3F4C80' };
 const SEASON = {
@@ -25,10 +25,17 @@ const SEASON = {
   winter: { leaf: '#F4F6F8', leaf2: '#E3EAF0', grass: '#EEF2F4', hill: '#E6ECF0', hill2: '#D3DDE5', ground: '#EDF1F3' },
 };
 const sea = () => SEASON[ENV.season];
+const rainy = () => ENV.weather === 'rain';
+/** 天空的颜色：下雨（冬天是下大雪）时灰蒙蒙的 */
+const skyColor = () => (rainy() ? { day: '#C2CBD2', dusk: '#C8B8AB', night: '#333C60' }[ENV.time] : SKY[ENV.time]);
 
 /** 天上的东西：太阳或月亮、云或星星 */
 function skyThings(s: Sketch, x: number, y: number, w: number) {
-  if (ENV.time === 'night') {
+  if (rainy()) {
+    // 阴天：只有几朵灰云，看不到太阳、月亮和星星
+    const c = ENV.time === 'night' ? '#4A5378' : '#A9B3BC';
+    for (const [fx, dy, rx] of [[0.2, 34, 46], [0.34, 22, 34], [0.62, 40, 52], [0.8, 26, 38]]) s.ellipse(x + w * fx, y + dy, rx, 13, { fill: c, width: 1 });
+  } else if (ENV.time === 'night') {
     s.ellipse(x + w * 0.76, y + 44, 20, 20, { fill: '#F6ECC6', width: 1.1 }); s.ellipse(x + w * 0.76 + 8, y + 38, 16, 16, { fill: SKY.night, stroke: false, hatch: 0 });
     stars(s, x + 10, y - 40, w - 20, 300, 26);
   } else {
@@ -131,8 +138,8 @@ const ZONE_ART: Record<ZoneId, (s: Sketch) => void> = {
     s.ellipse(216, 630, 100, 12, { fill: lighten(P.mist, 0.3), width: 1 });
   },
   kitchen(s) {
-    windowPane(s, 46, 174, 150, 124, lighten(SKY[ENV.time], ENV.time === 'night' ? 0 : 0.25), P.mustard);
-    if (ENV.time === 'night') { stars(s, 50, 178, 142, 116, 9); moon(s, 160, 208, 13); } else s.ellipse(150, 268, 34, 22, { fill: sea().hill2, width: 1 });
+    windowPane(s, 46, 174, 150, 124, lighten(skyColor(), ENV.time === 'night' ? 0 : 0.25), P.mustard);
+    if (rainy() && ENV.time === 'night') { /* 下雨的夜里窗外一片黑 */ } else if (ENV.time === 'night') { stars(s, 50, 178, 142, 116, 9); moon(s, 160, 208, 13); } else s.ellipse(150, 268, 34, 22, { fill: sea().hill2, width: 1 });
     // 置物架和瓶瓶罐罐（窗台空着：猫会跳上去看外面）
     shelf(s, 238, 224, 168);
     s.rect(250, 190, 26, 34, { fill: P.coral, r: 4 }); s.rect(284, 198, 22, 26, { fill: P.white, r: 4 }); s.rect(314, 184, 28, 40, { fill: P.sage, r: 4 }); s.ellipse(374, 210, 16, 14, { fill: P.mist });
@@ -162,9 +169,9 @@ const ZONE_ART: Record<ZoneId, (s: Sketch) => void> = {
     s.ellipse(216, 660, 120, 18, { fill: lighten(P.sage, 0.1) });
   },
   bedroom(s) {
-    windowPane(s, 250, 174, 140, 130, lighten(SKY[ENV.time], ENV.time === 'night' ? 0 : 0.25), P.coral);
-    if (ENV.time === 'night') { stars(s, 254, 178, 132, 122, 10); moon(s, 350, 214, 15); }
-    else { s.ellipse(350, 214, 15, 15, { fill: ENV.time === 'dusk' ? '#F0A46A' : '#F4E3A6', width: 1.1 }); s.ellipse(300, 284, 40, 18, { fill: sea().hill2, width: 1 }); }
+    windowPane(s, 250, 174, 140, 130, lighten(skyColor(), ENV.time === 'night' ? 0 : 0.25), P.coral);
+    if (ENV.time === 'night' && !rainy()) { stars(s, 254, 178, 132, 122, 10); moon(s, 350, 214, 15); }
+    else if (ENV.time !== 'night') { if (!rainy()) s.ellipse(350, 214, 15, 15, { fill: ENV.time === 'dusk' ? '#F0A46A' : '#F4E3A6', width: 1.1 }); s.ellipse(300, 284, 40, 18, { fill: sea().hill2, width: 1 }); }
     frame(s, 64, 200, 110, 82, P.sage, 'hill'); frame(s, 80, 300, 70, 56, P.mist, 'fish');
     // 床头柜和床头灯是单独的家具
     s.ellipse(250, 652, 150, 22, { fill: lighten(P.coral, 0.35) });
@@ -178,7 +185,7 @@ const ZONE_ART: Record<ZoneId, (s: Sketch) => void> = {
   // 阳台：没有墙，直接看到外面。栏杆、花盆、一把小椅子。
   balcony(s) {
     const c = sea();
-    s.rect(6, 0, W - 12, 546, { fill: SKY[ENV.time], stroke: false, hatch: 0.5 });
+    s.rect(6, 0, W - 12, 546, { fill: skyColor(), stroke: false, hatch: 0.5 });
     skyThings(s, 6, 60, W - 12);
     s.poly([[6, 440], [90, 350], [170, 404], [260, 336], [W - 6, 430], [W - 6, 546], [6, 546]] as Pt[], { fill: c.hill });
     s.poly([[6, 456], [130, 404], [250, 438], [W - 6, 408], [W - 6, 546], [6, 546]] as Pt[], { fill: c.hill2 });
@@ -196,7 +203,7 @@ const ZONE_ART: Record<ZoneId, (s: Sketch) => void> = {
   // 院子：完全在室外。天空、远山、一棵大树、篱笆、草地；鱼塘是单独的物品。
   garden(s) {
     const c = sea();
-    s.rect(0, 0, W, 560, { fill: SKY[ENV.time], stroke: false, hatch: 0.5 });
+    s.rect(0, 0, W, 560, { fill: skyColor(), stroke: false, hatch: 0.5 });
     skyThings(s, 0, 70, W);
     s.poly([[0, 450], [110, 356], [200, 416], [300, 340], [W, 440], [W, 560], [0, 560]] as Pt[], { fill: c.hill });
     s.poly([[0, 470], [150, 420], [280, 452], [W, 424], [W, 560], [0, 560]] as Pt[], { fill: c.hill2 });

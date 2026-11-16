@@ -85,6 +85,8 @@ export interface DevSettings {
   speed: number;
   /** 离开游戏（退到桌面、关掉再开）的那段时间也按倍速算。默认关：只在游戏开着时加速 */
   background: boolean;
+  /** 强制天气：auto = 跟着游戏里的天气 */
+  weather: 'auto' | Weather;
   /** 强制的昼夜和季节；'auto' = 跟着游戏里的时间走 */
   time: 'auto' | 'day' | 'dusk' | 'night';
   season: 'auto' | 'spring' | 'summer' | 'autumn' | 'winter';
@@ -158,3 +160,5 @@ export type GameEvent =
   | { type: 'hungry'; petId: string };
 
 export type Result = { ok: true; msg?: string } | { ok: false; msg: string };
+
+export type Weather = 'clear' | 'rain';

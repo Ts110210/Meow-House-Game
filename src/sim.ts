@@ -1,7 +1,7 @@
 // 游戏规则。这个文件不碰画面，只改存档数据，方便单独测试。
 import { writeDiary } from './diary';
 import { CONFIG, DAY, SEASON_IDS, SKINS, DEFAULT_SKIN, SKIN_PRICE, skinSize, ROOM_THEMES, DEFAULT_ROOM, DESTS, FOODS, FRY, FUR_COLORS, GEAR, GOODS, HOUR, MIN, SOUVENIRS, TOOLS, TREAT, type DayTime, type Season, type StatKey, decodeLook, TRAIT_IDS, type Trait, VISITORS, type VisitorWho, SPECIAL_DECOR, DECOR, ZONES } from './config';
-import type { GameEvent, GameState, Pet, Postcard, RepeatKey, Result, Trip, Visitor } from './types';
+import type { GameEvent, GameState, Pet, Postcard, RepeatKey, Result, Trip, Visitor, Weather } from './types';
 
 const T = CONFIG.traits;
 const clamp = (v: number, lo = 0, hi = 100) => Math.max(lo, Math.min(hi, v));
@@ -21,7 +21,7 @@ export function newState(now: number): GameState {
     v: 6, createdAt: now, seasonStart: now, settings: { notify: true, showSeason: false, seasonMode: 'cycle' }, clock: now, lastReal: now, fish: CONFIG.startFish, slots: 1,
     pets: [], trips: [], postcards: [], souvenirs: {}, inv: { ...CONFIG.startItems }, owned: {},
     pond: Array(CONFIG.pond.slots).fill(null), lastCheckin: '', pendingReturns: [], friends: {}, variants: {}, milestones: [], decor: [], visitors: [], visitorQuota: 0, visitorDay: '', lastVisitorAt: 0, errand: null, display: { souvenirs: [], postcards: [] }, cattree: [null, null, null], skins: {}, skinsOwned: {}, room: DEFAULT_ROOM, roomsOwned: [],
-    dev: { enabled: false, background: false, time: 'auto', season: 'auto', speed: 1, growth: 1, decay: { food: 1, mood: 1, clean: 1 } },
+    dev: { enabled: false, background: false, time: 'auto', season: 'auto', weather: 'auto', speed: 1, growth: 1, decay: { food: 1, mood: 1, clean: 1 } },
   };
   s.pets.push(newPet(CONFIG.startPet.name, `default:${CONFIG.startPet.color}`, now));
   return s;
@@ -48,6 +48,12 @@ export function dayTime(s: GameState): DayTime {
 export function season(s: GameState): Season {
   if (s.dev.enabled && s.dev.season !== 'auto') return s.dev.season;
   return seasonInfo(s).season;
+}
+/** 现在的天气。每 CONFIG.weather.block 换一次，由时间算出来（同一段时间里怎么问都一样，不用存档）。冬天的 rain 画出来是大雪 */
+export function weather(s: GameState): Weather {
+  if (s.dev.enabled && s.dev.weather !== 'auto') return s.dev.weather;
+  const n = Math.floor(s.clock / CONFIG.weather.block); const r = Math.abs(Math.sin(n * 12.9898 + 78.233) * 43758.5453) % 1;
+  return r < (CONFIG.weather.rainChance[season(s)] ?? 0) ? 'rain' : 'clear';
 }
 const REAL_SEASON = (m: number): Season => (m >= 2 && m <= 4 ? 'spring' : m >= 5 && m <= 7 ? 'summer' : m >= 8 && m <= 10 ? 'autumn' : 'winter');
 /** 自动的季节（不看开发者面板的强制开关）：现在是哪一季、这一季的第几天、还有几天换季、下一季是什么。

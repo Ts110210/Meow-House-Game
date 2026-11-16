@@ -315,6 +315,10 @@ console.log('昼夜和四季');
     const j = sim.seasonInfo(real(0, 10)), k = sim.seasonInfo(real(4, 31));
     check('现实月份模式的天数：1 月 10 日是冬天第 41 天，5 月 31 日是春天最后一天', j.day === 41 && j.next === 'spring' && k.day === 92 && k.daysLeft === 1 && k.next === 'summer', JSON.stringify([j, k]));
     const r = repair(JSON.parse(JSON.stringify(real(6))), T0); check('季节的设置存档再读档还在；旧存档默认是游戏里的循环、不显示', r.settings.seasonMode === 'real' && repair({ ...JSON.parse(JSON.stringify(at(6, 10))), settings: { notify: true } }, T0).settings.seasonMode === 'cycle' && r.settings.showSeason === false); }
+  { const a = at(6, 10); const w0 = sim.weather(a); const seen = new Set<string>(); let same = true;
+    for (let i = 0; i < 400; i++) { const b = at(6, 10); b.clock += i * CONFIG.weather.block; seen.add(sim.weather(b)); const c = at(6, 10); c.clock = b.clock + CONFIG.weather.block / 2; if (Math.floor(c.clock / CONFIG.weather.block) === Math.floor(b.clock / CONFIG.weather.block) && sim.weather(c) !== sim.weather(b)) same = false; }
+    check('天气由时间算出来：同一段时间里不变，长期看晴天和雨天都有', sim.weather(a) === w0 && same && seen.has('clear') && seen.has('rain'));
+    a.dev.weather = 'rain'; check('开发者面板可以指定天气（没开开发者模式不生效）', sim.weather(a) === w0 && (a.dev.enabled = true, sim.weather(a) === 'rain') && repair(JSON.parse(JSON.stringify(a)), T0).dev.weather === 'rain' && repair({ ...JSON.parse(JSON.stringify(a)), dev: {} }, T0).dev.weather === 'auto'); }
   const s = at(6, 10); s.dev.time = 'night'; s.dev.season = 'winter';
   check('开发者开关没开开发者模式时不生效', sim.dayTime(s) === 'day' && sim.season(s) === 'spring');
   s.dev.enabled = true;

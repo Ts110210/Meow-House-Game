@@ -84,6 +84,8 @@ export const CONFIG = {
     perTrip: 25,
     /** 自己凑在一起玩一次 */
     perPlay: 5,
+    /** 到这个数，两只凑在一起时除了打闹，还会互相舔毛、蹭头，白天也爱挨着睡 */
+    close: 30,
     /** 到这个数就是好朋友（也是上限） */
     best: 100,
     /** 好朋友一起玩，加的心情乘以这个数 */
@@ -247,6 +249,24 @@ export const CONFIG = {
     slots: 3,
     growTime: 6 * HOUR,
     fishPerFry: 18,
+  },
+
+  // ---------- 天气 ----------
+  weather: {
+    /** 每隔多久换一次天气 */
+    block: 3 * HOUR,
+    /** 每个季节下雨的概率（冬天是下大雪） */
+    rainChance: { spring: 0.28, summer: 0.3, autumn: 0.25, winter: 0.22 } as Record<string, number>,
+  },
+
+  // ---------- 宠物对主人的反应 ----------
+  greet: {
+    /** 离开超过这么久再打开，在家的宠物会跑过来迎接 */
+    after: 10 * MIN,
+    /** 离开超过这么久，黏人的（没有黏人的就是心情最差的那只）会背对着你闹脾气，摸一下才好 */
+    sulkAfter: 24 * HOUR,
+    /** 闹脾气最多闹多久 */
+    sulkFor: 5 * MIN,
   },
 
   // ---------- 季节 ----------
@@ -454,20 +474,22 @@ export const NPC_COLORS: Record<string, Coat> = {
 export const SPRITE = {
   cell: 256,
   framesPerRow: 4,
-  /** 行的顺序。前 5 行必须有，后 3 行可以没有。 */
-  rows: ['idle', 'walk', 'eat', 'sleep', 'happy', 'bath', 'lick', 'play'] as const,
-  rowNames: { idle: '待机', walk: '走路', eat: '吃东西', sleep: '睡觉', happy: '开心（被摸）', bath: '洗澡', lick: '舔毛', play: '玩耍' } as Record<string, string>,
+  /** 行的顺序。前 5 行必须有，后面的可以没有（缺了用 fallback 里写的动作代替）。
+   *  一共 16 行 = 4096 像素高，这是很多手机一张贴图能放下的上限，所以不要再往后加行；要加新动作先和我商量拆成两张图。 */
+  rows: ['idle', 'walk', 'eat', 'sleep', 'happy', 'bath', 'lick', 'play', 'jump', 'fish', 'yawn', 'stretch', 'sit', 'groom', 'scratch', 'beg'] as const,
+  rowNames: { idle: '待机', walk: '走路', eat: '吃东西', sleep: '睡觉', happy: '开心（被摸）', bath: '洗澡', lick: '舔毛', play: '玩耍',
+    jump: '跳跃（上下家具）', fish: '伸爪子捞', yawn: '打哈欠', stretch: '伸懒腰', sit: '端坐着看', groom: '给同伴舔毛、蹭头', scratch: '抓猫抓板', beg: '站起来讨要、迎接' } as Record<string, string>,
   requiredRows: 5,
   /** 可选动作缺了时用哪个代替 */
-  fallback: { bath: 'idle', lick: 'idle', play: 'happy' } as Record<string, string>,
+  fallback: { bath: 'idle', lick: 'idle', play: 'happy', jump: 'play', fish: 'play', yawn: 'idle', stretch: 'idle', sit: 'idle', groom: 'lick', scratch: 'play', beg: 'happy' } as Record<string, string>,
   /** 拼装精灵图时：宠物最高的一帧占格子高度的多少（默认值，工具里每个动作可以单独调） */
   cellFill: 0.7,
   /** 趴着或低头的动作本来就矮，默认小一些，不然会被放得比站着还大 */
-  assembleSize: { idle: 0.7, walk: 0.7, eat: 0.56, sleep: 0.42, happy: 0.7, bath: 0.7, lick: 0.66, play: 0.7 } as Record<string, number>,
+  assembleSize: { idle: 0.7, walk: 0.7, eat: 0.56, sleep: 0.42, happy: 0.7, bath: 0.7, lick: 0.66, play: 0.7, jump: 0.7, fish: 0.62, yawn: 0.7, stretch: 0.66, sit: 0.74, groom: 0.66, scratch: 0.84, beg: 0.84 } as Record<string, number>,
   /** 脚底对齐到格子高度的这个位置 */
   footLine: 0.9,
   /** 每秒播几帧 */
-  fps: { idle: 3, walk: 7, eat: 5, sleep: 1.5, happy: 5, bath: 4, lick: 4, play: 7 } as Record<string, number>,
+  fps: { idle: 3, walk: 7, eat: 5, sleep: 1.5, happy: 5, bath: 4, lick: 4, play: 7, jump: 8, fish: 5, yawn: 3, stretch: 3.5, sit: 2, groom: 5, scratch: 8, beg: 5 } as Record<string, number>,
 };
 
 export type ActionName = (typeof SPRITE.rows)[number];

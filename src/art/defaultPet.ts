@@ -12,6 +12,14 @@ interface Pose {
   legs?: [number, number][]; tail?: number; eyes?: Eyes;
   curled?: boolean; tongue?: boolean; pawUp?: boolean;
   extra?: 'bubbles' | 'zzz' | 'heart'; phase?: number;
+  /** 张大嘴（打哈欠） */
+  yawn?: number;
+  /** 一只前爪伸出去：爪尖相对肩膀的位置 [往前, 往下] */
+  paw?: [number, number];
+  /** 端坐：身体竖起来，前腿并拢 */
+  sit?: boolean;
+  /** 后腿站起来：身体往上抬的角度（弧度）。前腿变成举着的爪子 */
+  rear?: number;
 }
 
 const C = SPRITE.cell;
@@ -27,7 +35,7 @@ function ell(ctx: CanvasRenderingContext2D, x: number, y: number, rx: number, ry
   ctx.fillStyle = fill; ctx.fill(); if (stroke) ctx.stroke();
 }
 
-function face(ctx: CanvasRenderingContext2D, hx: number, hy: number, pal: Pal, eyes: Eyes, tongue: boolean) {
+function face(ctx: CanvasRenderingContext2D, hx: number, hy: number, pal: Pal, eyes: Eyes, tongue: boolean, yawn = 0) {
   ctx.save();
   ctx.lineWidth = 3.5; ctx.strokeStyle = pal.line; ctx.lineCap = 'round';
   for (const ex of [hx - 12, hx + 22]) {
@@ -54,6 +62,11 @@ function face(ctx: CanvasRenderingContext2D, hx: number, hy: number, pal: Pal, e
   ctx.fillStyle = '#E88A8A';
   ctx.beginPath(); ctx.moveTo(hx + 1, hy + 9); ctx.lineTo(hx + 11, hy + 9); ctx.lineTo(hx + 6, hy + 15); ctx.closePath(); ctx.fill();
   ctx.lineWidth = 2.5;
+  if (yawn > 0) { // 打哈欠：张开的嘴，里面是舌头
+    ctx.beginPath(); ctx.ellipse(hx + 6, hy + 19 + yawn * 4, 5 + yawn * 5, 3 + yawn * 10, 0, 0, Math.PI * 2); ctx.fillStyle = '#7A3B40'; ctx.fill(); ctx.stroke();
+    ctx.beginPath(); ctx.ellipse(hx + 6, hy + 22 + yawn * 9, 3 + yawn * 3, 2 + yawn * 4, 0, 0, Math.PI * 2); ctx.fillStyle = '#F2848E'; ctx.fill();
+    ctx.restore(); return;
+  }
   ctx.beginPath(); ctx.arc(hx + 1, hy + 15, 5, 0, Math.PI); ctx.stroke();
   ctx.beginPath(); ctx.arc(hx + 11, hy + 15, 5, 0, Math.PI); ctx.stroke();
   if (tongue) { ctx.beginPath(); ctx.ellipse(hx + 6, hy + 25, 5, 8, 0, 0, Math.PI * 2); ctx.fillStyle = '#F2848E'; ctx.fill(); }
@@ -90,7 +103,7 @@ function fluff(ctx: CanvasRenderingContext2D, x: number, y: number, rx: number, 
   for (let i = 0; i <= n; i++) { const a = from + ((to - from) * i) / n; ell(ctx, x + Math.cos(a) * rx, y + Math.sin(a) * ry, 11, 11, pal.body); }
 }
 
-function head(ctx: CanvasRenderingContext2D, hx: number, hy: number, pal: Pal, eyes: Eyes, tongue = false) {
+function head(ctx: CanvasRenderingContext2D, hx: number, hy: number, pal: Pal, eyes: Eyes, tongue = false, yawn = 0) {
   // 耳朵
   for (const [a, b, c] of [[[-36, -22], [-40, -66], [-6, -40]], [[10, -42], [36, -68], [42, -24]]] as number[][][]) {
     ctx.beginPath(); ctx.moveTo(hx + a[0], hy + a[1]); ctx.lineTo(hx + b[0], hy + b[1]); ctx.lineTo(hx + c[0], hy + c[1]); ctx.closePath();
@@ -106,7 +119,7 @@ function head(ctx: CanvasRenderingContext2D, hx: number, hy: number, pal: Pal, e
     ctx.restore();
   }
   if (pal.pattern !== 'point') ell(ctx, hx + 6, hy + 16, 22, 15, pal.belly, false);
-  face(ctx, hx, hy, pal, eyes, tongue);
+  face(ctx, hx, hy, pal, eyes, tongue, yawn);
 }
 
 function extras(ctx: CanvasRenderingContext2D, kind: Pose['extra'], phase: number, hx: number, hy: number) {
@@ -151,6 +164,25 @@ function drawCat(ctx: CanvasRenderingContext2D, ox: number, oy: number, pal: Pal
     ctx.restore(); return;
   }
 
+  if (p.sit) {
+    // 端坐：尾巴绕在身边，后腿收成一团，身体竖着，前腿并拢撑在前面
+    const t = p.tail ?? 0;
+    ctx.beginPath(); ctx.moveTo(70, 222); ctx.quadraticCurveTo(24, 226, 34 + t * 8, 196 - t * 10);
+    ctx.lineWidth = pal.long ? 26 : 17; ctx.strokeStyle = pal.line; ctx.stroke(); ctx.lineWidth = pal.long ? 20 : 11; ctx.strokeStyle = ext(pal); ctx.stroke();
+    ctx.lineWidth = 3; ctx.strokeStyle = pal.line;
+    fluff(ctx, 108, 182, 50, 50, pal, 0.6 * Math.PI, 1.5 * Math.PI);
+    ell(ctx, 110, 180, 52, 52, pal.body);
+    markings(ctx, 110, 180, 52, 52, pal, 'body');
+    if (pal.pattern !== 'point' && pal.pattern !== 'tortie') ell(ctx, 132, 186, 24, 36, pal.belly, false);
+    if (stripes(pal)) { ctx.save(); ctx.strokeStyle = pal.shade; ctx.lineWidth = 5; for (const y of [150, 170, 190]) { ctx.beginPath(); ctx.moveTo(62, y); ctx.lineTo(78, y + 4); ctx.stroke(); } ctx.restore(); }
+    ell(ctx, 84, 216, 34, 17, pal.pattern === 'point' ? ext(pal) : pal.body); // 后腿
+    for (const x of [134, 154]) { rr(ctx, x - 9, 172, 18, 58, 8); ctx.fillStyle = pal.pattern === 'point' ? ext(pal) : pal.body; ctx.fill(); ctx.stroke(); }
+    const hx = 150 + (p.headX ?? 0), hy = 106 + (p.headY ?? 0);
+    head(ctx, hx, hy, pal, p.eyes ?? 'open', !!p.tongue, p.yawn ?? 0);
+    extras(ctx, p.extra, phase, hx, hy);
+    ctx.restore(); return;
+  }
+
   const jump = p.jump ?? 0;
   const by = 168 + (p.bodyY ?? 0) - jump;
   const ground = 230 - jump;
@@ -168,7 +200,15 @@ function drawCat(ctx: CanvasRenderingContext2D, ox: number, oy: number, pal: Pal
     rr(ctx, xs[i] - 9 + dx, top, 18, Math.max(12, bottom - top), 8);
     ctx.fillStyle = pal.pattern === 'point' ? ext(pal) : i % 2 === 0 ? pal.shade : pal.body; ctx.fill(); ctx.stroke();
   };
-  leg(0); leg(2);
+  const rear = p.rear ?? 0;
+  /** 伸出去的前腿（捞鱼、站起来举着的爪子）：从肩膀画一条粗线到爪尖 */
+  const arm = (sx: number, sy: number, dx: number, dy: number, far: boolean) => {
+    ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(sx + dx, sy + dy);
+    ctx.lineWidth = 21; ctx.strokeStyle = pal.line; ctx.stroke(); ctx.lineWidth = 15; ctx.strokeStyle = pal.pattern === 'point' ? ext(pal) : far ? pal.shade : pal.body; ctx.stroke();
+    ctx.lineWidth = 3; ctx.strokeStyle = pal.line; ell(ctx, sx + dx, sy + dy, 11, 10, pal.pattern === 'point' ? ext(pal) : pal.belly);
+  };
+  leg(0); if (!rear) leg(2);
+  if (rear) { ctx.save(); ctx.translate(96, by + 10); ctx.rotate(-rear); ctx.translate(-96, -(by + 10)); arm(150, by + 6, 40 + legs[2][0], 10 - legs[2][1], true); }
   fluff(ctx, 118, by + 4, 60, 34, pal, 0.1 * Math.PI, 0.9 * Math.PI); fluff(ctx, 118, by, 60, 36, pal, 1.05 * Math.PI, 1.6 * Math.PI);
   ell(ctx, 118, by, 62, 38, pal.body);
   markings(ctx, 118, by, 62, 38, pal, 'body');
@@ -178,9 +218,13 @@ function drawCat(ctx: CanvasRenderingContext2D, ox: number, oy: number, pal: Pal
     for (const x of [92, 112, 132]) { ctx.beginPath(); ctx.moveTo(x, by - 34); ctx.lineTo(x + 4, by - 18); ctx.stroke(); }
     ctx.restore();
   }
-  leg(1); if (!p.pawUp) leg(3);
-  const hx = 176 + (p.headX ?? 0), hy = 122 + (p.headY ?? 0) + (p.bodyY ?? 0) - jump;
-  head(ctx, hx, hy, pal, p.eyes ?? 'open', !!p.tongue);
+  if (rear) { arm(158, by + 12, 40 + legs[3][0], 12 - legs[3][1], false); ctx.restore(); }
+  leg(1); if (!p.pawUp && !p.paw && !rear) leg(3);
+  if (p.paw) arm(160, by + 12, p.paw[0], p.paw[1], false);
+  // 头：站起来时跟着脖子的位置抬高，但头本身不歪
+  const nx = 80, ny = -56, cs = Math.cos(rear), sn = Math.sin(rear);
+  const hx = (rear ? 96 + nx * cs + ny * sn : 176) + (p.headX ?? 0), hy = (rear ? by + 10 - nx * sn + ny * cs : 122 + (p.bodyY ?? 0) - jump) + (p.headY ?? 0);
+  head(ctx, hx, hy, pal, p.eyes ?? 'open', !!p.tongue, p.yawn ?? 0);
   if (p.pawUp) { ctx.lineWidth = 3; ctx.strokeStyle = pal.line; ell(ctx, hx + 16, hy + 44, 11, 15, ext(pal)); }
   extras(ctx, p.extra, phase, hx, hy);
   ctx.restore();
@@ -202,6 +246,32 @@ const POSES: Record<string, Pose[]> = {
   bath: [0, 1, 2, 3].map((i) => ({ eyes: 'closed', bodyY: i % 2, extra: 'bubbles', phase: i } as Pose)),
   lick: [0, 1, 2, 3].map((i) => ({ headX: -4, headY: 16 + (i % 2) * 4, eyes: 'closed', tongue: i % 2 === 0, pawUp: true, tail: 0.2 } as Pose)),
   play: [8, 24, 32, 14].map((j, i) => ({ jump: j, legs: [[-6, 0], [-6, 0], [12, 16], [14, 20]], tail: 1, eyes: i === 2 ? 'happy' : 'open' } as Pose)),
+  // 跳上跳下家具：蹲下蓄力 → 蹬出去 → 在空中伸展 → 落地缓冲。播一遍正好是整个跳跃
+  jump: [
+    { bodyY: 12, legs: [[4, 0], [4, 0], [-4, 0], [-4, 0]], headY: 6, tail: 0 },
+    { jump: 26, legs: [[-12, 0], [-14, 0], [14, 22], [18, 26]], headY: -6, tail: 0.6 },
+    { jump: 40, legs: [[-16, 14], [-18, 16], [18, 24], [22, 28]], headY: -4, tail: 1 },
+    { jump: 12, bodyY: 6, legs: [[-4, 0], [-4, 0], [10, 6], [12, 8]], headY: 4, tail: 0.4 },
+  ],
+  // 伸爪子捞：蹲低盯着看 → 抬爪 → 拍下去 → 收回来（捞鱼、扑蝴蝶都用它）
+  fish: [
+    { bodyY: 8, headX: 6, headY: 14, paw: [14, 34], tail: 0.2 },
+    { bodyY: 6, headX: 4, headY: 8, paw: [34, -8], tail: 0.8 },
+    { bodyY: 10, headX: 10, headY: 18, paw: [48, 46], tail: 1 },
+    { bodyY: 8, headX: 8, headY: 16, paw: [30, 40], tail: 0.5, eyes: 'happy' },
+  ],
+  // 打哈欠：端坐着，嘴越张越大再合上（睡前）
+  yawn: [0.15, 0.6, 1, 0.5].map((y, i) => ({ sit: true, yawn: y, eyes: 'closed', headY: [0, -4, -8, -3][i], tail: 0.2 } as Pose)),
+  // 伸懒腰：拱起背，头压低，尾巴翘起来（睡醒）
+  stretch: [-4, -12, -17, -8].map((b, i) => ({ bodyY: b, headX: 6, headY: [14, 26, 32, 18][i], legs: [[-6, 0], [-6, 0], [6, 0], [8, 0]], tail: 1, eyes: 'closed' } as Pose)),
+  // 端坐着看：窗台上看外面、看雨、看星星，也用来「背对着你闹脾气」。尾巴尖轻轻甩，偶尔眨眼
+  sit: [0, 0.5, 1, 0.5].map((t, i) => ({ sit: true, tail: t, headY: i === 2 ? -3 : 0, eyes: i === 3 ? 'closed' : 'open' } as Pose)),
+  // 给同伴舔毛、蹭头：身体前倾，头伸出去，舌头一下一下
+  groom: [0, 1, 2, 3].map((i) => ({ headX: 20 + (i % 2) * 8, headY: 8 + (i % 2) * 3, eyes: 'closed', tongue: i % 2 === 0, tail: 0.6, legs: [[0, 0], [0, 0], [6, 0], [8, 0]] } as Pose)),
+  // 抓猫抓板：后腿站着，两只前爪轮流往下抓
+  scratch: [0, 1, 2, 3].map((i) => ({ rear: 0.86, legs: [[0, 0], [0, 0], [i % 2 ? 4 : -4, i % 2 ? 22 : -4], [i % 2 ? -4 : 4, i % 2 ? -4 : 22]], tail: 0.8, eyes: 'open' } as Pose)),
+  // 站起来讨要、迎接主人：后腿站着，两只前爪并拢一上一下地作揖
+  beg: [0, 1, 2, 1].map((b, i) => ({ rear: 0.74 + b * 0.05, legs: [[0, 0], [0, 0], [0, b * 8], [0, b * 8]], tail: 1, eyes: 'happy', headY: -b * 2, extra: i === 2 ? 'heart' : undefined, phase: 1 } as Pose)),
 };
 
 /** color 可以是内置毛色的名字、一套颜色，或者 look:… 这样的自定义编号 */

@@ -114,7 +114,7 @@ export function repair(raw: Raw, now = Date.now()): GameState {
     room: typeof raw.room === 'string' && raw.room !== DEFAULT_ROOM && ROOM_THEMES.some((r) => r.id === raw.room) && arr(raw.roomsOwned).includes(raw.room) ? raw.room : DEFAULT_ROOM,
     cattree: [0, 1, 2].map((i) => { const id = arr(raw.cattree)[i]; return typeof id === 'string' && pets.some((p) => p.id === id && !p.dead) ? id : null; }),
     pendingReturns: arr(raw.pendingReturns).filter((id) => postcards.some((c) => c.id === id)),
-    dev: { enabled: !!dev.enabled, background: !!dev.background, time: ['day', 'dusk', 'night'].includes(dev.time) ? dev.time : 'auto', season: ['spring', 'summer', 'autumn', 'winter'].includes(dev.season) ? dev.season : 'auto', speed: num(dev.speed, 1, 1, 100000), growth: num(dev.growth, 1, 0, 100000), decay: { food: num(decay.food, 1, 0, 1000), mood: num(decay.mood, 1, 0, 1000), clean: num(decay.clean, 1, 0, 1000) } },
+    dev: { enabled: !!dev.enabled, background: !!dev.background, time: ['day', 'dusk', 'night'].includes(dev.time) ? dev.time : 'auto', season: ['spring', 'summer', 'autumn', 'winter'].includes(dev.season) ? dev.season : 'auto', weather: ['clear', 'rain'].includes(dev.weather) ? dev.weather : 'auto', speed: num(dev.speed, 1, 1, 100000), growth: num(dev.growth, 1, 0, 100000), decay: { food: num(decay.food, 1, 0, 1000), mood: num(decay.mood, 1, 0, 1000), clean: num(decay.clean, 1, 0, 1000) } },
     settings: { notify: settings.notify !== false, showSeason: settings.showSeason === true, seasonMode: settings.seasonMode === 'real' ? 'real' : 'cycle' },
   };
 }
