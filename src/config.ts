@@ -18,7 +18,7 @@ export const PALETTE = {
 export const ZONES = [
   { id: 'door', name: '门口' }, { id: 'kitchen', name: '厨房' }, { id: 'living', name: '客厅' },
   { id: 'bath', name: '浴室' }, { id: 'bedroom', name: '卧室' }, { id: 'shelf', name: '收藏柜' },
-  { id: 'balcony', name: '阳台' }, { id: 'garden', name: '院子' },
+  { id: 'balcony', name: '阳台' }, { id: 'garden', name: '院子' }, { id: 'roof', name: '屋顶' },
 ] as const;
 export type ZoneId = (typeof ZONES)[number]['id'];
 
@@ -203,6 +203,10 @@ export const CONFIG = {
     fish: [10_000, 20_000] as [number, number],
     /** 跳到沙发、床、窗台、猫爬架上待多久 */
     perch: [9_000, 18_000] as [number, number],
+    /** 扑蝴蝶 */
+    butterfly: [6_000, 10_000] as [number, number],
+    /** 夜里到屋顶看星星 */
+    stargaze: [14_000, 24_000] as [number, number],
   },
 
   // ---------- 互动 ----------
@@ -214,6 +218,8 @@ export const CONFIG = {
     playMoodWand: 24,
     /** 两只宠物自己一起玩时，各自加多少心情 */
     companionPlayMood: 3,
+    /** 吃一口猫草加多少心情；同一只隔多久才能再加 */
+    grassMood: 4, grassCooldown: HOUR,
     /** 同一动作效果递减：每连续做一次，效果乘以这个数 */
     repeatFactor: 0.5,
     /** 距离上次同一动作超过这么久，效果恢复正常 */
@@ -339,7 +345,7 @@ export const CONFIG = {
 
   // ---------- 房间 ----------
   room: {
-    /** 每个区域的宽度。一共 8 个区域 = 3456；其中前 5 个（门口到卧室）= 2160，配 720 的高度正好是 3:1 的背景长图 */
+    /** 每个区域的宽度。一共 9 个区域 = 3888；其中前 5 个（门口到卧室）= 2160，配 720 的高度正好是 3:1 的背景长图 */
     zoneWidth: 432,
     height: 720,
     floorY: 560,
@@ -395,6 +401,12 @@ export const FRY = { id: 'fry', name: '鱼苗', icon: '🐟', price: 6 };
 /** 只买一次的东西 */
 export const GEAR: GearDef[] = [
   { id: 'feeder', name: '自动喂食机', icon: '⚙️', price: 180, desc: '放在厨房，饱食度不会低于 35，不会再挨饿' },
+  { id: 'box', name: '纸箱', icon: '📦', price: 40, desc: '放在门口。猫见了纸箱就想钻进去' },
+  { id: 'basket', name: '洗衣篮', icon: '🧺', price: 60, desc: '放在浴室。软软的，适合窝在里面' },
+  { id: 'catgrass', name: '猫草盆', icon: '🌿', price: 90, desc: '放在院子里。宠物路过会啃两口，心情 +4' },
+  { id: 'tunnel', name: '猫隧道', icon: '🕳️', price: 120, desc: '放在阳台。钻进去，从另一头探出脑袋' },
+  { id: 'autoball', name: '自动逗猫球', icon: '🔮', price: 150, desc: '放在收藏柜那一间，自己会滚，宠物会追着扑' },
+  { id: 'heater', name: '小暖炉', icon: '🔥', price: 180, desc: '放在卧室。天冷的时候宠物爱围着它睡' },
   { id: 'wand', name: '逗猫棒', icon: '🪶', price: 60, desc: '陪它玩的时候用：玩耍从 +10 心情变成 +24' },
   { id: 'scratcher', name: '猫抓板', icon: '🪵', price: 120, desc: '放在客厅，宠物会自己去抓，心情不会低于 15' },
   { id: 'ball', name: '玩具球', icon: '⚽', price: 40, desc: '宠物会自己追着玩，两只还会一起玩；心情不会低于 15' },
@@ -630,6 +642,7 @@ export const SKIN_SIZE: Record<string, 'S' | 'M' | 'L'> = {
   door: 'L', tub: 'L', bed: 'L', sofa: 'L', cabinet: 'L', pond: 'L', counter: 'L', cattree: 'L',
   album: 'M', scratcher: 'M', feeder: 'M', pendantDoor: 'M', pendantShelf: 'M', nightstand: 'M',
   bowl: 'S', ball: 'S', bedlamp: 'S',
+  box: 'S', catgrass: 'S', autoball: 'S', basket: 'M', tunnel: 'M', heater: 'L',
 };
 /** 一件东西的皮肤算哪一档；没有皮肤的东西返回 null。装饰：70 以内小件，180 以内（和里程碑奖励）中件，再贵的大件 */
 export function skinSize(kind: string): 'S' | 'M' | 'L' | null {

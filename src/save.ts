@@ -63,6 +63,7 @@ export function repair(raw: Raw, now = Date.now()): GameState {
     lostSince: !p.dead && typeof p.lostSince === 'number' && isFinite(p.lostSince) ? p.lostSince : null,
     searchUntil: !p.dead && typeof p.lostSince === 'number' && typeof p.searchUntil === 'number' && isFinite(p.searchUntil) ? p.searchUntil : null,
     tripId: typeof p.tripId === 'string' ? p.tripId : null,
+    lastNibble: typeof p.lastNibble === 'number' ? p.lastNibble : null,
     outing: p.outing && typeof p.outing.neighborId === 'string' && NEIGHBORS[p.outing.neighborId] && !p.dead ? { neighborId: p.outing.neighborId, until: num(p.outing.until, 0) } : null,
     repeats: obj(p.repeats), hungryNotified: !!p.hungryNotified, adoptedAt: num(p.adoptedAt, clock),
   }));

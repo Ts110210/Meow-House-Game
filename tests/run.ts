@@ -1,5 +1,5 @@
 // 规则和存档的自动检查。运行：npm test
-import { NEIGHBORS, SEASON_EVENTS, SEASON_FINDS, CONFIG, DAY, DECOR, DESTS, FUR_COLORS, GEAR, HOUR, MIN, ROOM_THEMES, SKIN_PRICE, SKIN_SIZE, SKINNABLE, SKINS, SOUVENIRS, decodeLook, encodeLook, skinSize } from '../src/config';
+import { ZONES, NEIGHBORS, SEASON_EVENTS, SEASON_FINDS, CONFIG, DAY, DECOR, DESTS, FUR_COLORS, GEAR, HOUR, MIN, ROOM_THEMES, SKIN_PRICE, SKIN_SIZE, SKINNABLE, SKINS, SOUVENIRS, decodeLook, encodeLook, skinSize } from '../src/config';
 import { ASSETS } from '../src/assets.config';
 import * as sim from '../src/sim';
 import { diaryPlaceCount, writeDiary } from '../src/diary';
@@ -324,6 +324,17 @@ console.log('邻居猫和常客');
   for (let i = 0; i < 4; i++) give();
   check('好感到 7：送商店买不到的装饰；每份回礼只送一次', v.decor.some((d) => d.kind === 'bell') && v.decor.filter((d) => d.kind === 'bell').length === 1 && (give(), v.decor.filter((d) => d.kind === 'bell').length === 1) && sim.favorStatus(v, 'tabby').next === null && sim.favorStatus(v, 'courier').next === 3);
   check('回礼和季节奖励的装饰都有名字、图片路径，商店里不卖', ['bell', 'lantern', 'parcel', ...Object.values(SEASON_EVENTS).map((e) => e.reward)].every((k) => DECOR[k]?.special && !!ASSETS.decor[k]) && Object.keys(SEASON_FINDS).length === 12);
+}
+
+console.log('新场景和新家具');
+{
+  check('一共 9 个区域，最后一个是屋顶，有自己的背景图路径', ZONES.length === 9 && ZONES[8].id === 'roof' && !!ASSETS.room.zones.roof);
+  check('窗台、扑蝴蝶、屋顶看星星的位置都落在存在的区域里', Object.values(ASSETS.perches).every((p) => ZONES.some((z) => z.id === p.zone)) && ['kitchenWindow', 'bedroomWindow', 'butterfly', 'roofA', 'roofB'].every((k) => !!ASSETS.perches[k]));
+  check('能钻进去的家具都写了遮挡线', ['tub', 'box', 'basket', 'tunnel'].every((k) => ASSETS.objects[k].frontFrom != null));
+  const s = blank(); s.fish = 1000; const p = s.pets[0]; p.mood = 50;
+  check('没有猫草盆啃不了', !sim.nibbleGrass(s, p.id));
+  check('六件新家具都买得到', ['box', 'basket', 'catgrass', 'tunnel', 'autoball', 'heater'].every((k) => sim.buy(s, k).ok && !!s.owned[k]));
+  check('啃猫草加一点心情，要隔一阵才能再加', sim.nibbleGrass(s, p.id) && p.mood === 50 + CONFIG.actions.grassMood && !sim.nibbleGrass(s, p.id) && (sim.advance(s, CONFIG.actions.grassCooldown + MIN), sim.nibbleGrass(s, p.id)));
 }
 
 console.log('猫爬架');

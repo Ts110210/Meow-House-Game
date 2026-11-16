@@ -468,6 +468,17 @@ function outingBack(s: GameState, p: Pet, events: GameEvent[]) {
   events.push({ type: 'outingBack', petId: p.id, neighborId: o.neighborId, text });
 }
 
+// ---------- 猫草 ----------
+
+/** 宠物啃了两口猫草：加一点心情。同一只要隔一阵才会再加（画面里它想去啃的时候调用） */
+export function nibbleGrass(s: GameState, petId: string): boolean {
+  const p = s.pets.find((x) => x.id === petId);
+  if (!s.owned.catgrass || !p || p.dead || p.tripId || p.outing) return false;
+  if (p.lastNibble != null && s.clock - p.lastNibble < CONFIG.actions.grassCooldown) return false;
+  p.lastNibble = s.clock; p.mood = clamp(p.mood + CONFIG.actions.grassMood);
+  return true;
+}
+
 // ---------- 猫爬架 ----------
 
 export const CATTREE_LEVELS = ['顶层', '中层', '底层'];

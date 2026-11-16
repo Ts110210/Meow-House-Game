@@ -24,6 +24,8 @@ export interface Pet {
   diedAt?: number;
   /** 离家出走的时刻；null = 在家或正常出门 */
   lostSince: number | null;
+  /** 上一次啃猫草的时刻 */
+  lastNibble?: number | null;
   /** 去邻居家回访了：去的是谁、什么时候回来；null = 没去 */
   outing?: { neighborId: string; until: number } | null;
   /** 狸花猫正在找它：什么时候有结果；null = 没在找 */

@@ -201,6 +201,26 @@ const ZONE_ART: Record<ZoneId, (s: Sketch) => void> = {
     if (ENV.season === 'winter') { s.ellipse(216, 420, 190, 6, { fill: '#FFFFFF', stroke: false, hatch: 0 }); }
   },
   // 院子：完全在室外。天空、远山、一棵大树、篱笆、草地；鱼塘是单独的物品。
+  // 屋顶：一大片天，远处是别人家的屋顶，脚下是瓦片。夜里上来看星星
+  roof(s) {
+    s.rect(0, 0, W, 560, { fill: skyColor(), stroke: false, hatch: 0.5 });
+    skyThings(s, 0, 90, W);
+    if (ENV.time === 'night' && !rainy()) stars(s, 10, 250, W - 20, 200, 22);
+    // 远处的屋顶和楼，夜里窗户亮着灯
+    const far = ENV.time === 'night' ? '#3A4670' : lighten(P.mist, 0.25);
+    for (const [x, w, h] of [[0, 70, 70], [64, 90, 120], [150, 60, 84], [206, 110, 150], [312, 64, 96], [372, 60, 130]]) {
+      s.rect(x, 560 - h, w, h, { fill: far, width: 1 });
+      for (let wy = 560 - h + 14; wy < 548; wy += 24) for (let wx = x + 10; wx < x + w - 12; wx += 20) if ((wx * 7 + wy * 3) % 5 < 2) s.rect(wx, wy, 9, 11, { fill: ENV.time === 'day' ? lighten(P.mist, 0.55) : '#F4D98A', stroke: false, hatch: 0 });
+    }
+    // 烟囱和天线
+    s.rect(322, 432, 62, 128, { fill: P.coral, r: 2 }); s.rect(314, 420, 78, 16, { fill: P.woodDark, r: 3 });
+    for (let y = 452; y < 556; y += 20) s.line(324, y, 382, y, P.ink, 1, 0.4);
+    s.line(60, 560, 60, 452, P.ink, 2); s.line(38, 470, 82, 470, P.ink, 1.6); s.line(46, 486, 74, 486, P.ink, 1.4);
+    // 瓦片
+    const tile = ENV.season === 'winter' ? '#E9EEF1' : ROOF_TILE;
+    s.rect(0, FY, W, H - FY, { fill: tile, stroke: false, hatch: 0.6 }); s.rect(0, FY - 8, W, 12, { fill: darken(tile, 0.12), r: 4 });
+    for (let row = 0; row < 6; row++) for (let x = (row % 2) * 24 - 24; x < W; x += 48) s.curve([[x, FY + 22 + row * 26], [x + 24, FY + 34 + row * 26], [x + 48, FY + 22 + row * 26]], darken(tile, 0.22), 1.3, 0.7);
+  },
   garden(s) {
     const c = sea();
     s.rect(0, 0, W, 560, { fill: skyColor(), stroke: false, hatch: 0.5 });
@@ -224,7 +244,8 @@ const ZONE_ART: Record<ZoneId, (s: Sketch) => void> = {
 };
 
 /** 每个区域的地面颜色（院子是草地，其他是木地板）。画面底部往下延伸时用。 */
-export const groundColor = (id: ZoneId, env: Env, room?: string) => (id === 'garden' ? SEASON[env.season].ground : roomPalette(room).floor);
+const ROOF_TILE = '#B9694C';
+export const groundColor = (id: ZoneId, env: Env, room?: string) => (id === 'garden' ? SEASON[env.season].ground : id === 'roof' ? (env.season === 'winter' ? '#E9EEF1' : ROOF_TILE) : roomPalette(room).floor);
 
 /** room = 房间风格（不写 = 默认的那一套） */
 export function drawZone(id: ZoneId, index: number, env: Env = ENV, room?: string): HTMLCanvasElement {
@@ -282,6 +303,38 @@ const OBJECT_ART: Record<string, { w: number; h: number; draw: (s: Sketch) => vo
     s.rect(2, 47, 100, 14, { fill: P.mustard, r: 6 });    // 顶层
     s.rect(2, 36, 8, 14, { fill: P.mustard, r: 3 }); s.rect(94, 36, 8, 14, { fill: P.mustard, r: 3 });
     s.line(170, 168, 174, 206, P.ink, 1.2, 0.7); s.ellipse(175, 214, 8, 8, { fill: P.coral }); // 挂着的小球
+  } },
+  // 纸箱：猫钻进去只露出脑袋。前面一层从图片高度 42% 处开始（箱口的下沿）
+  box: { w: 120, h: 92, draw(s) {
+    s.poly([[8, 40], [0, 10], [44, 22], [58, 40]], { fill: lighten(P.wood, 0.42) }); s.poly([[112, 40], [120, 8], [78, 20], [62, 40]], { fill: lighten(P.wood, 0.42) });
+    s.rect(8, 38, 104, 52, { fill: lighten(P.wood, 0.28), r: 3 }); s.line(60, 40, 60, 88, P.ink, 1.2, 0.5); s.rect(70, 56, 30, 18, { fill: P.white, r: 2, width: 1 });
+  } },
+  // 洗衣篮：藤编的，里面能窝一只猫。前面一层从 30% 处开始
+  basket: { w: 110, h: 96, draw(s) {
+    s.ellipse(55, 30, 50, 14, { fill: darken(P.wood, 0.1) });
+    s.poly([[6, 30], [104, 30], [94, 92], [16, 92]], { fill: lighten(P.wood, 0.2) });
+    for (let y = 44; y < 90; y += 14) s.line(10 + (y - 30) * 0.16, y, 100 - (y - 30) * 0.16, y, P.woodDark, 1.4, 0.6);
+    for (let x = 24; x < 96; x += 16) s.line(x, 34, x + (x - 55) * -0.1, 90, P.woodDark, 1.1, 0.4);
+    s.rect(30, 20, 50, 12, { fill: P.mist, r: 6 });
+  } },
+  // 小暖炉：中间的小窗透着橘色的火光（发光点）
+  heater: { w: 84, h: 112, draw(s) {
+    s.rect(34, 0, 16, 26, { fill: P.woodDark, r: 3 }); s.rect(8, 22, 68, 78, { fill: darken(P.mist, 0.25), r: 10 });
+    s.rect(22, 44, 40, 36, { fill: '#F2A04A', r: 6 }); s.poly([[30, 78], [36, 56], [42, 70], [48, 52], [54, 78]], { fill: '#F6D06A', width: 1 });
+    s.rect(14, 98, 12, 14, { fill: P.woodDark, r: 2 }); s.rect(58, 98, 12, 14, { fill: P.woodDark, r: 2 });
+  } },
+  // 自动逗猫球：自己会滚，带一根小羽毛
+  autoball: { w: 44, h: 34, draw(s) { s.ellipse(17, 18, 15, 15, { fill: P.mist }); s.curve([[4, 14], [17, 20], [30, 14]], P.white, 3); s.curve([[30, 10], [40, 2], [42, 12]], P.coral, 3); } },
+  // 猫隧道：布做的筒，两头是洞口。整件都画在宠物前面，猫从右边的洞口探出头
+  tunnel: { w: 220, h: 80, draw(s) {
+    s.rect(18, 8, 184, 70, { fill: P.sage, r: 30 });
+    for (const x of [62, 110, 158]) s.curve([[x, 10], [x + 8, 42], [x, 76]], darken(P.sage, 0.2), 2.2, 0.8);
+    s.ellipse(24, 43, 20, 34, { fill: darken(P.sage, 0.45) }); s.ellipse(196, 43, 20, 34, { fill: lighten(P.sage, 0.1) }); s.ellipse(196, 43, 14, 27, { fill: darken(P.sage, 0.5), width: 1 });
+  } },
+  // 猫草盆
+  catgrass: { w: 64, h: 64, draw(s) {
+    for (const [x, tip, h] of [[16, -6, 40], [24, 2, 48], [32, 0, 52], [40, 4, 46], [48, 8, 38]]) s.curve([[x, 40], [x + tip * 0.5, 40 - h * 0.5], [x + tip, 40 - h]], '#6FA05E', 3.4);
+    s.poly([[8, 36], [56, 36], [50, 62], [14, 62]], { fill: P.coral }); s.rect(4, 30, 56, 9, { fill: lighten(P.coral, 0.2), r: 3 });
   } },
   nightstand: { w: 66, h: 70, draw(s) {
     s.rect(2, 2, 62, 66, { fill: P.wood, r: 4 }); s.line(6, 34, 60, 34, P.ink, 1.2, 0.6); s.ellipse(33, 20, 4, 4, { fill: P.mustard, width: 1 });

@@ -18,6 +18,8 @@ export interface ObjectDef {
   y: number;
   /** 显示出来多高；宽度按图片比例自动算 */
   height: number;
+  /** 能钻进去的东西（浴缸、纸箱、洗衣篮、隧道）：从顶部往下这个比例开始是「前面一层」，会盖在宠物身上。0 = 整件都在宠物前面 */
+  // （frontFrom 写在下面）
   /** 点击时显示的名字 */
   label: string;
   /** 背景图里通常已经画了它：换上背景图而它自己没有图片时，就只保留点击区域，不再画占位图 */
@@ -54,7 +56,7 @@ export const ASSETS = {
     /** 方式二：每个区域一张图，比例 3:5（432×720 或它的倍数）。 */
     zones: {
       door: 'room/door.png', kitchen: 'room/kitchen.png', living: 'room/living.png', bath: 'room/bath.png',
-      bedroom: 'room/bedroom.png', shelf: 'room/shelf.png', balcony: 'room/balcony.png', garden: 'room/garden.png',
+      bedroom: 'room/bedroom.png', shelf: 'room/shelf.png', balcony: 'room/balcony.png', garden: 'room/garden.png', roof: 'room/roof.png',
     } as Record<ZoneId, string>,
   },
 
@@ -77,6 +79,12 @@ export const ASSETS = {
     album: { src: 'objects/album.png', zone: 'shelf', x: 318, y: 384, height: 170, label: '相册', partOfBackground: true },
     pendantShelf: { src: 'objects/pendantShelf.png', zone: 'shelf', x: 340, y: 194, height: 194, label: '收藏柜吊灯', needsOwned: 'pendantShelf', light: [0.5, 0.88] },
     pond: { src: 'objects/pond.png', zone: 'garden', x: 262, y: 700, height: 84, label: '鱼塘', partOfBackground: true },
+    box: { src: 'objects/box.png', zone: 'door', x: 340, y: 654, height: 92, label: '纸箱', needsOwned: 'box', frontFrom: 0.42 },
+    basket: { src: 'objects/basket.png', zone: 'bath', x: 370, y: 652, height: 96, label: '洗衣篮', needsOwned: 'basket', frontFrom: 0.3 },
+    heater: { src: 'objects/heater.png', zone: 'bedroom', x: 100, y: 656, height: 112, label: '小暖炉', needsOwned: 'heater', light: [0.5, 0.6] },
+    autoball: { src: 'objects/autoball.png', zone: 'shelf', x: 250, y: 680, height: 34, label: '自动逗猫球', needsOwned: 'autoball' },
+    tunnel: { src: 'objects/tunnel.png', zone: 'balcony', x: 170, y: 672, height: 80, label: '猫隧道', needsOwned: 'tunnel', frontFrom: 0 },
+    catgrass: { src: 'objects/catgrass.png', zone: 'garden', x: 50, y: 608, height: 64, label: '猫草盆', needsOwned: 'catgrass' },
   } as Record<string, ObjectDef>,
 
   // ---------- 不是家具的落脚点：窗台。猫会跳上去看外面 ----------
@@ -84,6 +92,9 @@ export const ASSETS = {
   perches: {
     kitchenWindow: { zone: 'kitchen', x: 121, y: 306, label: '厨房窗台' },
     bedroomWindow: { zone: 'bedroom', x: 320, y: 312, label: '卧室窗台' },
+    // 院子里扑蝴蝶的地方、屋顶上看星星的两个位置（这三个是站在地上，不用跳）
+    butterfly: { zone: 'garden', x: 190, y: 600, label: '扑蝴蝶' },
+    roofA: { zone: 'roof', x: 140, y: 626, label: '屋顶看星星' }, roofB: { zone: 'roof', x: 262, y: 660, label: '屋顶看星星' },
   } as Record<string, { zone: ZoneId; x: number; y: number; label: string }>,
 
   // ---------- 屋里的窗户：下雨时在这几块玻璃上画雨丝 ----------
