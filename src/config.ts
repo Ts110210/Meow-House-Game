@@ -514,3 +514,47 @@ export const DECOR: Record<string, DecorDef> = {
 };
 /** 兼容旧名字：里程碑奖励的特殊装饰 */
 export const SPECIAL_DECOR: Record<string, { name: string; icon: string }> = Object.fromEntries(Object.entries(DECOR).filter(([, d]) => d.special).map(([k, d]) => [k, { name: d.name, icon: d.icon }]));
+
+// ============================================================
+// 家具皮肤和房间风格
+// ============================================================
+
+/** 皮肤：5 套贯穿全屋的主题，每件家具和装饰都有这 5 款（造型一样，换的是配色和材质）。第一套是默认款，不用买。
+ *  palette = 代码画占位图时，把默认调色板里的这些颜色换掉。正式图片的文件名见 docs/素材模板.md。 */
+export interface SkinDef { id: string; name: string; palette: Partial<typeof PALETTE> }
+export const SKINS: SkinDef[] = [
+  { id: 'wood', name: '原木', palette: {} },
+  { id: 'cream', name: '奶油', palette: { sage: '#EADFC6', mist: '#F1E4CE', coral: '#E8BCA2', mustard: '#EBD7A2', wood: '#DDC7A5', woodDark: '#B89C79', white: '#FFF9EA' } },
+  { id: 'mint', name: '薄荷', palette: { sage: '#9FD3BE', mist: '#BFE3DB', coral: '#F2B8A2', mustard: '#CFE0A3', wood: '#C3CFA6', woodDark: '#7FA08C', white: '#F3FBF6' } },
+  { id: 'berry', name: '莓果', palette: { sage: '#D99BB0', mist: '#E7BFD0', coral: '#C9577A', mustard: '#F0B7C4', wood: '#C58FA0', woodDark: '#8E5468', white: '#FCEFF3' } },
+  { id: 'navy', name: '夜蓝', palette: { sage: '#5F7FA8', mist: '#8FA9C9', coral: '#E0A458', mustard: '#D9B45A', wood: '#7386A8', woodDark: '#3F4F74', white: '#E7EDF6' } },
+];
+export const DEFAULT_SKIN = SKINS[0].id;
+/** 每款皮肤的价格：小件、中件、大件 */
+export const SKIN_PRICE = { S: 40, M: 70, L: 120 };
+/** 哪些东西有皮肤，各算小件、中件还是大件。固定家具和「家里的东西」写在这里；「房间装饰」按它自己的价格自动分档（见 skinSize） */
+export const SKIN_SIZE: Record<string, 'S' | 'M' | 'L'> = {
+  door: 'L', tub: 'L', bed: 'L', sofa: 'L', cabinet: 'L', pond: 'L', counter: 'L', cattree: 'L',
+  album: 'M', scratcher: 'M', feeder: 'M', pendantDoor: 'M', pendantShelf: 'M', nightstand: 'M',
+  bowl: 'S', ball: 'S', bedlamp: 'S',
+};
+/** 一件东西的皮肤算哪一档；没有皮肤的东西返回 null。装饰：70 以内小件，180 以内（和里程碑奖励）中件，再贵的大件 */
+export function skinSize(kind: string): 'S' | 'M' | 'L' | null {
+  if (SKIN_SIZE[kind]) return SKIN_SIZE[kind];
+  const d = DECOR[kind]; if (!d) return null;
+  return d.special ? 'M' : d.price <= 70 ? 'S' : d.price <= 180 ? 'M' : 'L';
+}
+/** 所有有皮肤的东西 */
+export const SKINNABLE = [...Object.keys(SKIN_SIZE), ...Object.keys(DECOR)];
+
+/** 房间风格：整套房间背景（墙、地板、墙上的画、地毯、盆栽这些画在背景里的东西一起换）。第一套是默认的，不用买。
+ *  palette = 代码画占位背景时换掉的颜色。正式图片：room/strip-<id>.png 和 room/<区域>-<id>.png */
+export interface RoomThemeDef { id: string; name: string; icon: string; price: number; desc: string; palette: Partial<typeof PALETTE> }
+export const ROOM_THEMES: RoomThemeDef[] = [
+  { id: 'classic', name: '暖木小屋', icon: '🏠', price: 0, desc: '奶白的墙，暖木色的地板', palette: {} },
+  { id: 'seaside', name: '海盐小屋', icon: '🌊', price: 400, desc: '浅蓝灰的墙，浅色木地板，蓝白的小物',
+    palette: { wall: '#E6EFF1', floor: '#CDBB9E', floorLine: '#A9977B', ceiling: '#D6E2E6', post: '#CBD9DE', sage: '#8FB7C0', mist: '#7FA3C4', coral: '#E7A08A', mustard: '#E3C877', wood: '#C8AE86', woodDark: '#8C7A62' } },
+  { id: 'sakura', name: '樱粉小屋', icon: '🌸', price: 400, desc: '淡粉的墙，红棕色的地板，粉紫的小物',
+    palette: { wall: '#F8E7E3', floor: '#C58E78', floorLine: '#A56E5A', ceiling: '#EED7D1', post: '#E9CEC8', sage: '#C7B0C9', mist: '#E3B4BE', coral: '#D97B8A', mustard: '#E8C48A', wood: '#B98A72', woodDark: '#8A5E50' } },
+];
+export const DEFAULT_ROOM = ROOM_THEMES[0].id;

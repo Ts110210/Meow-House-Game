@@ -1,6 +1,6 @@
 // 游戏规则。这个文件不碰画面，只改存档数据，方便单独测试。
 import { writeDiary } from './diary';
-import { CONFIG, DAY, SEASON_IDS, DESTS, FOODS, FRY, FUR_COLORS, GEAR, GOODS, HOUR, MIN, SOUVENIRS, TOOLS, TREAT, type DayTime, type Season, type StatKey, decodeLook, TRAIT_IDS, type Trait, VISITORS, type VisitorWho, SPECIAL_DECOR, DECOR, ZONES } from './config';
+import { CONFIG, DAY, SEASON_IDS, SKINS, DEFAULT_SKIN, SKIN_PRICE, skinSize, ROOM_THEMES, DEFAULT_ROOM, DESTS, FOODS, FRY, FUR_COLORS, GEAR, GOODS, HOUR, MIN, SOUVENIRS, TOOLS, TREAT, type DayTime, type Season, type StatKey, decodeLook, TRAIT_IDS, type Trait, VISITORS, type VisitorWho, SPECIAL_DECOR, DECOR, ZONES } from './config';
 import type { GameEvent, GameState, Pet, Postcard, RepeatKey, Result, Trip, Visitor } from './types';
 
 const T = CONFIG.traits;
@@ -20,7 +20,7 @@ export function newState(now: number): GameState {
   const s: GameState = {
     v: 6, createdAt: now, seasonStart: now, settings: { notify: true, showSeason: false, seasonMode: 'cycle' }, clock: now, lastReal: now, fish: CONFIG.startFish, slots: 1,
     pets: [], trips: [], postcards: [], souvenirs: {}, inv: { ...CONFIG.startItems }, owned: {},
-    pond: Array(CONFIG.pond.slots).fill(null), lastCheckin: '', pendingReturns: [], friends: {}, variants: {}, milestones: [], decor: [], visitors: [], visitorQuota: 0, visitorDay: '', lastVisitorAt: 0, errand: null, display: { souvenirs: [], postcards: [] }, cattree: [null, null, null],
+    pond: Array(CONFIG.pond.slots).fill(null), lastCheckin: '', pendingReturns: [], friends: {}, variants: {}, milestones: [], decor: [], visitors: [], visitorQuota: 0, visitorDay: '', lastVisitorAt: 0, errand: null, display: { souvenirs: [], postcards: [] }, cattree: [null, null, null], skins: {}, skinsOwned: {}, room: DEFAULT_ROOM, roomsOwned: [],
     dev: { enabled: false, background: false, time: 'auto', season: 'auto', speed: 1, growth: 1, decay: { food: 1, mood: 1, clean: 1 } },
   };
   s.pets.push(newPet(CONFIG.startPet.name, `default:${CONFIG.startPet.color}`, now));
@@ -321,6 +321,48 @@ export function storeDecor(s: GameState, id: string): Result {
   if (!d) return { ok: false, msg: '找不到这件装饰' };
   d.zone = null;
   return { ok: true, msg: '收起来了' };
+}
+
+// ---------- 家具皮肤和房间风格 ----------
+
+/** 这件东西现在用的是哪一款皮肤 */
+export const skinOf = (s: GameState, kind: string) => { const id = s.skins[kind]; return id && SKINS.some((k) => k.id === id) ? id : DEFAULT_SKIN; };
+export const ownsSkin = (s: GameState, kind: string, skin: string) => skin === DEFAULT_SKIN || !!s.skinsOwned[kind]?.includes(skin);
+export const skinPrice = (kind: string) => { const size = skinSize(kind); return size ? SKIN_PRICE[size] : null; };
+/** 这件东西玩家手里有没有（固定家具一直有；「家里的东西」要买过；装饰要至少有一件） */
+export function hasFurniture(s: GameState, kind: string) {
+  if (DECOR[kind]) return s.decor.some((d) => d.kind === kind);
+  if (GEAR.some((g) => g.id === kind)) return !!s.owned[kind];
+  return skinSize(kind) !== null;
+}
+/** 换皮肤。没买过的款式会直接买下来再换上；同一种东西（比如几件一样的装饰）一起换 */
+export function setSkin(s: GameState, kind: string, skin: string): Result {
+  const def = SKINS.find((k) => k.id === skin); const price = skinPrice(kind);
+  if (!def || price === null) return { ok: false, msg: '没有这款皮肤' };
+  if (!hasFurniture(s, kind)) return { ok: false, msg: '还没有这件东西' };
+  let msg = `换成了${def.name}款`;
+  if (!ownsSkin(s, kind, skin)) {
+    if (s.fish < price) return { ok: false, msg: '小鱼干不够' };
+    s.fish -= price; (s.skinsOwned[kind] ??= []).push(skin); msg = `买下并换上了${def.name}款`;
+  }
+  if (skin === DEFAULT_SKIN) delete s.skins[kind]; else s.skins[kind] = skin;
+  return { ok: true, msg };
+}
+export const roomOf = (s: GameState) => (ROOM_THEMES.some((r) => r.id === s.room) ? s.room : DEFAULT_ROOM);
+export const ownsRoom = (s: GameState, id: string) => id === DEFAULT_ROOM || s.roomsOwned.includes(id);
+export function buyRoom(s: GameState, id: string): Result {
+  const def = ROOM_THEMES.find((r) => r.id === id);
+  if (!def) return { ok: false, msg: '没有这套房间' };
+  if (ownsRoom(s, id)) return { ok: false, msg: '已经有了' };
+  if (s.fish < def.price) return { ok: false, msg: '小鱼干不够' };
+  s.fish -= def.price; s.roomsOwned.push(id); s.room = id;
+  return { ok: true, msg: `买下了「${def.name}」，已经换上。可以在「布置房间」里换回去` };
+}
+export function setRoom(s: GameState, id: string): Result {
+  const def = ROOM_THEMES.find((r) => r.id === id);
+  if (!def || !ownsRoom(s, id)) return { ok: false, msg: '还没有这套房间' };
+  s.room = id;
+  return { ok: true, msg: `换成了「${def.name}」` };
 }
 
 // ---------- 猫爬架 ----------

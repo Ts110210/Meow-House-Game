@@ -133,6 +133,10 @@ export interface GameState {
   /** 每两只宠物之间的友情值。键 = 两个编号按字母顺序用 | 连起来 */
   friends: Record<string, number>;
   display: { souvenirs: string[]; postcards: string[] };
+  /** 家具和装饰的皮肤：skins = 每种东西现在用哪一款（没写 = 默认款）；skinsOwned = 买过哪些款（默认款不用买） */
+  skins: Record<string, string>; skinsOwned: Record<string, string[]>;
+  /** 房间风格：现在用哪一套、买过哪些（默认的不用买） */
+  room: string; roomsOwned: string[];
   /** 猫爬架的三层（顶层、中层、底层）各指定给哪只宠物；null = 谁都可以上去 */
   cattree: (string | null)[];
   /** 还没给主人看过的回家明信片 */

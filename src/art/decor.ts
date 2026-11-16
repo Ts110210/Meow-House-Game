@@ -1,7 +1,9 @@
 // 装饰的占位图：用代码画的彩铅风小物件。以后每件都可以换成 PNG（路径在 assets.config.ts 的 decor 里，
 // 也可以在开发者面板 →「素材替换」里上传）。画的时候底边贴着物件的最下面。
-import { PALETTE as P } from '../config';
+import { PALETTE, SKINS } from '../config';
 import { makeCanvas, Sketch } from './sketch';
+
+let P: typeof PALETTE = PALETTE;
 
 const ART: Record<string, { w: number; h: number; draw(s: Sketch): void }> = {
   rug: { w: 300, h: 70, draw(s) { s.ellipse(150, 36, 146, 30, { fill: P.coral }); s.ellipse(150, 36, 112, 21, { fill: '#F1C9B8' }); s.ellipse(150, 36, 70, 12, { fill: P.mustard }); } },
@@ -46,10 +48,12 @@ const ART: Record<string, { w: number; h: number; draw(s: Sketch): void }> = {
   trophy: { w: 80, h: 104, draw(s) { s.rect(24, 92, 32, 10, { fill: P.woodDark, r: 3 }); s.rect(35, 70, 10, 24, { fill: '#E3B341' }); s.poly([[16, 10], [64, 10], [56, 56], [40, 70], [24, 56]], { fill: '#E3B341' }); s.curve([[16, 18], [4, 22], [8, 42], [22, 46]], '#B8891F', 5, 1); s.curve([[64, 18], [76, 22], [72, 42], [58, 46]], '#B8891F', 5, 1); s.ellipse(40, 32, 9, 9, { fill: '#FBF6EC' }); } },
 };
 
-export function drawDecor(kind: string): HTMLCanvasElement | null {
+/** skin = 皮肤（不写 = 默认款）。占位图的各款皮肤造型一样，只换配色 */
+export function drawDecor(kind: string, skin?: string): HTMLCanvasElement | null {
   const def = ART[kind]; if (!def) return null;
   const [cv, ctx] = makeCanvas(def.w, def.h, 2);
-  def.draw(new Sketch(ctx, 900 + kind.length * 17 + kind.charCodeAt(0)));
+  P = { ...PALETTE, ...(SKINS.find((k) => k.id === skin)?.palette ?? {}) };
+  try { def.draw(new Sketch(ctx, 900 + kind.length * 17 + kind.charCodeAt(0))); } finally { P = PALETTE; }
   return cv;
 }
 export const decorAspect = (kind: string) => { const d = ART[kind]; return d ? d.w / d.h : 1; };

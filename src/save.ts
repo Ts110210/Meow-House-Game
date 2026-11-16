@@ -5,7 +5,7 @@
 //   2. 在 MIGRATIONS 里加一条「从上一个版本升到这个版本」的函数
 //   3. 在 repair() 里给新字段补默认值
 // 旧存档会在打开时自动一步一步升上来，升级前的原样会另存一份。
-import { CONFIG, DESTS, FOODS, SOUVENIRS, TRAIT_IDS, VISITORS, ZONES, DECOR } from './config';
+import { CONFIG, DESTS, FOODS, SOUVENIRS, TRAIT_IDS, VISITORS, ZONES, DECOR, SKINS, DEFAULT_SKIN, ROOM_THEMES, DEFAULT_ROOM, skinSize } from './config';
 import { kv } from './platform/storage';
 import type { GameState, Pet, Postcard, Trip } from './types';
 
@@ -108,6 +108,10 @@ export function repair(raw: Raw, now = Date.now()): GameState {
     visitorQuota: num(raw.visitorQuota, 0, 0, 2), visitorDay: str(raw.visitorDay, ''), lastVisitorAt: num(raw.lastVisitorAt, 0),
     errand: raw.errand && DESTS.some((d) => d.id === raw.errand.destId) && raw.errand.from in VISITORS ? { destId: raw.errand.destId, reward: num(raw.errand.reward, 40, 0), from: raw.errand.from, expiresAt: num(raw.errand.expiresAt, clock) } : null,
     display: { souvenirs: arr(display.souvenirs).filter((id) => souvenirs[id]).slice(0, CONFIG.travel.displaySouvenirs), postcards: arr(display.postcards).filter((id) => postcards.some((c) => c.id === id)).slice(0, CONFIG.travel.displayPostcards) },
+    skins: Object.fromEntries(Object.entries(obj(raw.skins)).filter(([k, v]) => skinSize(k) !== null && v !== DEFAULT_SKIN && SKINS.some((x) => x.id === v) && arr(obj(raw.skinsOwned)[k]).includes(v))) as Record<string, string>,
+    skinsOwned: Object.fromEntries(Object.entries(obj(raw.skinsOwned)).filter(([k]) => skinSize(k) !== null).map(([k, v]) => [k, [...new Set(arr(v).filter((x) => x !== DEFAULT_SKIN && SKINS.some((y) => y.id === x)))]]).filter(([, v]) => (v as string[]).length)) as Record<string, string[]>,
+    roomsOwned: [...new Set(arr(raw.roomsOwned).filter((x) => x !== DEFAULT_ROOM && ROOM_THEMES.some((r) => r.id === x)))],
+    room: typeof raw.room === 'string' && raw.room !== DEFAULT_ROOM && ROOM_THEMES.some((r) => r.id === raw.room) && arr(raw.roomsOwned).includes(raw.room) ? raw.room : DEFAULT_ROOM,
     cattree: [0, 1, 2].map((i) => { const id = arr(raw.cattree)[i]; return typeof id === 'string' && pets.some((p) => p.id === id && !p.dead) ? id : null; }),
     pendingReturns: arr(raw.pendingReturns).filter((id) => postcards.some((c) => c.id === id)),
     dev: { enabled: !!dev.enabled, background: !!dev.background, time: ['day', 'dusk', 'night'].includes(dev.time) ? dev.time : 'auto', season: ['spring', 'summer', 'autumn', 'winter'].includes(dev.season) ? dev.season : 'auto', speed: num(dev.speed, 1, 1, 100000), growth: num(dev.growth, 1, 0, 100000), decay: { food: num(decay.food, 1, 0, 1000), mood: num(decay.mood, 1, 0, 1000), clean: num(decay.clean, 1, 0, 1000) } },

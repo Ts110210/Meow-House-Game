@@ -5,7 +5,7 @@ import 'pixi.js/unsafe-eval';
 import { Application, Circle, Container, Graphics, Rectangle, Sprite, Text, Texture, type FederatedPointerEvent } from 'pixi.js';
 import { ASSETS, type ObjectDef } from './assets.config';
 import type { AssetStore } from './assets';
-import { drawObject, drawZone, groundColor, objectAspect, type Env } from './art/room';
+import { drawObject, drawZone, groundColor, objectAspect, roomPalette, type Env } from './art/room';
 import { renderPostcard } from './art/postcard';
 import { CONFIG, DECOR, PALETTE, SOUVENIRS, SPRITE, VISITORS, ZONES, type ActionName } from './config';
 import { drawDecor } from './art/decor';
@@ -105,6 +105,8 @@ export class Scene {
   private ballX: number | null = null; private ballY: number | null = null;
   /** 布置房间：装饰可以拖动 */
   decorMode = false; decorSelected: string | null = null;
+  /** 布置房间时选中的固定家具（换皮肤用） */
+  furnSelected: string | null = null; private roomSig = '';
   private decorSprites = new Map<string, Sprite>(); private decorArt = new Map<string, HTMLCanvasElement | null>();
   private decorDrag: { id: string; gx: number; gy: number; x: number; y: number; moved: boolean } | null = null; private decorBox = new Graphics();
   private glow = new Graphics(); private debug = new Graphics(); private debugLabels = new Map<string, Text>();
@@ -161,7 +163,11 @@ export class Scene {
   private tex(src: HTMLCanvasElement) { const t = Texture.from(src); this.textures.push(t); return t; }
 
   private zoneHasImage(i: number) {
-    return !!this.assets.get(`room.zone.${ZONES[i].id}`) || (!!this.assets.get('room.strip') && i < ASSETS.room.strip.coverZones);
+    return !!this.roomPic(`room.zone.${ZONES[i].id}`) || (!!this.roomPic('room.strip') && i < ASSETS.room.strip.coverZones);
+  }
+  /** 现在这套房间风格的背景图；这一套没有图片时用默认那一套的 */
+  private room() { return sim.roomOf(this.game.state); }
+  private roomPic(key: string) { return this.assets.getSkinned(key, this.room());
   }
 
   /** 素材变了之后重建所有贴图 */
@@ -170,16 +176,16 @@ export class Scene {
     this.clearObjects();
     this.textures.forEach((t) => t.destroy(true)); this.textures = []; this.objSprites.clear(); this.objArt.clear(); this.objSig = '';
 
-    const strip = this.assets.get('room.strip');
+    const strip = this.roomPic('room.strip'); const room = this.room(); this.roomSig = room;
     recompute(strip);
     const env = this.env(); this.envSig = env.time + env.season;
     const cover = Math.min(N, ASSETS.room.strip.coverZones);
     this.stripSprite = strip ? new Sprite(this.tex(strip)) : null;
     if (this.stripSprite) this.bgLayer.addChild(this.stripSprite);
     this.zoneSprites = ZONES.map((z, i) => {
-      const img = this.assets.get(`room.zone.${z.id}`);
+      const img = this.roomPic(`room.zone.${z.id}`);
       if (!img && strip && i < cover) return null;
-      const sp = new Sprite(this.tex(img ?? drawZone(z.id, i, env))); this.bgLayer.addChild(sp);
+      const sp = new Sprite(this.tex(img ?? drawZone(z.id, i, env, room))); this.bgLayer.addChild(sp);
       return { sp, code: !img };
     });
     this.placeArt();
@@ -193,7 +199,7 @@ export class Scene {
   /** 昼夜或季节变了：只重画代码画的那些区域（窗外、阳台、院子会变样） */
   private redrawForEnv() {
     const env = this.env();
-    this.zoneSprites.forEach((z, i) => { if (z && z.code) { const old = z.sp.texture; z.sp.texture = this.tex(drawZone(ZONES[i].id, i, env)); this.textures = this.textures.filter((t) => t !== old); old.destroy(true); } });
+    this.zoneSprites.forEach((z, i) => { if (z && z.code) { const old = z.sp.texture; z.sp.texture = this.tex(drawZone(ZONES[i].id, i, env, this.room())); this.textures = this.textures.filter((t) => t !== old); old.destroy(true); } });
     this.placeArt();
   }
 
@@ -202,13 +208,14 @@ export class Scene {
     const W = worldW(), fy = geo.floorY;
     // 房间外面的填充：上面是天花板，下面和两边接着墙和地板的颜色
     const g = this.fill.clear();
-    g.rect(-3000, -3000, W + 6000, 3000).fill(hex(PALETTE.ceiling));
-    g.rect(-3000, 0, W + 6000, fy).fill(hex(PALETTE.wall));
-    g.rect(-3000, fy, W + 6000, 3000).fill(hex(PALETTE.floor));
+    const rp = roomPalette(this.room());
+    g.rect(-3000, -3000, W + 6000, 3000).fill(hex(rp.ceiling));
+    g.rect(-3000, 0, W + 6000, fy).fill(hex(rp.wall));
+    g.rect(-3000, fy, W + 6000, 3000).fill(hex(rp.floor));
     g.rect(-3000, -5, W + 6000, 5).fill({ color: hex(PALETTE.ink), alpha: 0.25 });
     // 屏幕底部往下延伸的地面：院子是草地，其他是木地板
     const env = this.env();
-    ZONES.forEach((z, i) => { const c = groundColor(z.id, env); if (c !== PALETTE.floor && this.zoneSprites[i]?.code) g.rect(zx(i), H - 2, zw(i) + (i === N - 1 ? 3000 : 0), 3000).fill(c.startsWith('#') ? hex(c) : c); });
+    ZONES.forEach((z, i) => { const c = groundColor(z.id, env, this.room()); if (c !== rp.floor && this.zoneSprites[i]?.code) g.rect(zx(i), H - 2, zw(i) + (i === N - 1 ? 3000 : 0), 3000).fill(c.startsWith('#') ? hex(c) : c); });
     // 傍晚偏暖、夜里压暗但保留暖色：整个画面乘上一个颜色（正片叠底）。屋里和室外（阳台、院子）各用各的颜色
     this.shade.clear();
     if (env.time !== 'day') {
@@ -236,7 +243,7 @@ export class Scene {
 
   /** 地板线或分界线变了：重新算一遍，所有东西跟着走 */
   private applyGeometry() {
-    recompute(this.assets.get('room.strip'));
+    recompute(this.roomPic('room.strip'));
     this.placeArt(); this.placeObjects();
     for (const a of this.actors.values()) { a.x = clampX(a.x); a.tx = clampX(a.tx); a.y = clampY(a.y); a.ty = clampY(a.ty); }
     this.applyCam();
@@ -268,7 +275,7 @@ export class Scene {
 
   private rebuildObjects() {
     const s = this.game.state;
-    const sig = JSON.stringify([this.editMode, this.decorMode, s.decor, s.owned, sim.shownSouvenirs(s), sim.shownPostcards(s).map((c) => c.id), s.pets.map((p) => p.spriteId), sim.lostPets(s).length, s.pets.some((p) => p.searchUntil !== null), s.visitors.map((v) => v.id), s.pond.map((p, i) => (p == null ? 0 : sim.pondReady(s, i) ? 2 : 1))]);
+    const sig = JSON.stringify([this.editMode, this.decorMode, s.decor, s.owned, s.skins, sim.shownSouvenirs(s), sim.shownPostcards(s).map((c) => c.id), s.pets.map((p) => p.spriteId), sim.lostPets(s).length, s.pets.some((p) => p.searchUntil !== null), s.visitors.map((v) => v.id), s.pond.map((p, i) => (p == null ? 0 : sim.pondReady(s, i) ? 2 : 1))]);
     if (sig === this.objSig) return;
     this.objSig = sig;
     this.clearObjects(); this.objSprites.clear(); this.editBoxes.clear();
@@ -279,18 +286,23 @@ export class Scene {
     for (const [kind, def] of Object.entries(ASSETS.objects) as [ObjectKind, ObjectDef][]) {
       if (def.needsOwned && !s.owned[def.needsOwned] && !this.editMode) continue;
       const pos = objPos(def); const zi = pos.zi;
-      const img = this.assets.get(`object.${kind}`);
+      const skin = sim.skinOf(s, kind); const img = this.assets.getSkinned(`object.${kind}`, skin);
       // 背景图里已经画了的东西（门、浴缸、床、收藏柜、相册墙、鱼塘）：没有自己的图片时只留点击区域
       const hidden = !img && !!def.partOfBackground && this.zoneHasImage(zi);
-      if (!this.objArt.has(kind)) this.objArt.set(kind, drawObject(kind));
-      const src = img ?? (hidden ? null : this.objArt.get(kind)!);
+      const artKey = `${kind}@${skin}`; if (!this.objArt.has(artKey)) this.objArt.set(artKey, drawObject(kind, skin));
+      const src = img ?? (hidden ? null : this.objArt.get(artKey)!);
       const sp = new Sprite(src ? this.tex(src) : Texture.WHITE);
       const aspect = src ? src.width / src.height : objectAspect(kind);
       sp.anchor.set(0.5, 1); sp.height = def.height; sp.width = def.height * aspect; sp.position.set(pos.x, pos.y);
       if (!src) sp.alpha = 0;
-      if (kind !== 'ball' || this.editMode) {
+      if (kind !== 'ball' || this.editMode || this.decorMode) {
         sp.eventMode = 'static'; sp.cursor = this.editMode ? 'move' : 'pointer';
-        sp.on('pointertap', this.tap(() => { if (this.editMode) return; this.showBubble(kind); this.hooks.onObject(kind); }));
+        sp.on('pointertap', this.tap(() => {
+          if (this.editMode) return;
+          // 布置房间时点家具 = 选中它换皮肤，不打开它平时的面板
+          if (this.decorMode) { this.decorSelected = null; this.furnSelected = kind; this.drawDecorBox(); this.hooks.onDecor?.(null); return; }
+          this.showBubble(kind); this.hooks.onObject(kind);
+        }));
         sp.on('pointerdown', (e) => this.editDown(e, kind, 'move'));
       }
       if (kind === 'ball' && this.ballX !== null && !this.editMode) { sp.x = this.ballX; sp.y = this.ballY ?? sp.y; }
@@ -363,11 +375,12 @@ export class Scene {
       this.addSorted(frame, 1e6); this.addSorted(label, 1e6); this.addSorted(handle, 1e6);
       this.editBoxes.set(kind, { sp, frame, handle, label }); this.updateEditBox(kind);
     }
+    this.drawDecorBox();
   }
 
   // ---------- 调整背景：拖地板线和区域分界线 ----------
 
-  hasStrip() { return !!this.assets.get('room.strip'); }
+  hasStrip() { return !!this.roomPic('room.strip'); }
 
   setBgMode(on: boolean) {
     this.bgMode = on && this.hasStrip(); this.bgDrag = null;
@@ -545,16 +558,17 @@ export class Scene {
 
   private makeDecor(d: { id: string; kind: string; zone: string | null; x: number; y: number }): Sprite | null {
     const def = DECOR[d.kind]; const zi = ZONES.findIndex((z) => z.id === d.zone); if (!def || zi < 0) return null;
-    if (!this.decorArt.has(d.kind)) this.decorArt.set(d.kind, drawDecor(d.kind));
-    const src = this.assets.get(`decor.${d.kind}`) ?? this.decorArt.get(d.kind); if (!src) return null;
+    const skin = sim.skinOf(this.game.state, d.kind); const artKey = `${d.kind}@${skin}`;
+    if (!this.decorArt.has(artKey)) this.decorArt.set(artKey, drawDecor(d.kind, skin));
+    const src = this.assets.getSkinned(`decor.${d.kind}`, skin) ?? this.decorArt.get(artKey); if (!src) return null;
     const sp = new Sprite(this.tex(src)); sp.anchor.set(0.5, 1); sp.height = def.height; sp.width = def.height * (src.width / src.height);
     sp.position.set(zx(zi) + d.x, d.y);
     if (this.decorMode) { sp.eventMode = 'static'; sp.cursor = 'move'; sp.on('pointerdown', (e) => this.decorDown(e, d.id)); } else sp.eventMode = 'none';
     this.decorSprites.set(d.id, sp);
     return sp;
   }
-  setDecorMode(on: boolean) { this.decorMode = on; this.decorSelected = null; this.decorDrag = null; this.decorBox.clear(); this.objSig = ''; this.rebuildObjects(); }
-  selectDecor(id: string | null) { this.decorSelected = id; this.drawDecorBox(); }
+  setDecorMode(on: boolean) { this.decorMode = on; this.decorSelected = null; this.furnSelected = null; this.decorDrag = null; this.decorBox.clear(); this.objSig = ''; this.rebuildObjects(); }
+  selectDecor(id: string | null) { this.decorSelected = id; this.furnSelected = null; this.drawDecorBox(); }
   /** 新摆出来的装饰放哪：现在看着的这个区域，按种类放在墙上、地上或地毯的位置 */
   defaultDecorSpot(kind: string): { zone: string; x: number; y: number } {
     const centre = this.camX + this.viewW / 2; let zi = 0; for (let i = 0; i < N; i++) if (centre >= zx(i)) zi = i;
@@ -565,7 +579,7 @@ export class Scene {
     if (!this.decorMode) return;
     e.stopPropagation(); const sp = this.decorSprites.get(id)!;
     this.decorDrag = { id, gx: e.global.x, gy: e.global.y, x: sp.x, y: sp.y, moved: false };
-    this.decorSelected = id; this.drawDecorBox(); this.hooks.onDecor?.(id);
+    this.decorSelected = id; this.furnSelected = null; this.drawDecorBox(); this.hooks.onDecor?.(id);
   }
   private decorMove(e: FederatedPointerEvent) {
     const d = this.decorDrag!; const sp = this.decorSprites.get(d.id); if (!sp) return;
@@ -584,7 +598,7 @@ export class Scene {
     this.drawDecorBox();
   }
   private drawDecorBox() {
-    const g = this.decorBox.clear(); const sp = this.decorSelected ? this.decorSprites.get(this.decorSelected) : null;
+    const g = this.decorBox.clear(); const sp = this.decorSelected ? this.decorSprites.get(this.decorSelected) : this.furnSelected ? this.objSprites.get(this.furnSelected) : null;
     if (!this.decorMode || !sp) return;
     g.roundRect(sp.x - sp.width / 2 - 6, sp.y - sp.height - 6, sp.width + 12, sp.height + 12, 10).stroke({ width: 3, color: hex(PALETTE.coral) });
   }
@@ -866,6 +880,7 @@ export class Scene {
     this.now += dt;
     this.game.tick();
     const env = this.env();
+    if (this.room() !== this.roomSig) this.rebuildArt(); // 换了房间风格：背景整套重画
     if (env.time + env.season !== this.envSig) { this.envSig = env.time + env.season; this.redrawForEnv(); }
     this.rebuildObjects();
     // 新买的家具

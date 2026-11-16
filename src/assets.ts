@@ -1,6 +1,6 @@
 // 素材加载器。每个素材位按这个顺序找图：页面里上传的 → public/assets/ 里的文件 → 没有（用代码画的占位图）。
 import { ASSETS } from './assets.config';
-import { DESTS, FUR_COLORS, ZONES, DECOR } from './config';
+import { DESTS, FUR_COLORS, ZONES, DECOR, SKINS, ROOM_THEMES } from './config';
 import { blobs } from './platform/storage';
 import { fileToDataUrl, knockOutWhite, loadImage } from './sprites';
 
@@ -20,11 +20,23 @@ export class AssetStore {
     for (const [k, src] of Object.entries(ASSETS.decor)) out.push({ key: `decor.${k}`, group: '装饰', name: DECOR[k]?.name ?? k, src, hint: `透明背景 PNG，底边贴地，显示高度 ${DECOR[k]?.height ?? 80}`, kind: 'object' });
     for (const [k, src] of Object.entries(ASSETS.pets)) out.push({ key: `pet.${k}`, group: '默认宠物精灵图', name: FUR_COLORS[k]?.name ?? k, src, hint: '4 列，每格 256×256，每行一个动作', kind: 'pet' });
     for (const [k, src] of Object.entries(ASSETS.pets)) out.push({ key: `avatar.${k}`, group: '默认宠物头像', name: FUR_COLORS[k]?.name ?? k, src: src.replace(/\.png$/, '-avatar.png'), hint: '正方形，建议 256×256', kind: 'avatar' });
+    // 皮肤和房间风格的图片：文件名 = 默认款的文件名加上「-皮肤名」，比如 objects/bed-mint.png、room/strip-seaside.png
+    const withId = (src: string, id: string) => src.replace(/\.png$/, `-${id}.png`);
+    for (const r of ROOM_THEMES.slice(1)) {
+      out.push({ key: `room.strip@${r.id}`, group: `房间风格 · ${r.name}`, name: '长图', src: withId(ASSETS.room.strip.src, r.id), hint: '和默认的长图一样的尺寸和布局（地板线、分界线共用）', kind: 'room' });
+      for (const z of ZONES) out.push({ key: `room.zone.${z.id}@${r.id}`, group: `房间风格 · ${r.name}`, name: `${z.name}（单独一张）`, src: withId(ASSETS.room.zones[z.id], r.id), hint: '3:5，和默认的那张一样大', kind: 'room' });
+    }
+    for (const k of SKINS.slice(1)) {
+      for (const [o, d] of Object.entries(ASSETS.objects)) out.push({ key: `object.${o}@${k.id}`, group: `皮肤 · ${k.name}`, name: d.label, src: withId(d.src, k.id), hint: '和默认款一样的大小和轮廓，底边贴地', kind: 'object' });
+      for (const [o, src] of Object.entries(ASSETS.decor)) out.push({ key: `decor.${o}@${k.id}`, group: `皮肤 · ${k.name}`, name: DECOR[o]?.name ?? o, src: withId(src, k.id), hint: '和默认款一样的大小和轮廓，底边贴地', kind: 'object' });
+    }
     for (const d of DESTS) out.push({ key: `postcard.${d.id}`, group: '明信片背景', name: d.name, src: ASSETS.postcards[d.id], hint: '3:2，建议 1200×800', kind: 'postcard' });
     return out;
   }
 
   get(key: string): Pic | undefined { return this.pics.get(key); }
+  /** 某一款皮肤（或某一套房间风格）的图片；那一款没有图片时退回默认款的图片 */
+  getSkinned(key: string, id?: string): Pic | undefined { return (id ? this.pics.get(`${key}@${id}`) : undefined) ?? this.pics.get(key); }
   status(key: string): 'upload' | 'file' | 'code' { return this.from.get(key) ?? 'code'; }
   onChange(fn: (key: string) => void) { this.listeners.add(fn); }
 

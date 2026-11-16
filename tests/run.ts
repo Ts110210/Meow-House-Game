@@ -1,5 +1,6 @@
 // 规则和存档的自动检查。运行：npm test
-import { CONFIG, DAY, DECOR, DESTS, FUR_COLORS, HOUR, MIN, SOUVENIRS, decodeLook, encodeLook } from '../src/config';
+import { CONFIG, DAY, DECOR, DESTS, FUR_COLORS, GEAR, HOUR, MIN, ROOM_THEMES, SKIN_PRICE, SKIN_SIZE, SKINNABLE, SKINS, SOUVENIRS, decodeLook, encodeLook, skinSize } from '../src/config';
+import { ASSETS } from '../src/assets.config';
 import * as sim from '../src/sim';
 import { diaryPlaceCount, writeDiary } from '../src/diary';
 import { buildExport, migrate, parseImport, repair, SAVE_VERSION } from '../src/save';
@@ -255,6 +256,34 @@ console.log('逗猫棒和毛色');
   check('乱写的编号读不出来', decodeLook('look:zebra|#fff|x|y|z|0') === null && decodeLook('default:orange') === null);
   check('领养自己捏的猫，之后还能换回内置毛色', sim.adopt(Object.assign(s, { slots: 2 }), '捏捏', id).ok && sim.setColor(s, s.pets[1].id, 'cow').ok && s.pets[1].spriteId === 'default:cow' && sim.setColor(s, s.pets[1].id, id).ok);
   const r = repair(JSON.parse(JSON.stringify(s)), T0); check('自己捏的猫存档再读档还在', r.pets[1].spriteId === id);
+}
+
+console.log('家具、皮肤和房间风格');
+{
+  check('每件「家里的东西」要么是场景里的家具，要么是逗猫棒这样的道具', GEAR.every((g) => g.id === 'wand' || ASSETS.objects[g.id]?.needsOwned === g.id));
+  check('背景里的灯都变成了要买的东西：两盏吊灯、床头灯会发光，落地灯是能摆的装饰', ['pendantDoor', 'pendantShelf', 'bedlamp'].every((k) => !!ASSETS.objects[k].light && GEAR.some((g) => g.id === k)) && ['lamp', 'sidelamp'].every((k) => DECOR[k].layer === 'stand' && !!DECOR[k].light) && !ASSETS.objects.lamp);
+  check('有 5 套皮肤，第一套是默认款', SKINS.length === 5 && SKINS[0].id === 'wood' && Object.keys(SKINS[0].palette).length === 0);
+  check('所有固定家具、「家里的东西」里的家具和所有装饰都有皮肤，名字不冲突', Object.keys(ASSETS.objects).every((k) => !!SKIN_SIZE[k]) && Object.keys(DECOR).every((k) => skinSize(k) !== null) && new Set(SKINNABLE).size === SKINNABLE.length);
+  check('每款皮肤、每张图片都配了路径', Object.keys(ASSETS.objects).every((k) => !!ASSETS.objects[k].src) && Object.keys(DECOR).every((k) => !!ASSETS.decor[k]));
+  const s = blank(); s.fish = 200;
+  check('默认款不用买；固定家具一开始就能换皮肤', sim.skinOf(s, 'bed') === 'wood' && sim.ownsSkin(s, 'bed', 'wood') && !sim.ownsSkin(s, 'bed', 'mint'));
+  check('第一次换上一款：扣钱、记下买过', sim.setSkin(s, 'bed', 'mint').ok && s.fish === 200 - SKIN_PRICE.L && sim.skinOf(s, 'bed') === 'mint' && sim.ownsSkin(s, 'bed', 'mint'));
+  check('换回默认款、再换回买过的款都不再扣钱', sim.setSkin(s, 'bed', 'wood').ok && sim.skinOf(s, 'bed') === 'wood' && sim.setSkin(s, 'bed', 'mint').ok && s.fish === 200 - SKIN_PRICE.L);
+  check('小件便宜，大件贵', sim.skinPrice('bowl') === SKIN_PRICE.S && sim.skinPrice('scratcher') === SKIN_PRICE.M && sim.skinPrice('sofa') === SKIN_PRICE.L && sim.skinPrice('cushion') === SKIN_PRICE.S && sim.skinPrice('shelf') === SKIN_PRICE.L);
+  check('钱不够买不了，也不会换上', (s.fish = 10, !sim.setSkin(s, 'sofa', 'navy').ok) && sim.skinOf(s, 'sofa') === 'wood' && s.fish === 10);
+  s.fish = 2000;
+  check('还没买的东西（猫抓板、没有的装饰）不能换皮肤', !sim.setSkin(s, 'scratcher', 'berry').ok && !sim.setSkin(s, 'rug', 'berry').ok && !sim.setSkin(s, 'bed', 'gold').ok && !sim.setSkin(s, 'window', 'mint').ok);
+  check('买了之后就能换', sim.buy(s, 'scratcher').ok && sim.setSkin(s, 'scratcher', 'berry').ok && sim.buyDecor(s, 'rug').ok && sim.setSkin(s, 'rug', 'navy').ok);
+  check('房间风格：默认的不用买，另外两套要买', ROOM_THEMES.length === 3 && sim.roomOf(s) === 'classic' && sim.ownsRoom(s, 'classic') && !sim.ownsRoom(s, 'seaside') && !sim.setRoom(s, 'seaside').ok);
+  const before = s.fish;
+  check('买下一套房间风格会直接换上，之后可以随便换', sim.buyRoom(s, 'seaside').ok && s.fish === before - ROOM_THEMES[1].price && sim.roomOf(s) === 'seaside' && !sim.buyRoom(s, 'seaside').ok && sim.setRoom(s, 'classic').ok && sim.setRoom(s, 'seaside').ok && s.fish === before - ROOM_THEMES[1].price);
+  const r = repair(JSON.parse(JSON.stringify(s)), T0);
+  check('皮肤和房间风格存档再读档还在', sim.skinOf(r, 'bed') === 'mint' && sim.skinOf(r, 'rug') === 'navy' && sim.roomOf(r) === 'seaside' && sim.ownsSkin(r, 'scratcher', 'berry'));
+  const bad = JSON.parse(JSON.stringify(s)); bad.skins = { bed: 'navy', ghost: 'mint', sofa: 'gold' }; bad.room = 'sakura'; bad.roomsOwned = ['seaside', 'moon'];
+  const rb = repair(bad, T0);
+  check('存档里没买过的皮肤、不存在的款式和房间会被清掉', sim.skinOf(rb, 'bed') === 'wood' && !rb.skins.ghost && !rb.skins.sofa && sim.roomOf(rb) === 'classic' && rb.roomsOwned.length === 1);
+  const old = JSON.parse(JSON.stringify(blank())); delete old.skins; delete old.skinsOwned; delete old.room; delete old.roomsOwned; old.v = 5; old.owned = { lamp: true };
+  const ro = migrate(old); check('旧存档升级：皮肤和房间都是默认的，以前买的固定落地灯不再出现也不报错', ro.ok && sim.roomOf(ro.state) === 'classic' && Object.keys(ro.state.skins).length === 0 && sim.skinOf(ro.state, 'door') === 'wood');
 }
 
 console.log('猫爬架');

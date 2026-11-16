@@ -1,8 +1,13 @@
 // 代码画的占位图：房间背景（每个区域一张）和每件可互动的物品（每件一张）。
 // 画风往彩铅手绘靠：正侧面、没有透视、暖棕色细线、低饱和配色。
 // 在 assets.config.ts 里配了图片（或在开发者面板上传）之后，对应的占位图就不再使用。
-import { CONFIG, PALETTE as P, type DayTime, type Season, type ZoneId } from '../config';
+import { CONFIG, PALETTE, ROOM_THEMES, SKINS, type DayTime, type Season, type ZoneId } from '../config';
 import { makeCanvas, Sketch, type Pt } from './sketch';
+
+/** 现在用来画的调色板。画某一款皮肤、某一套房间风格的占位图时，临时换成那一套的颜色，画完换回来 */
+let P: typeof PALETTE = PALETTE;
+export const skinPalette = (skin?: string): typeof PALETTE => ({ ...PALETTE, ...(SKINS.find((k) => k.id === skin)?.palette ?? {}) });
+export const roomPalette = (room?: string): typeof PALETTE => ({ ...PALETTE, ...(ROOM_THEMES.find((r) => r.id === room)?.palette ?? {}) });
 
 const W = CONFIG.room.zoneWidth, H = CONFIG.room.height, FY = CONFIG.room.floorY;
 const lighten = (hex: string, t: number) => { const n = parseInt(hex.slice(1), 16); const f = (v: number) => Math.round(v + (255 - v) * t); return `rgb(${f(n >> 16)},${f((n >> 8) & 255)},${f(n & 255)})`; };
@@ -212,13 +217,14 @@ const ZONE_ART: Record<ZoneId, (s: Sketch) => void> = {
 };
 
 /** 每个区域的地面颜色（院子是草地，其他是木地板）。画面底部往下延伸时用。 */
-export const groundColor = (id: ZoneId, env: Env) => (id === 'garden' ? SEASON[env.season].ground : P.floor);
+export const groundColor = (id: ZoneId, env: Env, room?: string) => (id === 'garden' ? SEASON[env.season].ground : roomPalette(room).floor);
 
-export function drawZone(id: ZoneId, index: number, env: Env = ENV): HTMLCanvasElement {
-  ENV = env;
+/** room = 房间风格（不写 = 默认的那一套） */
+export function drawZone(id: ZoneId, index: number, env: Env = ENV, room?: string): HTMLCanvasElement {
+  ENV = env; P = roomPalette(room);
   const [cv, ctx] = makeCanvas(W, H, 1.5);
   const s = new Sketch(ctx, 101 + index * 17);
-  base(s); ZONE_ART[id](s);
+  try { base(s); ZONE_ART[id](s); } finally { P = PALETTE; }
   return cv;
 }
 
@@ -304,16 +310,18 @@ const OBJECT_ART: Record<string, { w: number; h: number; draw: (s: Sketch) => vo
     frame(s, 4, 20, 72, 56, P.mist, 'hill'); frame(s, 86, 4, 58, 74, P.coral, 'sun'); frame(s, 12, 88, 56, 70, P.sage, 'leaf'); frame(s, 78, 92, 68, 54, P.mustard, 'fish');
   } },
   pond: { w: 340, h: 96, draw(s) {
-    s.ellipse(170, 48, 166, 44, { fill: lighten(P.wood, 0.25) }); s.ellipse(170, 46, 150, 35, { fill: P.mist });
+    s.ellipse(170, 48, 166, 44, { fill: lighten(P.wood, 0.25) }); s.ellipse(170, 46, 150, 35, { fill: PALETTE.mist }); // 水的颜色不跟皮肤变，换的是石头围边
     s.curve([[90, 38], [120, 34], [150, 38]], P.white, 2.5, 0.7); s.curve([[190, 60], [220, 56], [250, 60]], P.white, 2.5, 0.7);
     s.ellipse(60, 30, 12, 7, { fill: P.sage, width: 1.1 }); s.ellipse(286, 64, 14, 8, { fill: P.sage, width: 1.1 });
   } },
 };
 
-export function drawObject(kind: string): HTMLCanvasElement | null {
+/** skin = 皮肤（不写 = 默认款）。占位图的各款皮肤造型一样，只换配色 */
+export function drawObject(kind: string, skin?: string): HTMLCanvasElement | null {
   const def = OBJECT_ART[kind]; if (!def) return null;
   const [cv, ctx] = makeCanvas(def.w, def.h, 2);
-  def.draw(new Sketch(ctx, 300 + kind.length * 31 + kind.charCodeAt(0)));
+  P = skinPalette(skin);
+  try { def.draw(new Sketch(ctx, 300 + kind.length * 31 + kind.charCodeAt(0))); } finally { P = PALETTE; }
   return cv;
 }
 

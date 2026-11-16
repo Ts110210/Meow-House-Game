@@ -1,5 +1,5 @@
 // 界面：顶部和底部的按钮，以及所有从下方弹出的面板。
-import { ZONES, CONFIG, DAY, DESTS, TREAT, TIME_NAMES, SEASON_NAMES, FOODS, FRY, FUR_COLORS, DECOR, VISITORS, SEASON_IDS, TIME_IDS, SPECIAL_DECOR, TRAITS, TRAIT_IDS, type Trait, PATTERN_NAMES, DEFAULT_LOOK, encodeLook, decodeLook, type Look, type CoatPattern, GEAR, GOODS, HOUR, MIN, SOUVENIRS, SPRITE, TOOLS, type ActionName } from './config';
+import { SKINS, SKIN_PRICE, ROOM_THEMES, ZONES, CONFIG, DAY, DESTS, TREAT, TIME_NAMES, SEASON_NAMES, FOODS, FRY, FUR_COLORS, DECOR, VISITORS, SEASON_IDS, TIME_IDS, SPECIAL_DECOR, TRAITS, TRAIT_IDS, type Trait, PATTERN_NAMES, DEFAULT_LOOK, encodeLook, decodeLook, type Look, type CoatPattern, GEAR, GOODS, HOUR, MIN, SOUVENIRS, SPRITE, TOOLS, type ActionName } from './config';
 import { renderPostcard } from './art/postcard';
 import { drawDefaultSheet } from './art/defaultPet';
 import type { Game } from './game';
@@ -707,6 +707,11 @@ export class UI {
         h('div', { class: 'card' }, Object.entries(DECOR).filter(([, d]) => !d.special).map(([k, d]) => { const n = sim.decorCount(s, k); const full = n >= CONFIG.decor.maxPerKind;
           return h('div', { class: 'item' }, h('span', { class: 'ico' }, d.icon), h('div', { class: 'txt' }, h('b', null, d.name), h('span', { class: 'soft' }, `${d.desc}${n ? ` · 已有 ${n} 件` : ''}`)),
             h('button', { class: 'btn small', disabled: full || s.fish < d.price, onclick: () => { const r = this.game.act((st) => sim.buyDecor(st, k)); this.say(r); sfx(r.ok ? 'buy' : 'error'); } }, full ? '买满了' : `🐟 ${d.price}`)); })),
+        h('h3', null, '房间风格（整套背景一起换）'),
+        h('div', { class: 'card' }, ROOM_THEMES.filter((r) => r.price > 0).map((r) => { const own = sim.ownsRoom(s, r.id);
+          return h('div', { class: 'item' }, h('span', { class: 'ico' }, r.icon), h('div', { class: 'txt' }, h('b', null, r.name), h('span', { class: 'soft' }, r.desc)),
+            h('button', { class: 'btn small' + (own ? '' : ' primary'), disabled: own || s.fish < r.price, onclick: () => { const res = this.game.act((st) => sim.buyRoom(st, r.id)); this.say(res); sfx(res.ok ? 'buy' : 'error'); } }, own ? '已拥有' : `🐟 ${r.price}`)); })),
+        h('p', { class: 'soft' }, `家具皮肤：每件家具和装饰都有 ${SKINS.length} 款（${SKINS.map((k) => k.name).join('、')}），在「布置房间」里点一下家具就能买和换。小件 🐟 ${SKIN_PRICE.S}，中件 🐟 ${SKIN_PRICE.M}，大件 🐟 ${SKIN_PRICE.L}。`),
         h('p', null, h('button', { class: 'btn block', onclick: () => this.startDecor() }, '去布置房间'))];
     } });
   }
@@ -956,25 +961,45 @@ export class UI {
   // ---------- 布置房间 ----------
 
   private decorBar: HTMLElement | null = null;
+  /** 点了一款还没买的皮肤或房间风格：先记下来，再点一次才真的买（避免误触） */
+  private buyArmed = '';
   startDecor() {
     this.close(); if (this.decorBar) return;
     this.decorBar = h('div', { class: 'editbar decorbar' }); this.root.append(this.decorBar); this.root.classList.add('editing');
-    this.scene.setDecorMode(true); this.renderDecorBar();
+    this.buyArmed = ''; this.scene.setDecorMode(true); this.renderDecorBar();
   }
   stopDecor() {
     this.decorBar?.remove(); this.decorBar = null; this.root.classList.remove('editing');
     this.scene.setDecorMode(false); this.game.save();
   }
   /** 场景里选中、拖动了装饰时调用 */
-  decorChanged(_id: string | null, msg?: string) { if (msg) this.toast(msg); this.renderDecorBar(); }
+  decorChanged(_id: string | null, msg?: string) { if (msg) this.toast(msg); this.buyArmed = ''; this.renderDecorBar(); }
+  /** 一排可以点的款式。有的直接换；没买的第一次点显示价格确认，再点一次才买 */
+  private pickRow(label: string, key: string, items: { id: string; name: string; on: boolean; owned: boolean; price: number }[], apply: (id: string) => Result) {
+    const s = this.game.state;
+    return h('div', { class: 'decor-tray skins' }, h('span', { class: 'soft tray-label' }, label), items.map((it) => {
+      const armed = this.buyArmed === `${key}:${it.id}`;
+      return h('button', { class: 'chip' + (it.on ? ' on' : '') + (armed ? ' armed' : ''), disabled: !it.owned && s.fish < it.price, onclick: () => {
+        if (it.on) return;
+        if (!it.owned && !armed) { this.buyArmed = `${key}:${it.id}`; this.renderDecorBar(); return; }
+        this.buyArmed = ''; const r = this.game.act(() => apply(it.id)); this.say(r); sfx(r.ok ? (it.owned ? 'ok' : 'buy') : 'error'); this.renderDecorBar();
+      } }, it.owned ? it.name : armed ? `再点一次买下 🐟 ${it.price}` : `${it.name} 🐟 ${it.price}`);
+    }));
+  }
   private renderDecorBar() {
     const bar = this.decorBar; if (!bar) return;
     const s = this.game.state; const sel = s.decor.find((d) => d.id === this.scene.decorSelected && d.zone !== null);
     const stored = sim.storedDecor(s); const kinds = [...new Set(stored.map((d) => d.kind))];
+    // 选中的东西（摆好的装饰，或者一件固定家具）：可以换皮肤
+    const furn = sel ? null : this.scene.furnSelected; const target = sel?.kind ?? furn; const price = target ? sim.skinPrice(target) : null;
+    const targetName = sel ? DECOR[sel.kind].name : furn ? ASSETS.objects[furn]?.label ?? furn : '';
     bar.replaceChildren(...([
-      h('div', { class: 'editbar-text' }, h('b', null, '布置房间'), h('span', { class: 'soft' }, sel ? `选中了：${DECOR[sel.kind].name}。拖动可以挪位置，也可以拖到别的房间` : '点下面收着的装饰摆出来；点一下摆好的装饰可以拖动')),
+      h('div', { class: 'editbar-text' }, h('b', null, '布置房间'), h('span', { class: 'soft' }, sel ? `选中了：${targetName}。拖动可以挪位置，也可以拖到别的房间；下面可以换皮肤` : furn ? `选中了：${targetName}。固定的家具不能挪，可以在下面换皮肤` : '点家具或摆好的装饰可以换皮肤；装饰还可以拖动。点下面收着的装饰摆出来')),
       sel ? h('button', { class: 'btn small', onclick: () => { this.game.act((st) => sim.storeDecor(st, sel.id)); this.scene.selectDecor(null); this.renderDecorBar(); sfx('close'); } }, '收起来') : null,
       h('button', { class: 'btn small on', onclick: () => this.stopDecor() }, '完成'),
+      target && price !== null
+        ? this.pickRow('皮肤', `skin:${target}`, SKINS.map((k) => ({ id: k.id, name: k.name, on: sim.skinOf(s, target) === k.id, owned: sim.ownsSkin(s, target, k.id), price })), (id) => sim.setSkin(this.game.state, target, id))
+        : this.pickRow('房间风格', 'room', ROOM_THEMES.map((r) => ({ id: r.id, name: `${r.icon} ${r.name}`, on: sim.roomOf(s) === r.id, owned: sim.ownsRoom(s, r.id), price: r.price })), (id) => (sim.ownsRoom(this.game.state, id) ? sim.setRoom(this.game.state, id) : sim.buyRoom(this.game.state, id))),
       h('div', { class: 'decor-tray' }, kinds.length ? kinds.map((k) => h('button', { class: 'chip', onclick: () => {
         const it = stored.find((d) => d.kind === k)!; const spot = this.scene.defaultDecorSpot(k);
         const r = this.game.act((st) => sim.placeDecor(st, it.id, spot.zone, spot.x, spot.y));
@@ -1225,7 +1250,7 @@ export class UI {
         h('div', { class: 'seg', style: 'margin-top:8px' }, h('button', { class: 'chip' + (d.background ? ' on' : ''), onclick: () => { d.background = !d.background; this.game.changed(); } }, `退到桌面、关掉再开的那段时间也按倍速：${d.background ? '开' : '关'}`)),
         h('p', { class: 'soft' }, d.background ? '注意：倍速开得很高时，离开一会儿宠物就可能饿坏。测完记得关掉。' : '现在倍速只在游戏开着的时候生效，离开期间按真实时间算。'),
         h('h3', null, '昼夜'), h('div', { class: 'seg' }, (['auto', 'day', 'dusk', 'night'] as const).map((v) => h('button', { class: 'chip' + (d.time === v ? ' on' : ''), onclick: () => { d.time = v; this.game.changed(); } }, v === 'auto' ? '跟着时间' : TIME_NAMES[v]))),
-        h('h3', null, '季节'), h('div', { class: 'seg' }, (['auto', 'spring', 'summer', 'autumn', 'winter'] as const).map((v) => h('button', { class: 'chip' + (d.season === v ? ' on' : ''), onclick: () => { d.season = v; this.game.changed(); } }, v === 'auto' ? '跟着日期' : SEASON_NAMES[v]))),
+        h('h3', null, '季节'), h('div', { class: 'seg' }, (['auto', 'spring', 'summer', 'autumn', 'winter'] as const).map((v) => h('button', { class: 'chip' + (d.season === v ? ' on' : ''), onclick: () => { d.season = v; this.game.changed(); } }, v === 'auto' ? '自动（按设置）' : SEASON_NAMES[v]))),
         h('p', { class: 'soft' }, `现在是${SEASON_NAMES[sim.season(s)]}天的${TIME_NAMES[sim.dayTime(s)]}。到阳台和院子看效果最明显。`),
         h('h3', null, '访客'),
         h('div', { class: 'seg' }, (['gift', 'trade', 'errand'] as const).map((k) => h('button', { class: 'chip', onclick: () => { this.game.act((st) => { st.visitors.push(sim.makeVisitor(st, undefined, k)); return { ok: true }; }); this.close(); this.toast('门口来了一位访客'); } }, `叫一个来：${{ gift: '送礼', trade: '换东西', errand: '托送信' }[k]}`))),
