@@ -9,7 +9,7 @@ import { CONFIG, DESTS, FOODS } from './config';
 import { kv } from './platform/storage';
 import type { GameState, Pet, Postcard, Trip } from './types';
 
-export const SAVE_VERSION = 2;
+export const SAVE_VERSION = 3;
 const MAIN = 'pet-game-save-v1'; // 键名不跟版本走，这样旧存档一直读得到
 const BACKUP = 'pet-game-save-backup';
 const BEFORE_MIGRATION = 'pet-game-save-before-migration';
@@ -21,6 +21,8 @@ type Raw = Record<string, any>;
 const MIGRATIONS: Record<number, (s: Raw) => Raw> = {
   // v1 → v2：加了设置（提醒开关）和开始玩的时间
   1: (s) => { s.settings = { notify: true }; s.createdAt = s.pets?.[0]?.adoptedAt ?? s.clock ?? Date.now(); s.v = 2; return s; },
+  // v2 → v3：开发者模式多了「后台也按倍速」的开关
+  2: (s) => { s.dev = { ...(s.dev ?? {}), background: false }; s.v = 3; return s; },
 };
 
 const num = (v: any, d: number, lo = -Infinity, hi = Infinity) => (typeof v === 'number' && isFinite(v) ? Math.max(lo, Math.min(hi, v)) : d);
@@ -64,7 +66,7 @@ export function repair(raw: Raw, now = Date.now()): GameState {
     fish: Math.floor(num(raw.fish, 0, 0)), slots: Math.floor(num(raw.slots, 1, Math.max(1, Math.min(aliveCount, CONFIG.maxPets)), CONFIG.maxPets)),
     pets, trips, postcards, souvenirs: counts(raw.souvenirs), inv: counts(raw.inv), owned, pond,
     lastCheckin: str(raw.lastCheckin, ''), pendingReturns: arr(raw.pendingReturns).filter((id) => postcards.some((c) => c.id === id)),
-    dev: { enabled: !!dev.enabled, speed: num(dev.speed, 1, 1, 100000), growth: num(dev.growth, 1, 0, 100000), decay: { food: num(decay.food, 1, 0, 1000), mood: num(decay.mood, 1, 0, 1000), clean: num(decay.clean, 1, 0, 1000) } },
+    dev: { enabled: !!dev.enabled, background: !!dev.background, speed: num(dev.speed, 1, 1, 100000), growth: num(dev.growth, 1, 0, 100000), decay: { food: num(decay.food, 1, 0, 1000), mood: num(decay.mood, 1, 0, 1000), clean: num(decay.clean, 1, 0, 1000) } },
     settings: { notify: settings.notify !== false },
   };
 }

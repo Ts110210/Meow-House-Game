@@ -16,10 +16,10 @@ export function newPet(name: string, spriteId: string, clock: number): Pet {
 
 export function newState(now: number): GameState {
   const s: GameState = {
-    v: 2, createdAt: now, settings: { notify: true }, clock: now, lastReal: now, fish: CONFIG.startFish, slots: 1,
+    v: 3, createdAt: now, settings: { notify: true }, clock: now, lastReal: now, fish: CONFIG.startFish, slots: 1,
     pets: [], trips: [], postcards: [], souvenirs: {}, inv: { ...CONFIG.startItems }, owned: {},
     pond: Array(CONFIG.pond.slots).fill(null), lastCheckin: '', pendingReturns: [],
-    dev: { enabled: false, speed: 1, growth: 1, decay: { food: 1, mood: 1, clean: 1 } },
+    dev: { enabled: false, background: false, speed: 1, growth: 1, decay: { food: 1, mood: 1, clean: 1 } },
   };
   s.pets.push(newPet(CONFIG.startPet.name, `default:${CONFIG.startPet.color}`, now));
   return s;
@@ -27,6 +27,8 @@ export function newState(now: number): GameState {
 
 // ---------- 查询 ----------
 
+/** 离开游戏的那段时间，游戏里的时间走多快（平时是 1 倍） */
+export const awaySpeed = (s: GameState) => (s.dev.enabled && s.dev.background ? Math.max(1, s.dev.speed) : 1);
 /** 家里有没有能让宠物自己玩的东西 */
 export const hasToy = (s: GameState) => !!(s.owned.scratcher || s.owned.ball);
 export const alivePets = (s: GameState) => s.pets.filter((p) => !p.dead);
@@ -354,7 +356,9 @@ export function planReminders(s: GameState): ReminderPlan[] {
     const names = t.petIds.map((id) => s.pets.find((p) => p.id === id)?.name).filter(Boolean).join(' 和 ');
     out.push({ title: `${names}回家了`, body: '带回了一张明信片，快来看看', inMs: t.returnAt - s.clock });
   }
-  return out.filter((r) => r.inMs > MIN).sort((a, b) => a.inMs - b.inMs);
+  // inMs 是游戏时间；开了「后台也按倍速」时，真实时间要除以倍速
+  const k = awaySpeed(s);
+  return out.map((r) => ({ ...r, inMs: r.inMs / k })).filter((r) => r.inMs > 20_000).sort((a, b) => a.inMs - b.inMs);
 }
 
 // ---------- 领养 ----------

@@ -5,7 +5,7 @@ import { blobs } from './platform/storage';
 import { fileToDataUrl, knockOutWhite, loadImage } from './sprites';
 
 export type Pic = HTMLCanvasElement;
-export interface Slot { key: string; group: string; name: string; src: string; hint: string; kind: 'room' | 'object' | 'pet' | 'postcard' }
+export interface Slot { key: string; group: string; name: string; src: string; hint: string; kind: 'room' | 'object' | 'pet' | 'postcard' | 'avatar' }
 
 export class AssetStore {
   private pics = new Map<string, Pic>();
@@ -18,6 +18,7 @@ export class AssetStore {
     for (const z of ZONES) out.push({ key: `room.zone.${z.id}`, group: '房间背景', name: `${z.name}（单独一张）`, src: ASSETS.room.zones[z.id], hint: '3:5，建议 432×720 的倍数', kind: 'room' });
     for (const [k, d] of Object.entries(ASSETS.objects)) out.push({ key: `object.${k}`, group: '家具和物品', name: d.label, src: d.src, hint: `透明背景 PNG，显示高度 ${d.height}`, kind: 'object' });
     for (const [k, src] of Object.entries(ASSETS.pets)) out.push({ key: `pet.${k}`, group: '默认宠物精灵图', name: FUR_COLORS[k]?.name ?? k, src, hint: '4 列，每格 256×256，每行一个动作', kind: 'pet' });
+    for (const [k, src] of Object.entries(ASSETS.pets)) out.push({ key: `avatar.${k}`, group: '默认宠物头像', name: FUR_COLORS[k]?.name ?? k, src: src.replace(/\.png$/, '-avatar.png'), hint: '正方形，建议 256×256', kind: 'avatar' });
     for (const d of DESTS) out.push({ key: `postcard.${d.id}`, group: '明信片背景', name: d.name, src: ASSETS.postcards[d.id], hint: '3:2，建议 1200×800', kind: 'postcard' });
     return out;
   }

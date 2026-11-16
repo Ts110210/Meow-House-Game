@@ -34,9 +34,9 @@ input[type=text]:focus { outline: none; border-color: var(--coral); }
 .petchip.out canvas { opacity: .4; }
 .petchip .dot { position: absolute; right: -2px; top: -2px; min-width: 20px; height: 20px; padding: 0 5px; border-radius: 10px; background: var(--coral); color: #fff; font-size: 11px; font-weight: 700; line-height: 20px; text-align: center; }
 .petchip .dot.grey { background: #8a8f99; } .petchip .dot.blue { background: var(--mist); }
-.zones { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; }
+.zones { display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none; scroll-snap-type: x proximity; -webkit-overflow-scrolling: touch; padding: 2px; }
 .zones::-webkit-scrollbar, .petstrip::-webkit-scrollbar { display: none; }
-.zone { flex: 1 1 0; min-width: 0; height: 36px; padding: 0 2px; white-space: nowrap; border-radius: 18px; background: rgba(255,250,240,.9); box-shadow: 0 0 0 1.5px var(--line) inset; font-size: 13px; font-weight: 600; color: var(--ink-soft); }
+.zone { flex: 0 0 auto; height: 44px; padding: 0 18px; white-space: nowrap; border-radius: 22px; scroll-snap-align: center; background: rgba(255,250,240,.9); box-shadow: 0 0 0 1.5px var(--line) inset; font-size: 15px; font-weight: 600; color: var(--ink-soft); }
 .zone.on { background: var(--ink); color: #fff; box-shadow: none; }
 
 .toasts { position: absolute; top: 60px; left: 0; right: 0; display: flex; flex-direction: column; align-items: center; gap: 6px; pointer-events: none !important; z-index: 30; }
@@ -105,7 +105,7 @@ label.check input { width: 20px; height: 20px; accent-color: var(--coral); }
   .hud-bottom { flex-direction: row; align-items: center; padding-top: 4px; padding-bottom: calc(6px + env(safe-area-inset-bottom)); }
   .petstrip { align-self: center; flex: none; max-width: 40%; }
   .petchip { width: 42px; height: 42px; } .petchip canvas { width: 36px; height: 36px; }
-  .zones { flex: 1; } .zone { height: 34px; }
+  .zones { flex: 1; min-width: 0; } .zone { height: 38px; padding: 0 16px; }
   .hud-top { padding: 6px 10px; } .pill { height: 34px; }
   .sheet { max-height: 94%; }
 }

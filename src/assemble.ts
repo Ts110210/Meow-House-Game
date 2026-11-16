@@ -24,6 +24,11 @@ export function splitStrip(img: HTMLImageElement | HTMLCanvasElement, action: Ac
   const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
   const ctx = cv.getContext('2d', { willReadFrequently: true })!;
   ctx.imageSmoothingQuality = 'high'; ctx.drawImage(img, 0, 0, w, h);
+  // 先看看四条边是不是白的：不是的话，多半不是按要求画的序列帧
+  const edge = ctx.getImageData(0, 0, w, h).data; let white = 0, total = 0;
+  const isW = (x: number, y: number) => { const i = (y * w + x) * 4; total++; if (edge[i + 3] < 20 || (edge[i] > 232 && edge[i + 1] > 232 && edge[i + 2] > 232)) white++; };
+  for (let x = 0; x < w; x += 3) { isW(x, 0); isW(x, h - 1); } for (let y = 0; y < h; y += 3) { isW(0, y); isW(w - 1, y); }
+  const whiteEdge = white / Math.max(1, total);
   knockOutWhite(ctx, w, h, 0);
   const data = ctx.getImageData(0, 0, w, h).data;
   const solid = (x: number, y: number) => data[(y * w + x) * 4 + 3] > 48;
@@ -63,6 +68,9 @@ export function splitStrip(img: HTMLImageElement | HTMLCanvasElement, action: Ac
     return f;
   });
   if (!warn && frames.some((f) => f.width < 4 || f.height < 4)) warn = '有一帧几乎是空的，检查一下原图';
+  const hs = frames.map((f) => f.height), ws = frames.map((f) => f.width);
+  if (whiteEdge < 0.6) warn = '这张图不像序列帧：四周不是白色背景，去不掉底。' + (warn ? warn : '');
+  else if (!warn && (Math.max(...hs) > Math.min(...hs) * 2.2 || frames.some((f) => f.height > f.width * 4 || f.width > f.height * 4))) warn = '4 帧的大小差得很多，可能不是同一只宠物的 4 个动作';
   return { frames, size: SPRITE.assembleSize[action] ?? SPRITE.cellFill, warn };
 }
 

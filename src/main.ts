@@ -28,7 +28,7 @@ async function boot() {
   ui = new UI(game, scene, document.getElementById('ui')!);
   scene.relayout(); scene.scrollToZone(2, true);
   ui.setZone(2);
-  assets.onChange(async (key) => { if (key.startsWith('pet.')) await game.reloadDefaultSprites(); ui?.assetsChanged(); scene.rebuildArt(); });
+  assets.onChange(async (key) => { if (key.startsWith('pet.') || key.startsWith('avatar.')) await game.reloadDefaultSprites(); ui?.assetsChanged(); scene.rebuildArt(); });
   // 切到后台或关掉页面时存一次档
   document.addEventListener('visibilitychange', () => { if (document.hidden) game.save(); });
   window.addEventListener('pagehide', () => game.save());

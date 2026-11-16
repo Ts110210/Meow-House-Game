@@ -10,8 +10,9 @@ import { drawBackScreen, takeBackTaps } from './backscreen';
 import { ASSETS } from './assets.config';
 import { exportLayout, isChanged, resetBackground, resetObjects, saveLayout } from './layout';
 import { composeSheet, splitStrip, type Assembled, type StripPart } from './assemble';
-import { canvasToBlob, saveBlob } from './platform/download';
-import { isNative, notifyPermission } from './platform/native';
+import { canvasToBlob, saveBlob, saveMessage } from './platform/download';
+import { isNative, notifyPermission, testNotification } from './platform/native';
+import { kv } from './platform/storage';
 import { hoursToText, simulateAll, type SimResult } from './simulate';
 import { buildSet, previewSet, drawFrame, fileToDataUrl, frameIndex, hasRow, imageToAvatar, loadImage, normalizeSheet, type SpriteSet } from './sprites';
 import type { Pet, Postcard, Result } from './types';
@@ -65,6 +66,7 @@ export class UI {
 
   constructor(private game: Game, private scene: Scene, private root: HTMLElement) {
     this.buildHud();
+    const savedScale = Number(kv.get('pet-game-ui-scale')); if (savedScale >= 0.8 && savedScale <= 1.6) this.applyUiScale(savedScale, false);
     setToastHandler((t) => this.toast(t));
     game.onChange(() => { this.updateHud(); this.refresh(); });
     game.onEvent((e) => {
@@ -143,7 +145,22 @@ export class UI {
     this.root.append(top, h('div', { class: 'hud-bottom' }, this.strip, this.zonesEl), this.toasts);
   }
 
-  setZone(i: number) { [...this.zonesEl.children].forEach((c, k) => c.classList.toggle('on', k === i)); }
+  setZone(i: number) {
+    [...this.zonesEl.children].forEach((c, k) => c.classList.toggle('on', k === i));
+    // 底部的区域按钮可以左右滑：把当前区域滚到中间
+    const el = this.zonesEl.children[i] as HTMLElement | undefined;
+    if (el) this.zonesEl.scrollTo({ left: el.offsetLeft - (this.zonesEl.clientWidth - el.offsetWidth) / 2, behavior: 'smooth' });
+  }
+
+  // ---------- 界面大小 ----------
+
+  private uiScale = 1;
+  private applyUiScale(v: number, save = true) {
+    this.uiScale = v; (this.root.style as any).zoom = String(v);
+    if (save) kv.set('pet-game-ui-scale', String(v));
+    this.scene.relayout(); this.setZone(this.currentZone());
+  }
+  private currentZone() { return Math.max(0, [...this.zonesEl.children].findIndex((c) => c.classList.contains('on'))); }
 
   private avatarCanvas(pet: Pet, size = 92) {
     const cv = h('canvas', { width: size, height: size }) as HTMLCanvasElement;
@@ -181,14 +198,17 @@ export class UI {
 
   // ---------- 面板的开关 ----------
 
+  private openedAt = 0;
   private open(sheet: Sheet) {
+    if (!this.scrim) this.openedAt = performance.now();
     if (this.sheet?.onClose) this.sheet.onClose();
     this.sheet = sheet;
     if (!this.scrim) {
       this.body = h('div', { class: 'sheet-body' });
       const title = h('h2');
       const panel = h('div', { class: 'sheet' }, h('div', { class: 'sheet-head' }, title, h('button', { class: 'x', 'aria-label': '关闭', onclick: () => this.close() }, '×')), this.body);
-      this.scrim = h('div', { class: 'scrim', onclick: (e: Event) => { if (e.target === this.scrim) this.close(); } }, panel);
+      // 面板刚弹出来的一瞬间不接受「点外面关闭」：不然点家具的那一下手指抬起来，会被当成点了外面，面板一闪就没了
+      this.scrim = h('div', { class: 'scrim', onclick: (e: Event) => { if (e.target === this.scrim && performance.now() - this.openedAt > 400) this.close(); } }, panel);
       this.root.append(this.scrim);
     }
     this.scrim.querySelector('h2')!.textContent = sheet.title;
@@ -472,6 +492,8 @@ export class UI {
         h('button', { class: 'btn', onclick: () => this.openFamily() }, '家庭成员'), h('button', { class: 'btn', onclick: () => this.openAlbum() }, '纪念相册'),
         h('button', { class: 'btn', onclick: () => this.openCabinet() }, '收藏柜'), h('button', { class: 'btn', onclick: () => this.openBack() }, '背屏预览'),
         h('button', { class: 'btn', onclick: () => this.openDoor() }, '派宠物出门'), h('button', { class: 'btn', onclick: () => this.openPond() }, '鱼塘')),
+        h('h3', null, '界面大小'),
+        h('div', { class: 'seg' }, ([[0.9, '小'], [1, '标准'], [1.15, '大'], [1.3, '特大']] as [number, string][]).map(([v, label]) => h('button', { class: 'chip' + (Math.abs(this.uiScale - v) < 0.01 ? ' on' : ''), onclick: () => { this.applyUiScale(v); this.refresh(true); } }, label))),
         h('p', null, h('button', { class: 'btn block', onclick: async () => {
           if (!s.settings.notify) {
             s.settings.notify = true;
@@ -748,25 +770,27 @@ export class UI {
       out.push(h('div', { class: 'asm-sheetwrap' }, img));
       if (!a.out.complete) out.push(h('div', { class: 'banner' }, `还差：${a.out.missing.join('、')}`));
     }
-    const ready = !!a.out?.complete;
-    if (mode === 'tool') {
-      out.push(h('p', null, h('button', { class: 'btn primary block', disabled: !ready, onclick: async () => {
-        const blob = await canvasToBlob(a.out!.sheet); if (!blob) { this.toast('生成图片失败'); return; }
-        const r = await saveBlob('pet-sheet.png', blob);
-        this.toast(r === 'saved' ? '已交给浏览器保存' : r === 'declined' ? '没有保存' : '这里下载不了，请长按上面的图片保存');
-      } }, '下载 PNG')));
-      out.push(h('div', { class: 'row' }, h('span', { class: 'soft' }, '或者直接用作默认宠物：'), Object.entries(FUR_COLORS).map(([k, v]) => h('button', { class: 'chip' + (a.color === k ? ' on' : ''), onclick: () => { a.color = k; this.refresh(true); } }, v.name))));
-      out.push(h('p', null, h('button', { class: 'btn block', disabled: !ready, onclick: async () => {
-        const saved = await this.game.assets.uploadDataUrl(`pet.${a.color}`, a.out!.sheet.toDataURL('image/png'), false);
-        this.toast(saved ? `已换成「${FUR_COLORS[a.color].name}」默认宠物的样子` : '已换上（这个浏览器存不下，刷新后要重来）');
-      } }, `用它替换「${FUR_COLORS[a.color].name}」默认宠物`)));
-    }
-    out.push(h('h3', null, mode === 'tool' ? '也可以直接领养' : '头像（可选）和名字'));
+    out.push(h('h3', null, '头像（可选）'));
     out.push(h('div', { class: 'row' }, h('div', { class: 'btn small file' }, a.avatar ? '换头像' : '上传头像', h('input', { type: 'file', accept: 'image/*', onchange: async (e: Event) => {
       const file = (e.target as HTMLInputElement).files?.[0]; if (!file) return;
       try { a.avatar = imageToAvatar(await loadImage(await fileToDataUrl(file))); } catch { this.toast('头像读不出来'); }
       this.refresh(true);
-    } })), h('span', { class: 'soft' }, a.avatar ? '已选头像' : '不传的话，用待机第 1 帧当头像')));
+    } })), a.avatar ? (() => { const c = h('canvas', { width: 96, height: 96, style: 'width:48px;height:48px;border-radius:50%;background:#fff;box-shadow:0 0 0 2px var(--line)' }) as HTMLCanvasElement; c.getContext('2d')!.drawImage(a.avatar, 0, 0, 96, 96); return c; })() : null,
+      h('span', { class: 'soft' }, a.avatar ? '头像已选好，领养或替换后生效' : '不传的话，用待机第 1 帧当头像')));
+    const ready = !!a.out?.complete;
+    if (mode === 'tool') {
+      out.push(h('p', null, h('button', { class: 'btn primary block', disabled: !ready, onclick: async () => {
+        const blob = await canvasToBlob(a.out!.sheet); if (!blob) { this.toast('生成图片失败'); return; }
+        const msg = saveMessage(await saveBlob('pet-sheet.png', blob), '请长按上面的图片保存'); if (msg) this.toast(msg);
+      } }, '下载 PNG')));
+      out.push(h('div', { class: 'row' }, h('span', { class: 'soft' }, '或者直接用作默认宠物：'), Object.entries(FUR_COLORS).map(([k, v]) => h('button', { class: 'chip' + (a.color === k ? ' on' : ''), onclick: () => { a.color = k; this.refresh(true); } }, v.name))));
+      out.push(h('p', null, h('button', { class: 'btn block', disabled: !ready, onclick: async () => {
+        if (a.avatar) await this.game.assets.uploadDataUrl(`avatar.${a.color}`, a.avatar.toDataURL('image/png'), false);
+        const saved = await this.game.assets.uploadDataUrl(`pet.${a.color}`, a.out!.sheet.toDataURL('image/png'), false);
+        this.toast(saved ? `已换成「${FUR_COLORS[a.color].name}」默认宠物的样子` : '已换上（这个浏览器存不下，刷新后要重来）');
+      } }, `用它替换「${FUR_COLORS[a.color].name}」默认宠物`)));
+    }
+    out.push(h('h3', null, mode === 'tool' ? '也可以直接领养' : '名字'));
     out.push(h('p', null, h('input', { type: 'text', maxlength: 8, placeholder: '名字（最多 8 个字）', value: a.name, oninput: (e: Event) => { a.name = (e.target as HTMLInputElement).value; } })));
     out.push(h('button', { class: 'btn block' + (mode === 'adopt' ? ' primary' : ''), disabled: !ready, onclick: async () => {
       if (!a.name.trim()) { this.toast('先取个名字'); return; }
@@ -853,7 +877,7 @@ export class UI {
           h('button', { class: 'btn primary', onclick: async () => {
             const text = await g.exportText(); const d = new Date();
             const r = await saveBlob(`pet-save-${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}.json`, new Blob([text], { type: 'application/json' }));
-            this.toast(r === 'saved' ? '已交给浏览器保存' : r === 'declined' ? '没有保存' : '这里下载不了，请用「复制存档文字」');
+            const msg = saveMessage(r, '请用「复制存档文字」'); if (msg) this.toast(msg);
           } }, '下载存档文件'),
           h('button', { class: 'btn', onclick: async () => {
             const text = await g.exportText();
@@ -886,6 +910,10 @@ export class UI {
         h('button', { class: 'btn', onclick: () => this.openSaves() }, '存档：导出 / 导入'), h('button', { class: 'btn', onclick: () => this.openSim() }, '数值模拟')),
         h('p', { class: 'soft' }, '游戏里的时间：', clockEl),
         h('h3', null, '时间倍速（出门、鱼塘、状态下降、成长都会一起变快）'), seg(D.speedOptions, d.speed, (v) => { d.speed = v; }),
+        h('div', { class: 'seg', style: 'margin-top:8px' }, h('button', { class: 'chip' + (d.background ? ' on' : ''), onclick: () => { d.background = !d.background; this.game.changed(); } }, `退到桌面、关掉再开的那段时间也按倍速：${d.background ? '开' : '关'}`)),
+        h('p', { class: 'soft' }, d.background ? '注意：倍速开得很高时，离开一会儿宠物就可能饿坏。测完记得关掉。' : '现在倍速只在游戏开着的时候生效，离开期间按真实时间算。'),
+        h('h3', null, '通知'),
+        h('button', { class: 'btn block', onclick: async () => { const err = await testNotification(60); this.toast(err || '已安排：1 分钟后发一条测试通知。现在退到桌面等着。'); } }, '1 分钟后发一条测试通知'),
         h('h3', null, '直接跳过一段时间'), h('div', { class: 'seg' }, ([['10 分钟', 10 * MIN], ['1 小时', HOUR], ['6 小时', 6 * HOUR], ['1 天', DAY], ['7 天', 7 * DAY]] as [string, number][]).map(([n, ms]) => h('button', { class: 'chip', onclick: () => { this.game.skip(ms); this.toast(`跳过了 ${n}`); } }, n))),
         h('h3', null, '成长速度'), seg(D.growthOptions, d.growth, (v) => { d.growth = v; }),
         h('h3', null, '饱食下降速度'), seg(D.decayOptions, d.decay.food, (v) => { d.decay.food = v; }),

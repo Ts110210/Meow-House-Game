@@ -47,6 +47,8 @@ export interface Postcard {
 export interface DevSettings {
   enabled: boolean;
   speed: number;
+  /** 离开游戏（退到桌面、关掉再开）的那段时间也按倍速算。默认关：只在游戏开着时加速 */
+  background: boolean;
   growth: number;
   decay: Record<StatKey, number>;
 }

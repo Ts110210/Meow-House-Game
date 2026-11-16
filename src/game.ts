@@ -45,7 +45,7 @@ export class Game {
     for (const p of this.state.pets) await this.ensureSprite(p.spriteId);
     if (loaded) {
       // 关掉 App 期间的变化，打开时一次算清。系统时间被往回调时不倒着算。
-      this.awayMs = Math.min(MAX_CATCHUP, Math.max(0, now - this.state.lastReal));
+      this.awayMs = Math.min(MAX_CATCHUP, Math.max(0, now - this.state.lastReal) * sim.awaySpeed(this.state));
       this.awayEvents = sim.advance(this.state, this.awayMs);
       this.state.lastReal = now;
     }
@@ -77,7 +77,7 @@ export class Game {
       // 默认宠物：assets.config.ts 里配了精灵图就用图片，否则用代码画的占位图
       const pic = this.assets.get(`pet.${color}`);
       const r = pic ? normalizeSheet(pic, false) : null;
-      if (r && r.ok && r.sheet) set = buildSet(spriteId, r.sheet);
+      if (r && r.ok && r.sheet) set = buildSet(spriteId, r.sheet, this.assets.get(`avatar.${color}`));
       else { const sheet = drawDefaultSheet(FUR_COLORS[color] ? color : 'orange'); set = buildSet(spriteId, sheet, drawDefaultAvatar(sheet)); }
     }
     this.sprites.set(spriteId, set);
@@ -108,8 +108,8 @@ export class Game {
   tick() {
     const nowReal = Date.now();
     const real = Math.max(0, nowReal - this.state.lastReal);
-    // 间隔很长说明页面被挂起过：这段时间按正常速度补算，不乘倍速
-    const dt = real > 5000 ? Math.min(real, MAX_CATCHUP) : real * this.state.dev.speed;
+    // 间隔很长说明页面被挂起过（退到桌面等）：默认按正常速度补算；开发者面板里可以改成也乘倍速
+    const dt = real > 5000 ? Math.min(real * sim.awaySpeed(this.state), MAX_CATCHUP) : real * this.state.dev.speed;
     this.state.lastReal = nowReal;
     const events = sim.advance(this.state, dt);
     if (events.length) { events.forEach((e) => this.emitEvent(e)); this.changed(); }

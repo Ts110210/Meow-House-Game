@@ -4,6 +4,8 @@ import { App } from '@capacitor/app';
 import { Capacitor } from '@capacitor/core';
 import { LocalNotifications } from '@capacitor/local-notifications';
 import { Preferences } from '@capacitor/preferences';
+import { Directory, Filesystem } from '@capacitor/filesystem';
+import { Share } from '@capacitor/share';
 
 export const isNative = Capacitor.isNativePlatform();
 
@@ -63,4 +65,26 @@ export async function scheduleReminders(list: Reminder[]) {
     if (!channelReady) { await LocalNotifications.createChannel({ id: CHANNEL, name: '宠物提醒', description: '宠物饿了、回家了', importance: 3 }); channelReady = true; }
     await LocalNotifications.schedule({ notifications: list.slice(0, 20).map((r, i) => ({ id: 1000 + i, title: r.title, body: r.body, channelId: CHANNEL, schedule: { at: new Date(r.at), allowWhileIdle: true } })) });
   } catch { /* 安排不上不影响游戏 */ }
+}
+
+/** 过 seconds 秒发一条测试通知，用来确认通知权限和后台设置。返回为什么没发成（发成了就是空字符串）。 */
+export async function testNotification(seconds: number): Promise<string> {
+  if (!isNative) return '网页版发不了离开后的通知，要在安卓 App 里试';
+  if (!(await notifyPermission(true))) return '系统没有允许通知，请到手机设置里给这个 App 打开通知权限';
+  try {
+    if (!channelReady) { await LocalNotifications.createChannel({ id: CHANNEL, name: '宠物提醒', description: '宠物饿了、回家了', importance: 3 }); channelReady = true; }
+    await LocalNotifications.schedule({ notifications: [{ id: 999, title: '测试通知', body: '看到这条，说明离开游戏后的提醒能正常弹出来', channelId: CHANNEL, schedule: { at: new Date(Date.now() + seconds * 1000), allowWhileIdle: true } }] });
+    return '';
+  } catch (e) { return '安排通知时出错：' + String((e as Error)?.message ?? e); }
+}
+
+/** 安卓 App 里「下载」文件：先写到缓存，再弹出系统的分享面板（可以存到相册、文件，或发到别的 App） */
+export async function shareFile(filename: string, blob: Blob): Promise<'shared' | 'cancelled' | 'failed'> {
+  if (!isNative) return 'failed';
+  try {
+    const data = await new Promise<string>((resolve, reject) => { const fr = new FileReader(); fr.onload = () => resolve(String(fr.result).split(',')[1] ?? ''); fr.onerror = () => reject(fr.error); fr.readAsDataURL(blob); });
+    const file = await Filesystem.writeFile({ path: filename, data, directory: Directory.Cache });
+    try { await Share.share({ title: filename, files: [file.uri], dialogTitle: '保存或发送' }); return 'shared'; }
+    catch (e) { return /cancel/i.test(String((e as Error)?.message ?? e)) ? 'cancelled' : 'failed'; }
+  } catch { return 'failed'; }
 }

@@ -5,6 +5,7 @@ import { Application, Circle, Container, Graphics, Rectangle, Sprite, Text, Text
 import { ASSETS, type ObjectDef } from './assets.config';
 import type { AssetStore } from './assets';
 import { drawObject, drawZone, objectAspect } from './art/room';
+import { renderPostcard } from './art/postcard';
 import { CONFIG, PALETTE, SOUVENIRS, SPRITE, ZONES, type ActionName } from './config';
 import type { Game } from './game';
 import { BASE_FY, BASE_ZW, geo, recompute } from './geo';
@@ -177,7 +178,7 @@ export class Scene {
 
   private rebuildObjects() {
     const s = this.game.state;
-    const sig = JSON.stringify([this.editMode, s.owned, Object.keys(s.souvenirs), s.pond.map((p, i) => (p == null ? 0 : sim.pondReady(s, i) ? 2 : 1))]);
+    const sig = JSON.stringify([this.editMode, s.owned, Object.keys(s.souvenirs), s.postcards.length, s.pets.map((p) => p.spriteId), s.pond.map((p, i) => (p == null ? 0 : sim.pondReady(s, i) ? 2 : 1))]);
     if (sig === this.objSig) return;
     this.objSig = sig;
     this.objects.removeChildren().forEach((c) => c.destroy({ children: true })); this.objSprites.clear(); this.editBoxes.clear();
@@ -205,15 +206,30 @@ export class Scene {
       const left = sp.x - sp.width / 2, top = sp.y - sp.height;
       if (kind === 'cabinet') Object.keys(s.souvenirs).slice(0, 9).forEach((id, i) => {
         const t = new Text({ text: SOUVENIRS[id]?.icon ?? '?', style: { fontSize: 30 } });
-        t.anchor.set(0.5); t.position.set(left + sp.width * (0.26 + (i % 3) * 0.24), top + sp.height * (0.2 + Math.floor(i / 3) * 0.307)); this.objects.addChild(t);
+        t.anchor.set(0.5); t.position.set(left + sp.width * (0.26 + (i % 3) * 0.24), top + sp.height * (0.2 + Math.floor(i / 3) * 0.307));
+        t.eventMode = 'none'; // 摆着的纪念品不挡点击，点到它等于点收藏柜
+        this.objects.addChild(t);
       });
       if (kind === 'pond') s.pond.forEach((p, i) => {
         if (p == null) return;
         const ready = sim.pondReady(s, i); const f = new Graphics(); const fx = left + sp.width * (0.3 + i * 0.2), fy = top + sp.height * 0.5; const k = ready ? 1 : 0.5;
         const col = ready ? hex(PALETTE.coral) : 0xf2d2c6;
         f.ellipse(fx, fy, 18 * k, 8 * k).fill(col).poly([fx - 16 * k, fy, fx - 28 * k, fy - 7 * k, fx - 28 * k, fy + 7 * k]).fill(col);
-        this.objects.addChild(f);
+        f.eventMode = 'none'; this.objects.addChild(f);
       });
+      // 相册墙：占位图的四个相框里放最近的四张明信片（换成自己的相册墙图片后不放，因为不知道相框在哪）
+      if (kind === 'album' && !img && src) {
+        const FRAMES = [[11, 27, 58, 42], [93, 11, 44, 60], [19, 95, 42, 56], [85, 99, 54, 40]]; const kx = sp.width / 150, ky = sp.height / 170;
+        s.postcards.slice(-4).reverse().forEach((card, i) => {
+          const [fx, fy, fw, fh] = FRAMES[i];
+          const full = renderPostcard(card.destId, card.petIds.map((id) => this.game.spriteOf(this.game.pet(id))), this.assets.get(`postcard.${card.destId}`));
+          const thumb = document.createElement('canvas'); thumb.width = fw * 4; thumb.height = fh * 4;
+          const k = Math.max(thumb.width / full.width, thumb.height / full.height); const dw = full.width * k, dh = full.height * k;
+          thumb.getContext('2d')!.drawImage(full, (thumb.width - dw) / 2, (thumb.height - dh) / 2, dw, dh);
+          const ps = new Sprite(this.tex(thumb)); ps.position.set(left + fx * kx, top + fy * ky); ps.width = fw * kx; ps.height = fh * ky; ps.eventMode = 'none';
+          this.objects.addChild(ps);
+        });
+      }
     }
     if (this.editMode) for (const [kind, sp] of this.objSprites) {
       const frame = new Graphics(); const handle = new Graphics();
@@ -335,7 +351,8 @@ export class Scene {
    *  横屏：按高度放大，墙的最上面裁掉一点，让宠物和家具更大。 */
   private layout() {
     const w = this.app.screen.width, h = this.app.screen.height;
-    const bottom = (document.querySelector('.hud-bottom') as HTMLElement | null)?.offsetHeight ?? 100;
+    // 用实际显示出来的高度（界面大小调过之后也对）
+    const bottom = (document.querySelector('.hud-bottom') as HTMLElement | null)?.getBoundingClientRect().height ?? 100;
     const avail = Math.max(120, h - bottom);
     const landscape = w > h;
     const crop = landscape ? CONFIG.room.landscapeCropTop : 0;

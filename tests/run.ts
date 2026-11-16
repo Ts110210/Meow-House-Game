@@ -97,6 +97,9 @@ console.log('存档');
     check('升级后新字段有默认值', r.state.settings.notify === true && r.state.createdAt === T0 - DAY);
     sim.advance(r.state, DAY); check('升级后的存档可以继续玩', r.state.pets[0].food < 40);
   }
+  const v2 = { ...v1, v: 2, settings: { notify: false }, createdAt: T0 - 5 * DAY };
+  const r2 = migrate(v2, T0);
+  check('v2 存档能升级，原有的设置保留，新开关默认关', r2.ok && r2.from === 2 && r2.state.settings.notify === false && r2.state.createdAt === T0 - 5 * DAY && r2.state.dev.background === false);
   check('来自更新版本的存档会被拒绝，而不是读坏', !migrate({ ...v1, v: SAVE_VERSION + 1 }).ok);
   check('不是存档的东西会被拒绝', !migrate({ hello: 1 }).ok && !migrate(null).ok && !migrate('abc').ok);
 }
@@ -120,6 +123,16 @@ console.log('存档');
 }
 
 console.log('提醒');
+{
+  const s = sim.newState(T0); s.inv.kibble = 1; sim.dispatch(s, { petIds: [s.pets[0].id], bento: 'kibble', tool: null, goods: [] });
+  const normal = sim.planReminders(s)[0].inMs;
+  s.dev.enabled = true; s.dev.speed = 60;
+  check('只开倍速、没开「后台也按倍速」时，提醒时间不变', sim.awaySpeed(s) === 1 && sim.planReminders(s)[0].inMs === normal);
+  s.dev.background = true;
+  check('开了「后台也按倍速」，离开期间按倍速算，提醒也提前', sim.awaySpeed(s) === 60 && near(sim.planReminders(s)[0].inMs, normal / 60));
+  s.dev.enabled = false;
+  check('关掉开发者模式后恢复 1 倍', sim.awaySpeed(s) === 1);
+}
 {
   const s = sim.newState(T0); const p = s.pets[0]; s.inv.kibble = 2;
   let plan = sim.planReminders(s);
