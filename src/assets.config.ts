@@ -65,8 +65,9 @@ export const ASSETS = {
     feeder: { src: 'objects/feeder.png', zone: 'kitchen', x: 262, y: 564, height: 128, label: '自动喂食机', needsOwned: 'feeder' },
     pendantDoor: { src: 'objects/pendantDoor.png', zone: 'door', x: 66, y: 194, height: 194, label: '门口吊灯', needsOwned: 'pendantDoor', light: [0.5, 0.88] },
     counter: { src: 'objects/counter.png', zone: 'kitchen', x: 122, y: 548, height: 190, label: '橱柜', partOfBackground: true },
-    sofa: { src: 'objects/sofa.png', zone: 'living', x: 150, y: 562, height: 144, label: '沙发', partOfBackground: true },
-    scratcher: { src: 'objects/scratcher.png', zone: 'living', x: 300, y: 606, height: 160, label: '猫抓板', needsOwned: 'scratcher' },
+    sofa: { src: 'objects/sofa.png', zone: 'living', x: 132, y: 562, height: 144, label: '沙发', partOfBackground: true },
+    cattree: { src: 'objects/cattree.png', zone: 'living', x: 330, y: 566, height: 340, label: '猫爬架', needsOwned: 'cattree' },
+    scratcher: { src: 'objects/scratcher.png', zone: 'living', x: 390, y: 652, height: 160, label: '猫抓板', needsOwned: 'scratcher' },
     ball: { src: 'objects/ball.png', zone: 'living', x: 120, y: 690, height: 32, label: '玩具球', needsOwned: 'ball' },
     tub: { src: 'objects/tub.png', zone: 'bath', x: 216, y: 576, height: 128, label: '浴缸', partOfBackground: true, frontFrom: 0.2 },
     nightstand: { src: 'objects/nightstand.png', zone: 'bedroom', x: 49, y: 548, height: 70, label: '床头柜', partOfBackground: true },
@@ -77,6 +78,13 @@ export const ASSETS = {
     pendantShelf: { src: 'objects/pendantShelf.png', zone: 'shelf', x: 340, y: 194, height: 194, label: '收藏柜吊灯', needsOwned: 'pendantShelf', light: [0.5, 0.88] },
     pond: { src: 'objects/pond.png', zone: 'garden', x: 262, y: 700, height: 84, label: '鱼塘', partOfBackground: true },
   } as Record<string, ObjectDef>,
+
+  // ---------- 不是家具的落脚点：窗台。猫会跳上去看外面 ----------
+  // x = 离所在区域左边多远（按 432 宽的区域算），y = 窗台的高度（按地板线在 560 算）。换了背景图、窗户位置变了，改这里。
+  perches: {
+    kitchenWindow: { zone: 'kitchen', x: 121, y: 306, label: '厨房窗台' },
+    bedroomWindow: { zone: 'bedroom', x: 320, y: 312, label: '卧室窗台' },
+  } as Record<string, { zone: ZoneId; x: number; y: number; label: string }>,
 
   // ---------- 默认宠物的精灵图（上传规范：4 列，每格 256×256，每行一个动作） ----------
   pets: {

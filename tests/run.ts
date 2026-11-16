@@ -257,6 +257,18 @@ console.log('逗猫棒和毛色');
   const r = repair(JSON.parse(JSON.stringify(s)), T0); check('自己捏的猫存档再读档还在', r.pets[1].spriteId === id);
 }
 
+console.log('猫爬架');
+{
+  const s = blank(); s.fish = 1000; sim.adopt(Object.assign(s, { slots: 3 }), '二号', 'default:grey'); const [a, b] = s.pets;
+  check('没买猫爬架不能指定位置', !sim.setCatTree(s, 0, a.id).ok);
+  check('买得到猫爬架', sim.buy(s, 'cattree').ok && !!s.owned.cattree);
+  check('指定谁待在哪一层', sim.setCatTree(s, 0, a.id).ok && sim.setCatTree(s, 2, b.id).ok && s.cattree[0] === a.id && s.cattree[2] === b.id && s.cattree[1] === null);
+  check('一只宠物只占一层：换到新的一层，原来那层空出来', sim.setCatTree(s, 1, a.id).ok && s.cattree[0] === null && s.cattree[1] === a.id);
+  check('可以改回谁都可以；乱写的层和宠物会被拒绝', sim.setCatTree(s, 1, null).ok && s.cattree[1] === null && !sim.setCatTree(s, 5, a.id).ok && !sim.setCatTree(s, 0, 'ghost').ok);
+  sim.setCatTree(s, 0, a.id); const raw = JSON.parse(JSON.stringify(s)); raw.cattree = [a.id, 'ghost']; const r = repair(raw, T0);
+  check('存档再读档：位置还在，不存在的宠物被清掉，旧存档补成三层都空', r.cattree[0] === a.id && r.cattree[1] === null && r.cattree.length === 3 && repair({ ...raw, cattree: undefined }, T0).cattree.every((x) => x === null));
+}
+
 console.log('昼夜和四季');
 {
   const at = (mo: number, h: number) => { const s = sim.newState(new Date(2026, mo, 10, h).getTime()); return s; };

@@ -108,6 +108,7 @@ export function repair(raw: Raw, now = Date.now()): GameState {
     visitorQuota: num(raw.visitorQuota, 0, 0, 2), visitorDay: str(raw.visitorDay, ''), lastVisitorAt: num(raw.lastVisitorAt, 0),
     errand: raw.errand && DESTS.some((d) => d.id === raw.errand.destId) && raw.errand.from in VISITORS ? { destId: raw.errand.destId, reward: num(raw.errand.reward, 40, 0), from: raw.errand.from, expiresAt: num(raw.errand.expiresAt, clock) } : null,
     display: { souvenirs: arr(display.souvenirs).filter((id) => souvenirs[id]).slice(0, CONFIG.travel.displaySouvenirs), postcards: arr(display.postcards).filter((id) => postcards.some((c) => c.id === id)).slice(0, CONFIG.travel.displayPostcards) },
+    cattree: [0, 1, 2].map((i) => { const id = arr(raw.cattree)[i]; return typeof id === 'string' && pets.some((p) => p.id === id && !p.dead) ? id : null; }),
     pendingReturns: arr(raw.pendingReturns).filter((id) => postcards.some((c) => c.id === id)),
     dev: { enabled: !!dev.enabled, background: !!dev.background, time: ['day', 'dusk', 'night'].includes(dev.time) ? dev.time : 'auto', season: ['spring', 'summer', 'autumn', 'winter'].includes(dev.season) ? dev.season : 'auto', speed: num(dev.speed, 1, 1, 100000), growth: num(dev.growth, 1, 0, 100000), decay: { food: num(decay.food, 1, 0, 1000), mood: num(decay.mood, 1, 0, 1000), clean: num(decay.clean, 1, 0, 1000) } },
     settings: { notify: settings.notify !== false, showSeason: settings.showSeason === true, seasonMode: settings.seasonMode === 'real' ? 'real' : 'cycle' },

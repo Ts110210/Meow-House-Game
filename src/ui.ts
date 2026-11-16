@@ -286,6 +286,20 @@ export class UI {
     else if (kind === 'cabinet') this.openCabinet();
     else if (kind === 'pond') this.openPond();
     else if (kind === 'npc') this.openRescue();
+    else if (kind === 'cattree') this.openCatTree();
+  }
+
+  // ---------- 猫爬架：指定谁待在哪一层 ----------
+
+  openCatTree() {
+    this.open({ title: '猫爬架', render: () => {
+      const s = this.game.state; const pets = sim.alivePets(s);
+      return [h('p', { class: 'soft' }, '给每一层指定一只宠物，它没事的时候就爱回自己的位置待着，晚上也睡在那里。没指定的那一层谁都可以上去。'),
+        ...sim.CATTREE_LEVELS.map((name, i) => [h('h3', null, name),
+          h('div', { class: 'seg' }, h('button', { class: 'chip' + (s.cattree[i] === null ? ' on' : ''), onclick: () => { this.game.act((st) => sim.setCatTree(st, i, null)); sfx('click'); } }, '谁都可以'),
+            pets.map((p) => h('button', { class: 'chip' + (s.cattree[i] === p.id ? ' on' : ''), onclick: () => { this.say(this.game.act((st) => sim.setCatTree(st, i, p.id))); sfx('ok'); } }, p.name)))]).flat(),
+        h('p', null, h('button', { class: 'btn primary block', onclick: () => this.close() }, '好了'))];
+    } });
   }
 
   // ---------- 访客 ----------

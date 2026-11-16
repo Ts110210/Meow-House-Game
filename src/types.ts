@@ -133,6 +133,8 @@ export interface GameState {
   /** 每两只宠物之间的友情值。键 = 两个编号按字母顺序用 | 连起来 */
   friends: Record<string, number>;
   display: { souvenirs: string[]; postcards: string[] };
+  /** 猫爬架的三层（顶层、中层、底层）各指定给哪只宠物；null = 谁都可以上去 */
+  cattree: (string | null)[];
   /** 还没给主人看过的回家明信片 */
   pendingReturns: string[];
   dev: DevSettings;

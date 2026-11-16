@@ -258,6 +258,18 @@ const OBJECT_ART: Record<string, { w: number; h: number; draw: (s: Sketch) => vo
     s.rect(8, 58, 184, 130, { fill: P.sage, r: 4 });
     s.line(100, 62, 100, 184, P.ink, 1.3, 0.6); s.ellipse(86, 118, 4.5, 4.5, { fill: P.white, width: 1 }); s.ellipse(114, 118, 4.5, 4.5, { fill: P.white, width: 1 });
   } },
+  // 猫爬架：三层（左上顶层、右边中层、左下底层），每层一只。落脚点写在 scene.ts 的 STATIONS.cattree 里
+  cattree: { w: 200, h: 340, draw(s) {
+    s.rect(8, 322, 184, 16, { fill: P.mustard, r: 6 });
+    s.rect(42, 60, 20, 264, { fill: lighten(P.wood, 0.35) }); s.rect(142, 168, 20, 156, { fill: lighten(P.wood, 0.35) });
+    for (let y = 76; y < 318; y += 12) s.line(43, y, 61, y + 4, P.woodDark, 1.1, 0.6);
+    for (let y = 184; y < 318; y += 12) s.line(143, y, 161, y + 4, P.woodDark, 1.1, 0.6);
+    s.rect(2, 262, 100, 14, { fill: P.mustard, r: 6 });   // 底层
+    s.rect(98, 154, 100, 14, { fill: P.mustard, r: 6 });  // 中层
+    s.rect(2, 47, 100, 14, { fill: P.mustard, r: 6 });    // 顶层
+    s.rect(2, 36, 8, 14, { fill: P.mustard, r: 3 }); s.rect(94, 36, 8, 14, { fill: P.mustard, r: 3 });
+    s.line(170, 168, 174, 206, P.ink, 1.2, 0.7); s.ellipse(175, 214, 8, 8, { fill: P.coral }); // 挂着的小球
+  } },
   nightstand: { w: 66, h: 70, draw(s) {
     s.rect(2, 2, 62, 66, { fill: P.wood, r: 4 }); s.line(6, 34, 60, 34, P.ink, 1.2, 0.6); s.ellipse(33, 20, 4, 4, { fill: P.mustard, width: 1 });
   } },

@@ -20,7 +20,7 @@ export function newState(now: number): GameState {
   const s: GameState = {
     v: 6, createdAt: now, seasonStart: now, settings: { notify: true, showSeason: false, seasonMode: 'cycle' }, clock: now, lastReal: now, fish: CONFIG.startFish, slots: 1,
     pets: [], trips: [], postcards: [], souvenirs: {}, inv: { ...CONFIG.startItems }, owned: {},
-    pond: Array(CONFIG.pond.slots).fill(null), lastCheckin: '', pendingReturns: [], friends: {}, variants: {}, milestones: [], decor: [], visitors: [], visitorQuota: 0, visitorDay: '', lastVisitorAt: 0, errand: null, display: { souvenirs: [], postcards: [] },
+    pond: Array(CONFIG.pond.slots).fill(null), lastCheckin: '', pendingReturns: [], friends: {}, variants: {}, milestones: [], decor: [], visitors: [], visitorQuota: 0, visitorDay: '', lastVisitorAt: 0, errand: null, display: { souvenirs: [], postcards: [] }, cattree: [null, null, null],
     dev: { enabled: false, background: false, time: 'auto', season: 'auto', speed: 1, growth: 1, decay: { food: 1, mood: 1, clean: 1 } },
   };
   s.pets.push(newPet(CONFIG.startPet.name, `default:${CONFIG.startPet.color}`, now));
@@ -321,6 +321,19 @@ export function storeDecor(s: GameState, id: string): Result {
   if (!d) return { ok: false, msg: '找不到这件装饰' };
   d.zone = null;
   return { ok: true, msg: '收起来了' };
+}
+
+// ---------- 猫爬架 ----------
+
+export const CATTREE_LEVELS = ['顶层', '中层', '底层'];
+/** 指定猫爬架的某一层给某只宠物（petId = null 表示谁都可以）。一只宠物只能占一层：指定到新的一层，原来那层就空出来 */
+export function setCatTree(s: GameState, level: number, petId: string | null): Result {
+  if (!s.owned.cattree) return { ok: false, msg: '还没有猫爬架' };
+  if (!(level >= 0 && level < CATTREE_LEVELS.length)) return { ok: false, msg: '没有这一层' };
+  if (petId !== null && !s.pets.some((p) => p.id === petId && !p.dead)) return { ok: false, msg: '找不到这只宠物' };
+  if (petId !== null) s.cattree = s.cattree.map((id) => (id === petId ? null : id));
+  s.cattree[level] = petId;
+  return { ok: true, msg: petId === null ? `${CATTREE_LEVELS[level]}谁都可以上去` : `${s.pets.find((p) => p.id === petId)!.name}以后爱待在${CATTREE_LEVELS[level]}` };
 }
 
 // ---------- 访客 ----------

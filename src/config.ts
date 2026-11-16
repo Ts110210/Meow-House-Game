@@ -164,6 +164,10 @@ export const CONFIG = {
     ball: [18_000, 22_000] as [number, number],
     /** 被摸 */
     pet: 2_200,
+    /** 在鱼塘边用爪子捞鱼 */
+    fish: [10_000, 20_000] as [number, number],
+    /** 跳到沙发、床、窗台、猫爬架上待多久 */
+    perch: [9_000, 18_000] as [number, number],
   },
 
   // ---------- 互动 ----------
@@ -341,6 +345,7 @@ export const GEAR: GearDef[] = [
   { id: 'wand', name: '逗猫棒', icon: '🪶', price: 60, desc: '陪它玩的时候用：玩耍从 +10 心情变成 +24' },
   { id: 'scratcher', name: '猫抓板', icon: '🪵', price: 120, desc: '放在客厅，宠物会自己去抓，心情不会低于 15' },
   { id: 'ball', name: '玩具球', icon: '⚽', price: 40, desc: '宠物会自己追着玩，两只还会一起玩；心情不会低于 15' },
+  { id: 'cattree', name: '猫爬架', icon: '🗼', price: 260, desc: '放在客厅，三层，最多三只一起待着；点它可以指定谁待在哪一层' },
   { id: 'pendantDoor', name: '门口吊灯', icon: '💡', price: 100, desc: '挂在门口的天花板上，天黑了会亮' },
   { id: 'pendantShelf', name: '收藏柜吊灯', icon: '🏮', price: 100, desc: '挂在收藏柜那一间，天黑了会亮' },
   { id: 'bedlamp', name: '床头灯', icon: '🛋️', price: 70, desc: '放在卧室的床头柜上，天黑了会亮' },

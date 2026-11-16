@@ -1,4 +1,5 @@
-// 房间画面：一个可以左右滑动的长房间，7 个区域，宠物自己在里面活动。
+// 房间画面：一个可以左右滑动的长房间，8 个区域，宠物自己在里面活动。
+// 前后关系：家具、摆在地上的装饰、宠物都放在同一层里，按「脚底的位置」排序——脚底越靠下（离镜头越近）越盖在前面。
 // 背景和物品都是贴图：有图片就用图片（见 assets.config.ts），没有就用 art/room.ts 里代码画的占位图。
 import 'pixi.js/unsafe-eval';
 import { Application, Circle, Container, Graphics, Rectangle, Sprite, Text, Texture, type FederatedPointerEvent } from 'pixi.js';
@@ -15,15 +16,28 @@ import { frameIndex, rowFor } from './sprites';
 
 export type ObjectKind = 'door' | 'bowl' | 'tub' | 'bed' | 'cabinet' | 'album' | 'pond' | 'scratcher' | 'feeder' | 'ball' | 'sofa' | 'counter' | 'nightstand' | 'bedlamp' | 'pendantDoor' | 'pendantShelf' | 'cattree' | 'npc' | 'visitor';
 
-/** 家具旁边的位置：每件家具能同时容纳几只、各自站在哪（离家具中心的距离）、脸朝哪边。
- *  有位置才过去，位置满了就不去挤，所以不会重叠，也不会互相打断。 */
-const STATIONS: Record<string, [number, 1 | -1][]> = {
-  bowl: [[-72, 1], [72, -1], [-138, 1], [138, -1]], // 围着饭碗，最多四只一起吃
-  tub: [[-44, 1], [44, -1]],           // 浴缸够大，两只可以一起泡
-  bed: [[-46, 1], [24, 1], [92, -1]],  // 床上能睡三只
-  scratcher: [[-50, 1]],               // 猫抓板一次一只
-  ball: [[-46, 1], [46, -1]],          // 玩具球可以两只一起玩
+/** 家具的位置：每件家具能同时容纳几只、各自在哪、脸朝哪边。
+ *  有位置才过去，位置满了就不去挤，所以不会重叠，也不会互相打断。
+ *  dx = 离家具中心多远（按 432 宽的区域算）；
+ *  at = 站在地上时，脚底在家具底边往上多少（按家具高度的比例；负数 = 在家具前面）。不写 = 贴着墙根；
+ *  perch = 跳到家具上：落脚点在图片里的位置 [横向 −0.5…0.5，从底边往上 0…1]。先走到 dx 的位置，再跳上去。 */
+interface Station { dx: number; dir: 1 | -1; at?: number; perch?: [number, number] }
+const STATIONS: Record<string, Station[]> = {
+  bowl: [{ dx: -72, dir: 1, at: -0.1 }, { dx: 72, dir: -1, at: -0.1 }, { dx: -138, dir: 1, at: -0.4 }, { dx: 138, dir: -1, at: -0.4 }], // 围着饭碗，最多四只一起吃
+  tub: [{ dx: -44, dir: 1, perch: [-0.17, 0] }, { dx: 44, dir: -1, perch: [0.17, 0] }], // 浴缸够大，两只可以一起泡（位置按遮挡线另算）
+  bed: [{ dx: -62, dir: 1, perch: [-0.22, 0.5] }, { dx: 20, dir: 1, perch: [0.06, 0.5] }, { dx: 98, dir: -1, perch: [0.34, 0.5] }], // 床上能睡三只
+  sofa: [{ dx: -64, dir: 1, perch: [-0.25, 0.33] }, { dx: 36, dir: -1, perch: [0.13, 0.33] }], // 沙发上两只
+  cattree: [{ dx: -40, dir: 1, perch: [-0.24, 0.862] }, { dx: 46, dir: -1, perch: [0.25, 0.547] }, { dx: -30, dir: 1, perch: [-0.2, 0.232] }], // 猫爬架：顶层、中层、底层
+  kitchenWindow: [{ dx: 0, dir: 1, perch: [0, 0] }], // 窗台：一次一只，看外面
+  bedroomWindow: [{ dx: 0, dir: -1, perch: [0, 0] }],
+  scratcher: [{ dx: -50, dir: 1, at: -0.03 }], // 猫抓板一次一只
+  ball: [{ dx: -46, dir: 1, at: -0.1 }, { dx: 46, dir: -1, at: -0.1 }], // 玩具球可以两只一起玩
+  pond: [{ dx: -178, dir: 1, at: 0.45 }, { dx: -72, dir: 1, at: 1.12 }, { dx: 72, dir: -1, at: 1.12 }], // 鱼塘边捞鱼：左边一只、后面两只，都在岸上
 };
+/** 猫会自己跳上去待着的地方（猫爬架另算：可以指定谁待在哪一层） */
+const LOUNGE = ['sofa', 'bed', 'kitchenWindow', 'bedroomWindow', 'cattree'];
+/** 跳上、跳下家具的过渡动画要多久（毫秒） */
+const HOP_MS = 460;
 /** 自己找玩具玩之后，至少隔这么久才会再去，免得一直卡在玩的动作里 */
 const SELF_PLAY_COOLDOWN = 45_000;
 const D = CONFIG.durations;
@@ -42,13 +56,21 @@ const objPos = (def: ObjectDef) => { const zi = zoneIndex(def.zone); const k = z
 const objX = (k: string) => objPos(ASSETS.objects[k]).x;
 const SPOT = { get bowl() { return objX('bowl') - 78; }, get living() { return zx(2) + zw(2) / 2; }, get tub() { return objX('tub'); }, get bed() { return objX('bed') + 20; } };
 const walkMin = () => 70, walkMax = () => worldW() - 70;
+/** 宠物能走的前后范围（脚底的 y）：地板带里靠墙的一条到靠镜头的一条 */
+const depthMin = () => geo.floorY + (H - geo.floorY) * 0.22, depthMax = () => geo.floorY + (H - geo.floorY) * 0.9;
+const clampX = (x: number) => Math.max(walkMin(), Math.min(walkMax(), x)), clampY = (y: number) => Math.max(depthMin(), Math.min(depthMax(), y));
 const hex = (c: string) => parseInt(c.slice(1), 16);
 /** 壮年宠物在画面里的缩放：身高约为门高的 petHeightOfDoor */
 const PET_BASE = (CONFIG.room.petHeightOfDoor * CONFIG.room.doorHeight) / (SPRITE.cell * CONFIG.room.petCellFill);
 
 interface Actor {
   id: string; root: Container; sprite: Sprite; tag: Container; tagText: Text; fx: Graphics;
-  x: number; lane: number; tx: number; dir: 1 | -1; action: ActionName; t0: number; until: number;
+  /** x = 左右，y = 前后（脚底在地板带里的位置）；tx、ty = 要走去哪 */
+  x: number; y: number; lane: number; tx: number; ty: number; dir: 1 | -1; action: ActionName; t0: number; until: number;
+  /** 正待在哪件家具上（床、沙发、猫爬架、窗台、浴缸里）。这时 x、y 仍然是它跳上去之前站的地方 */
+  perch: { kind: string; slot: number } | null;
+  /** 正在跳上或跳下家具 */
+  hop: { t0: number; up: boolean; kind: string; slot: number } | null;
   pending: { action: ActionName; dur: number; ball?: boolean } | null; fast: boolean;
   /** 正在追球：到什么时候为止、是不是带球的那只、刚跑到位要不要先扑一下 */
   ball: { until: number; leader: boolean; hop: boolean } | null;
@@ -69,7 +91,6 @@ export class Scene {
   private fill = new Graphics();
   private bgLayer = new Container();
   private objects = new Container();
-  private petLayer = new Container();
   private overlay = new Container();
   private names: Container[] = [];
   private bubble = new Container(); private bubbleText!: Text; private bubbleUntil = 0;
@@ -81,7 +102,7 @@ export class Scene {
   private follow: { id: string; until: number } | null = null;
   private envSig = ''; private ownedSig: string | null = null;
   /** 玩具球现在在哪（宠物玩完丢在哪就留在哪）；null = 还在原来的位置 */
-  private ballX: number | null = null;
+  private ballX: number | null = null; private ballY: number | null = null;
   /** 布置房间：装饰可以拖动 */
   decorMode = false; decorSelected: string | null = null;
   private decorSprites = new Map<string, Sprite>(); private decorArt = new Map<string, HTMLCanvasElement | null>();
@@ -110,8 +131,8 @@ export class Scene {
     this.weather.eventMode = 'none'; this.shade.eventMode = 'none'; this.frontLayer.eventMode = 'none'; this.glow.eventMode = 'none'; this.debug.eventMode = 'none';
     this.glow.blendMode = 'add'; this.shade.blendMode = 'multiply';
     this.decorBox.eventMode = 'none';
-    this.world.addChild(this.fill, this.bgLayer, this.weather, this.objects, this.petLayer, this.frontLayer, this.shade, this.glow, this.overlay, this.decorBox, this.debug);
-    this.petLayer.sortableChildren = true;
+    this.world.addChild(this.fill, this.bgLayer, this.weather, this.objects, this.frontLayer, this.shade, this.glow, this.overlay, this.decorBox, this.debug);
+    this.objects.sortableChildren = true;
     this.app.stage.addChild(this.world);
     ZONES.forEach((z) => {
       // 区域名字做成一块小牌子，压在装饰上也看得清
@@ -146,7 +167,7 @@ export class Scene {
   /** 素材变了之后重建所有贴图 */
   rebuildArt() {
     this.bgLayer.removeChildren().forEach((c) => c.destroy());
-    this.objects.removeChildren().forEach((c) => c.destroy({ children: true }));
+    this.clearObjects();
     this.textures.forEach((t) => t.destroy(true)); this.textures = []; this.objSprites.clear(); this.objArt.clear(); this.objSig = '';
 
     const strip = this.assets.get('room.strip');
@@ -217,7 +238,7 @@ export class Scene {
   private applyGeometry() {
     recompute(this.assets.get('room.strip'));
     this.placeArt(); this.placeObjects();
-    for (const a of this.actors.values()) { a.x = Math.max(walkMin(), Math.min(walkMax(), a.x)); a.tx = Math.max(walkMin(), Math.min(walkMax(), a.tx)); }
+    for (const a of this.actors.values()) { a.x = clampX(a.x); a.tx = clampX(a.tx); a.y = clampY(a.y); a.ty = clampY(a.ty); }
     this.applyCam();
   }
 
@@ -240,17 +261,21 @@ export class Scene {
     this.bubble.scale.set(0.5 / this.scale); this.bubble.visible = true; this.bubbleUntil = this.now + 2200;
   }
 
+  /** 清掉家具和装饰（宠物也在这一层里，留着不动） */
+  private clearObjects() { for (const c of [...this.objects.children]) if (!(c as any).isActor) c.destroy({ children: true }); }
+  /** 放进前后排序的那一层。z = 脚底的位置：越大越靠前 */
+  private addSorted<T extends Container>(node: T, z: number): T { node.zIndex = z; this.objects.addChild(node); return node; }
+
   private rebuildObjects() {
     const s = this.game.state;
     const sig = JSON.stringify([this.editMode, this.decorMode, s.decor, s.owned, sim.shownSouvenirs(s), sim.shownPostcards(s).map((c) => c.id), s.pets.map((p) => p.spriteId), sim.lostPets(s).length, s.pets.some((p) => p.searchUntil !== null), s.visitors.map((v) => v.id), s.pond.map((p, i) => (p == null ? 0 : sim.pondReady(s, i) ? 2 : 1))]);
     if (sig === this.objSig) return;
     this.objSig = sig;
-    this.objects.removeChildren().forEach((c) => c.destroy({ children: true })); this.objSprites.clear(); this.editBoxes.clear();
-    this.frontLayer.removeChildren().forEach((c) => c.destroy()); this.tubFront = null; this.npc = null; this.visitorSprites.clear(); this.decorSprites.clear(); this.fishes = [];
+    this.clearObjects(); this.objSprites.clear(); this.editBoxes.clear();
+    this.tubFront = null; this.npc = null; this.visitorSprites.clear(); this.decorSprites.clear(); this.fishes = [];
 
-    // 装饰：墙上的和地上铺的先画（在家具后面），摆在地上的后画（在家具前面）
-    const stand: Sprite[] = [];
-    if (!this.editMode) for (const d of s.decor) { const sp = this.makeDecor(d); if (!sp) continue; if (DECOR[d.kind].layer === 'stand') stand.push(sp); else this.objects.addChild(sp); }
+    // 装饰：墙上的和地上铺的永远在最后面；摆在地上的和家具、宠物一起按脚底的位置排前后
+    if (!this.editMode) s.decor.forEach((d, i) => { const sp = this.makeDecor(d); if (!sp) return; const layer = DECOR[d.kind].layer; this.addSorted(sp, layer === 'wall' ? -3000 + i : layer === 'floor' ? -2000 + sp.y / 10 : sp.y); });
     for (const [kind, def] of Object.entries(ASSETS.objects) as [ObjectKind, ObjectDef][]) {
       if (def.needsOwned && !s.owned[def.needsOwned] && !this.editMode) continue;
       const pos = objPos(def); const zi = pos.zi;
@@ -268,8 +293,8 @@ export class Scene {
         sp.on('pointertap', this.tap(() => { if (this.editMode) return; this.showBubble(kind); this.hooks.onObject(kind); }));
         sp.on('pointerdown', (e) => this.editDown(e, kind, 'move'));
       }
-      if (kind === 'ball' && this.ballX !== null && !this.editMode) sp.x = this.ballX;
-      this.objects.addChild(sp); this.objSprites.set(kind, sp);
+      if (kind === 'ball' && this.ballX !== null && !this.editMode) { sp.x = this.ballX; sp.y = this.ballY ?? sp.y; }
+      this.addSorted(sp, pos.y); this.objSprites.set(kind, sp);
       if (this.editMode) continue;
 
       const left = sp.x - sp.width / 2, top = sp.y - sp.height;
@@ -277,7 +302,7 @@ export class Scene {
         const t = new Text({ text: SOUVENIRS[id]?.icon ?? '?', style: { fontSize: 30 } });
         t.anchor.set(0.5); t.position.set(left + sp.width * (0.26 + (i % 3) * 0.24), top + sp.height * (0.2 + Math.floor(i / 3) * 0.307));
         t.eventMode = 'none'; // 摆着的纪念品不挡点击，点到它等于点收藏柜
-        this.objects.addChild(t);
+        this.addSorted(t, pos.y + 0.05);
       });
       // 鱼塘里的鱼：画在自己的小图层里，每帧让它来回游
       if (kind === 'pond') s.pond.forEach((p, i) => {
@@ -287,14 +312,14 @@ export class Scene {
         f.ellipse(0, 0, 18 * k, 8 * k).fill(col).poly([-16 * k, 0, -28 * k, -7 * k, -28 * k, 7 * k]).fill(col).circle(10 * k, -2 * k, 1.6).fill(0x5b4634);
         f.position.set(left + sp.width * (0.3 + i * 0.2), top + sp.height * (0.42 + (i % 2) * 0.16));
         (f as any).homeX = f.x; (f as any).range = sp.width * 0.09; (f as any).phase = i * 2.1;
-        f.eventMode = 'none'; this.objects.addChild(f); this.fishes.push(f);
+        f.eventMode = 'none'; this.addSorted(f, pos.y + 0.05); this.fishes.push(f);
       });
       // 浴缸的前半边单独再画一层，盖在宠物上面，这样宠物看起来是泡在浴缸里
       if (kind === 'tub' && src) {
         const base = this.tex(src); const from = def.frontFrom ?? 0.2;
         const front = new Sprite(new Texture({ source: base.source, frame: new Rectangle(0, src.height * from, src.width, src.height * (1 - from)) }));
         front.anchor.set(0.5, 1); front.width = sp.width; front.height = sp.height * (1 - from); front.position.set(sp.x, sp.y); front.visible = false;
-        this.frontLayer.addChild(front); this.tubFront = front;
+        this.addSorted(front, pos.y + 0.2); this.tubFront = front; // 泡澡的宠物排在浴缸和这一层之间
       }
       // 相册墙：占位图的四个相框里放最近的四张明信片（换成自己的相册墙图片后不放，因为不知道相框在哪）
       if (kind === 'album' && !img && src) {
@@ -306,7 +331,7 @@ export class Scene {
           const k = Math.max(thumb.width / full.width, thumb.height / full.height); const dw = full.width * k, dh = full.height * k;
           thumb.getContext('2d')!.drawImage(full, (thumb.width - dw) / 2, (thumb.height - dh) / 2, dw, dh);
           const ps = new Sprite(this.tex(thumb)); ps.position.set(left + fx * kx, top + fy * ky); ps.width = fw * kx; ps.height = fh * ky; ps.eventMode = 'none';
-          this.objects.addChild(ps);
+          this.addSorted(ps, pos.y + 0.05);
         });
       }
     }
@@ -317,9 +342,8 @@ export class Scene {
       const n = new Sprite(tabby.tex[0][0]); n.anchor.set(0.5, 0.9); n.scale.set(-sc, sc);
       n.position.set(door.x + 118 * door.k, geo.floorY + (H - geo.floorY) * 0.3);
       n.eventMode = 'static'; n.cursor = 'pointer'; n.on('pointertap', this.tap(() => this.hooks.onObject('npc')));
-      this.objects.addChild(n); this.npc = n;
+      this.addSorted(n, n.y); this.npc = n;
     }
-    stand.sort((a, b) => a.y - b.y).forEach((sp) => this.objects.addChild(sp));
     // 访客：站在门口，头顶有个小气泡，点一下看它来干什么
     if (!this.editMode) s.visitors.forEach((v, i) => {
       const set = this.game.sprites.get(VISITORS[v.who].look); if (!set) return;
@@ -329,14 +353,14 @@ export class Scene {
       n.eventMode = 'static'; n.cursor = 'pointer'; n.on('pointertap', this.tap(() => this.hooks.onObject('visitor', v.id)));
       const bubble = new Text({ text: v.kind === 'gift' ? '🎁' : v.kind === 'trade' ? '🔁' : '✉️', style: { fontSize: 64 } });
       bubble.anchor.set(0.5, 1); bubble.scale.set(-1 / sc * 0.42, 1 / sc * 0.42); bubble.position.set(0, -256 * 0.86); bubble.eventMode = 'none'; n.addChild(bubble);
-      this.objects.addChild(n); this.visitorSprites.set(v.id, n);
+      this.addSorted(n, n.y); this.visitorSprites.set(v.id, n);
     });
     if (this.editMode) for (const [kind, sp] of this.objSprites) {
       const frame = new Graphics(); const handle = new Graphics();
       const label = new Text({ text: '', style: { fontFamily: 'system-ui, sans-serif', fontSize: 24, fill: 0xffffff, fontWeight: '600' } });
       frame.eventMode = 'none'; label.eventMode = 'none'; // 框和文字不接收点击，否则会挡住下面的物品
       handle.eventMode = 'static'; handle.cursor = 'nesw-resize'; handle.on('pointerdown', (e) => this.editDown(e, kind, 'size'));
-      this.objects.addChild(frame, label, handle);
+      this.addSorted(frame, 1e6); this.addSorted(label, 1e6); this.addSorted(handle, 1e6);
       this.editBoxes.set(kind, { sp, frame, handle, label }); this.updateEditBox(kind);
     }
   }
@@ -347,7 +371,7 @@ export class Scene {
 
   setBgMode(on: boolean) {
     this.bgMode = on && this.hasStrip(); this.bgDrag = null;
-    this.objects.interactiveChildren = !this.bgMode; this.petLayer.interactiveChildren = !this.bgMode;
+    this.objects.interactiveChildren = !this.bgMode;
     this.bgLayerEdit.removeChildren().forEach((c) => c.destroy()); this.bgHandles = [];
     if (!this.bgMode) { this.objSig = ''; this.rebuildObjects(); return; }
     this.bgLines = new Graphics(); this.bgLines.eventMode = 'none'; this.bgLayerEdit.addChild(this.bgLines);
@@ -402,7 +426,7 @@ export class Scene {
 
   setEditMode(on: boolean) {
     this.editMode = on; this.editSelected = null; this.editDrag = null; this.objSig = '';
-    this.petLayer.visible = !on; this.bubble.visible = false;
+    for (const a of this.actors.values()) a.root.visible = !on; this.bubble.visible = false;
     this.rebuildObjects();
   }
 
@@ -577,9 +601,9 @@ export class Scene {
     root.addChild(sprite, fx, tag);
     sprite.eventMode = 'static'; sprite.cursor = 'pointer';
     sprite.on('pointertap', this.tap(() => this.hooks.onPet(id)));
-    this.petLayer.addChild(root);
-    const x = SPOT.living - 120 + index * 70 + Math.random() * 40;
-    return { id, root, sprite, tag, tagText, fx, x, lane: index, tx: x, dir: 1, action: 'idle', t0: this.now, until: this.now + 1500, pending: null, fast: false, ball: null, wandUntil: 0, want: null, station: null, slot: 0, selfPlayAt: -SELF_PLAY_COOLDOWN };
+    (root as any).isActor = true; root.visible = !this.editMode; this.objects.addChild(root); // 和家具在同一层，按脚底的位置排前后
+    const x = SPOT.living - 120 + index * 70 + Math.random() * 40, y = this.homeY(index);
+    return { id, root, sprite, tag, tagText, fx, x, y, lane: index, tx: x, ty: y, perch: null, hop: null, dir: 1, action: 'idle', t0: this.now, until: this.now + 1500, pending: null, fast: false, ball: null, wandUntil: 0, want: null, station: null, slot: 0, selfPlayAt: -SELF_PLAY_COOLDOWN };
   }
 
   private setAction(a: Actor, action: ActionName, dur: number) {
@@ -587,17 +611,57 @@ export class Scene {
     a.until = this.now + dur;
   }
 
-  /** 去占一件家具旁边的位置。满了、或者这件家具现在不在房间里，就返回 false */
-  private reserve(a: Actor, kind: string): boolean {
-    const sp = this.objSprites.get(kind); const slots = STATIONS[kind]; if (!sp || !slots) return false;
+  // ---------- 走动：左右（x）和前后（y）都能走 ----------
+
+  /** 没有特别要去的前后位置时，每只宠物有自己习惯站的那一条，这样并排等着的时候不会叠在一起 */
+  private homeY(lane: number) { return clampY(depthMin() + 16 + lane * (H - geo.floorY) * 0.1); }
+  /** 鱼塘是水，不能踩进去：走到它的左右范围里时只能待在它后面的岸上。返回在这个 x 上，脚底最靠前能到哪 */
+  private depthLimit(x: number): number {
+    const sp = this.objSprites.get('pond'); if (!sp || this.editMode) return depthMax();
+    const out = Math.max(sp.x - sp.width / 2 - x, x - (sp.x + sp.width / 2), 0); const back = Math.max(depthMin(), sp.y - sp.height - 6);
+    return out >= 60 ? depthMax() : back + (out / 60) * (depthMax() - back);
+  }
+  private go(a: Actor, x: number, y: number = this.homeY(a.lane)) { a.tx = clampX(x); a.ty = Math.min(clampY(y), this.depthLimit(a.tx)); }
+  private stop(a: Actor) { a.tx = a.x; a.ty = a.y; }
+  private far(a: Actor) { return Math.abs(a.tx - a.x) > 4 || Math.abs(a.ty - a.y) > 4; }
+
+  // ---------- 家具的位置 ----------
+
+  /** 一件家具（或者窗台这样的落脚点）现在在哪：中心 x、底边 y、宽高。不在房间里就是 null。玩具球会被带着跑，用它现在的位置 */
+  private anchor(kind: string): { x: number; y: number; w: number; h: number; k: number } | null {
+    const spot = ASSETS.perches[kind];
+    if (spot) { const zi = zoneIndex(spot.zone); const k = zw(zi) / BASE_ZW; return { x: zx(zi) + spot.x * k, y: spot.y + geo.floorY - BASE_FY, w: 0, h: 0, k }; }
+    const sp = this.objSprites.get(kind), def = ASSETS.objects[kind]; if (!sp || !def) return null;
+    const pos = objPos(def); const ball = kind === 'ball' && this.ballX !== null;
+    return { x: ball ? this.ballX! : pos.x, y: ball ? this.ballY ?? pos.y : pos.y, w: sp.width, h: sp.height, k: pos.k };
+  }
+  /** 用这件家具的第几个位置时，脚站在地上的哪里（要跳上去的家具：这里是起跳的地方） */
+  private floorSpot(kind: string, slot: number): [number, number] | null {
+    const A = this.anchor(kind), st = STATIONS[kind]?.[slot]; if (!A || !st) return null;
+    const x = clampX(A.x + st.dx * A.k); const y = st.at != null ? A.y - A.h * st.at : depthMin() + 4 + slot * 7;
+    return [x, Math.min(clampY(y), this.depthLimit(x))];
+  }
+  /** 跳上去之后脚在哪；z = 排前后用的位置（比家具自己靠前一点点）。浴缸按遮挡线算：下巴大约在浴缸边沿 */
+  private perchSpot(kind: string, slot: number, sc: number): { x: number; y: number; z: number } | null {
+    const A = this.anchor(kind), st = STATIONS[kind]?.[slot]; if (!A || !st?.perch) return null;
+    if (kind === 'tub') { const rim = A.y - A.h * (1 - (ASSETS.objects.tub.frontFrom ?? 0.2)); return { x: A.x + st.dx * (A.w / 260), y: rim + (0.9 * 256 - 152) * sc, z: A.y + 0.1 }; }
+    return { x: A.x + st.perch[0] * A.w, y: A.y - st.perch[1] * A.h, z: A.y + 0.3 + slot * 0.01 };
+  }
+
+  /** 去占一件家具的位置。满了、或者这件家具现在不在房间里，就返回 false。want = 只要这一个位置。
+   *  猫爬架：主人指定了谁的那一层，只有那一只能用。 */
+  private reserve(a: Actor, kind: string, want?: number): boolean {
+    const slots = STATIONS[kind]; if (!slots || !this.anchor(kind)) return false;
     const taken = new Set([...this.actors.values()].filter((o) => o !== a && o.station === kind).map((o) => o.slot));
-    const i = slots.findIndex((_, k) => !taken.has(k)); if (i < 0) return false;
-    const pos = objPos(ASSETS.objects[kind]);
-    a.station = kind; a.slot = i; a.tx = Math.max(walkMin(), Math.min(walkMax(), this.stationX(kind) + slots[i][0] * pos.k));
+    const owner = kind === 'cattree' ? this.game.state.cattree : null;
+    const free = (k: number) => k >= 0 && k < slots.length && !taken.has(k) && (!owner?.[k] || owner[k] === a.id);
+    // 已经待在这件家具上：优先留在原来的位置，不用跳下来再跳上去
+    const order = want != null ? [want] : [...(a.perch?.kind === kind ? [a.perch.slot] : []), ...slots.map((_, k) => k)];
+    const i = order.find(free); if (i === undefined) return false;
+    const spot = this.floorSpot(kind, i)!;
+    a.station = kind; a.slot = i; a.tx = spot[0]; a.ty = spot[1];
     return true;
   }
-  /** 家具的中心在哪。玩具球会被宠物带着跑，所以用它现在的位置 */
-  private stationX(kind: string) { return kind === 'ball' && this.ballX !== null ? this.ballX : objPos(ASSETS.objects[kind]).x; }
   private release(a: Actor) { a.station = null; a.ball = null; }
   /** 这只宠物是不是正忙着（吃、洗、玩到一半，或者正赶过去）。忙的时候不接新的指令。 */
   busy(petId: string): ActionName | null {
@@ -609,15 +673,17 @@ export class Scene {
   }
   /** 占位置；满了就走到家具旁边等着 */
   private reserveOrWait(a: Actor, kind: string) {
-    if (this.reserve(a, kind) || !this.objSprites.get(kind)) return;
-    const pos = objPos(ASSETS.objects[kind]); const side = a.x < pos.x ? -1 : 1;
-    a.want = { kind, since: this.now }; a.tx = Math.max(walkMin(), Math.min(walkMax(), pos.x + side * (210 + a.lane * 26) * pos.k));
+    if (this.reserve(a, kind)) return;
+    const A = this.anchor(kind); if (!A) return;
+    a.want = { kind, since: this.now }; this.go(a, A.x + (a.x < A.x ? -1 : 1) * (210 + a.lane * 26) * A.k);
   }
 
   /** 让一只宠物去做某个动作（主人喂食、洗澡、玩耍时调用）。会走到对应的家具旁边；镜头跟着它。 */
   perform(petId: string, action: ActionName, follow = true) {
     const a = this.actors.get(petId); if (!a) return;
-    this.release(a); a.pending = null; a.want = null; a.tx = a.x; a.wandUntil = 0;
+    // 待在沙发、床、猫爬架上被摸：不用跳下来
+    if (!(action === 'happy' && a.perch && a.perch.kind !== 'tub')) this.release(a);
+    a.pending = null; a.want = null; this.stop(a); a.wandUntil = 0;
     if (action === 'eat') this.reserveOrWait(a, 'bowl');
     else if (action === 'bath') this.reserveOrWait(a, 'tub');
     // 主人陪玩：就在原地逗它，不用走到玩具那里（猫抓板和球是它自己玩的）
@@ -644,40 +710,52 @@ export class Scene {
 
   private think(a: Actor) {
     const s = this.game.state; const p = this.game.pet(a.id)!;
+    const was = a.perch;
     this.release(a); // 上一件事做完了，把位置让出来
     const near = (x: number) => Math.abs(a.x - x) < 40;
-    const goNear = (kind: string, dx: number) => { const pos = objPos(ASSETS.objects[kind]); return Math.max(walkMin(), Math.min(walkMax(), pos.x + dx * pos.k)); };
+    const goNear = (kind: string, dx: number) => { const pos = objPos(ASSETS.objects[kind]); return clampX(pos.x + dx * pos.k); };
+    /** 跳到一件家具上待着（床、沙发、猫爬架、窗台）。没位置就返回 false */
+    const lounge = (kind: string, action: ActionName, dur: number, want?: number) => { if (!this.reserve(a, kind, want)) return false; a.pending = { action, dur }; return true; };
+    /** 主人在猫爬架上给它指定的那一层（没有就是 -1） */
+    const mine = s.owned.cattree ? s.cattree.indexOf(p.id) : -1;
     const night = sim.dayTime(s) === 'night';
     a.fast = false;
     const low = CONFIG.stats.lowThreshold;
     if (p.food < low) {
       // 饿了：去饭碗旁边蹲着等
       const spot = goNear('bowl', -150 - a.lane * 30);
-      if (near(spot)) { a.dir = 1; this.setAction(a, 'idle', 3000); } else a.tx = spot;
+      if (near(spot)) { a.dir = 1; this.setAction(a, 'idle', 3000); } else this.go(a, spot);
     } else if (s.owned.feeder && p.food < CONFIG.stats.feederFoodFloor + 12 && Math.random() < 0.4 && this.reserve(a, 'bowl')) {
       // 自动喂食机出粮了：自己去吃两口
       a.pending = { action: 'eat', dur: 5000 };
     } else if (night) {
-      // 晚上：床上有位置就上床，没有就在旁边的地上睡
-      if (this.reserve(a, 'bed')) a.pending = { action: 'sleep', dur: 9000 };
-      else { const spot = goNear('bed', 170 + a.lane * 26); if (near(spot)) this.setAction(a, 'sleep', 9000); else a.tx = spot; }
+      // 晚上：先睡自己在猫爬架上的那一层；没有就上床、上沙发；都满了在床边的地上睡
+      if (mine >= 0 && lounge('cattree', 'sleep', 9000, mine)) { /* 睡在自己的位置 */ }
+      else if (lounge('bed', 'sleep', 9000) || lounge('sofa', 'sleep', 9000)) { /* 睡在床上或沙发上 */ }
+      else { const spot = goNear('bed', 170 + a.lane * 26); if (near(spot)) this.setAction(a, 'sleep', 9000); else this.go(a, spot); }
     } else if (p.clean < low) {
       // 脏了：去浴缸旁边等，一边自己舔毛
       const spot = goNear('tub', -170 - a.lane * 24);
-      if (near(spot)) this.setAction(a, 'lick', 3200); else a.tx = spot;
+      if (near(spot)) this.setAction(a, 'lick', 3200); else this.go(a, spot);
     } else if (p.clean < low + 15 && Math.random() < 0.4) {
       this.setAction(a, 'lick', 3200);
     } else {
       const r = Math.random();
-      // 家里有猫抓板或玩具球：隔一阵子自己去玩一会儿。有冷却时间，位置被占了就不去，所以不会卡在里面。
-      const toys = ['scratcher', 'ball'].sort(() => Math.random() - 0.5);
-      if (sim.hasToy(s) && r > 0.78 && this.now - a.selfPlayAt > SELF_PLAY_COOLDOWN && (this.reserve(a, toys[0]) || this.reserve(a, toys[1]))) {
+      // 自己找乐子：猫抓板、玩具球，鱼塘里有鱼的时候还会去岸边用爪子捞鱼。
+      // 三样共用一个冷却时间，位置被占了就不去，所以不会卡在里面，也不会挤在一起。
+      const fun = [...(s.owned.scratcher ? ['scratcher'] : []), ...(s.owned.ball ? ['ball'] : []), ...(s.pond.some((x) => x != null) ? ['pond'] : [])].sort(() => Math.random() - 0.5);
+      const rest = (): ActionName => (['idle', 'sleep', 'lick'] as ActionName[])[Math.floor(Math.random() * 3)];
+      if (was && LOUNGE.includes(was.kind) && Math.random() < 0.4 && lounge(was.kind, 'idle', between(D.perch), was.slot)) { /* 还想在上面再待一会儿 */ }
+      else if (mine >= 0 && Math.random() < 0.4 && lounge('cattree', rest(), between(D.perch), mine)) { /* 回自己在猫爬架上的位置 */ }
+      else if (fun.length && r > 0.78 && this.now - a.selfPlayAt > SELF_PLAY_COOLDOWN && fun.some((k) => this.reserve(a, k))) {
         a.selfPlayAt = this.now;
-        a.pending = a.station === 'ball' ? { action: 'play', dur: between(D.ball), ball: true } : { action: 'play', dur: between(D.scratcher) };
-      } else if (r < 0.45) {
-        const z = Math.random() < 0.6 ? 2 : Math.floor(Math.random() * N);
-        a.tx = Math.max(walkMin(), Math.min(walkMax(), zx(z) + zw(z) * (0.14 + Math.random() * 0.72)));
-      } else if (r < 0.57) this.setAction(a, 'sleep', 5000 + Math.random() * 4000);
+        a.pending = a.station === 'ball' ? { action: 'play', dur: between(D.ball), ball: true } : { action: 'play', dur: between(a.station === 'pond' ? D.fish : D.scratcher) };
+      } else if (r < 0.4) {
+        // 随便走走：客厅去得多一些，也会自己走到阳台和院子里
+        const z = Math.random() < 0.45 ? 2 : Math.floor(Math.random() * N);
+        this.go(a, zx(z) + zw(z) * (0.14 + Math.random() * 0.72), depthMin() + Math.random() * (depthMax() - depthMin()));
+      } else if (r < 0.6 && [...LOUNGE].sort(() => Math.random() - 0.5).some((k) => lounge(k, k.endsWith('Window') ? 'idle' : rest(), between(D.perch)))) { /* 跳到沙发、床、窗台或猫爬架上待一会儿 */ }
+      else if (r < 0.68) this.setAction(a, 'sleep', 5000 + Math.random() * 4000);
       else this.setAction(a, 'idle', 2000 + Math.random() * 3500);
     }
   }
@@ -685,13 +763,13 @@ export class Scene {
   /** 两只闲着的宠物凑在一起玩。有玩具球就一起去玩球，没有就在原地闹一会儿。 */
   private tryCompanionPlay() {
     const s = this.game.state;
-    const free = [...this.actors.values()].filter((a) => !a.pending && !a.station && Math.abs(a.tx - a.x) < 4 && a.action === 'idle' && this.now - a.selfPlayAt > SELF_PLAY_COOLDOWN);
+    const free = [...this.actors.values()].filter((a) => !a.pending && !a.station && !a.perch && !a.hop && !this.far(a) && a.action === 'idle' && this.now - a.selfPlayAt > SELF_PLAY_COOLDOWN);
     const ok = free.filter((a) => { const p = this.game.pet(a.id); return p && !sim.isWeak(p) && p.mood >= 30 && p.food >= CONFIG.stats.lowThreshold; });
     if (ok.length < 2 || Math.random() > 0.3) return;
     const a = ok[0]; const b = ok.slice(1).sort((m, n) => Math.abs(m.x - a.x) - Math.abs(n.x - a.x))[0];
     if (Math.abs(a.x - b.x) > zw(2) * 1.5) return; // 离得太远就算了
     if (s.owned.ball && this.reserve(a, 'ball') && this.reserve(b, 'ball')) { const dur = between(D.ball); a.pending = { action: 'play', dur, ball: true }; b.pending = { action: 'play', dur, ball: true }; }
-    else { this.release(a); this.release(b); a.tx = a.x; b.tx = b.x; a.dir = a.x < b.x ? 1 : -1; b.dir = a.dir === 1 ? -1 : 1; this.setAction(a, 'play', 6000); this.setAction(b, 'play', 6000); }
+    else { this.release(a); this.release(b); this.stop(a); this.stop(b); a.dir = a.x < b.x ? 1 : -1; b.dir = a.dir === 1 ? -1 : 1; this.setAction(a, 'play', 6000); this.setAction(b, 'play', 6000); }
     a.selfPlayAt = b.selfPlayAt = this.now;
     sim.companionPlay(s, a.id, b.id); this.game.touch();
   }
@@ -700,7 +778,7 @@ export class Scene {
   private curiosity(kind: string) {
     const sp = this.objSprites.get(kind); if (!sp) return;
     const idle = [...this.actors.values()].filter((a) => !a.pending && !a.station && !sim.isWeak(this.game.pet(a.id)!)).slice(0, 2);
-    idle.forEach((a, i) => { a.tx = Math.max(walkMin(), Math.min(walkMax(), sp.x + (i ? 80 : -80))); a.fast = true; a.pending = { action: 'happy', dur: 2400 }; });
+    idle.forEach((a, i) => { this.go(a, sp.x + (i ? 80 : -80), Math.max(sp.y + 8, depthMin() + 10 + i * 12)); a.fast = true; a.pending = { action: 'happy', dur: 2400 }; });
     if (idle.length) this.follow = { id: idle[0].id, until: this.now + 5000 };
   }
 
@@ -736,7 +814,7 @@ export class Scene {
       const band = H - geo.floorY;
       g.moveTo(0, geo.floorY).lineTo(worldW(), geo.floorY).stroke({ width: 2, color: 0x9b59d0 });
       label('floor', '地板线', this.camX + 8, geo.floorY - 16, 0x9b59d0);
-      for (let i = 0; i < Math.max(1, this.actors.size); i++) { const y = geo.floorY + band * 0.36 + i * band * 0.125; g.moveTo(0, y).lineTo(worldW(), y).stroke({ width: 1, color: 0x9b59d0, alpha: 0.5 }); }
+      for (const y of [depthMin(), depthMax()]) g.moveTo(0, y).lineTo(worldW(), y).stroke({ width: 1, color: 0x9b59d0, alpha: 0.5 }); // 宠物能走的前后范围
       for (let i = 0; i <= N; i++) g.moveTo(zx(i), 0).lineTo(zx(i), H).stroke({ width: 1, color: 0x9b59d0, alpha: 0.5 });
       for (const [kind, sp] of this.objSprites) {
         const def = ASSETS.objects[kind]; const l = sp.x - sp.width / 2, t = sp.y - sp.height;
@@ -744,13 +822,14 @@ export class Scene {
         label('o:' + kind, def.label + (sp.alpha === 0 ? '（只有点击范围）' : ''), l + 3, t + 2, 0x2f7fd0);
         if (def.frontFrom != null) { const y = t + sp.height * def.frontFrom; g.moveTo(l - 12, y).lineTo(l + sp.width + 12, y).stroke({ width: 3, color: 0xf08a24 }); label('f:' + kind, '遮挡线', l + sp.width + 14, y - 8, 0xf08a24); }
         if (def.light) g.circle(l + sp.width * def.light[0], t + sp.height * def.light[1], 7).fill(0xf5c518).stroke({ width: 2, color: 0x7a5a00 });
-        const k = objPos(def).k; const cx = this.stationX(kind);
-        (STATIONS[kind] ?? []).forEach(([dx, dir], i) => {
-          const x = cx + dx * k, y = geo.floorY + band * 0.36;
-          const taken = [...this.actors.values()].some((a) => a.station === kind && a.slot === i);
-          g.circle(x, y, 7).fill(taken ? 0x1f8a3a : 0x6fd08a).stroke({ width: 2, color: 0x0f5a22 }).moveTo(x, y).lineTo(x + dir * 26, y).stroke({ width: 3, color: 0x0f5a22 });
-        });
       }
+      // 站位：绿点 = 站在地上（或起跳）的位置；跳上去的家具再连一条线到落脚点（青色）
+      for (const [kind, slots] of Object.entries(STATIONS)) slots.forEach((st, i) => {
+        const f = this.floorSpot(kind, i); if (!f) return; const [x, y] = f;
+        const taken = [...this.actors.values()].some((a) => a.station === kind && a.slot === i);
+        g.circle(x, y, 7).fill(taken ? 0x1f8a3a : 0x6fd08a).stroke({ width: 2, color: 0x0f5a22 }).moveTo(x, y).lineTo(x + st.dir * 26, y).stroke({ width: 3, color: 0x0f5a22 });
+        const pt = this.perchSpot(kind, i, PET_BASE * ASSETS.petScale); if (pt) g.moveTo(x, y).lineTo(pt.x, pt.y).stroke({ width: 2, color: 0x1aa7b8, alpha: 0.8 }).circle(pt.x, pt.y, 6).fill(0x1aa7b8);
+      });
       if (this.npc) g.rect(this.npc.x - this.npc.width / 2, this.npc.y - this.npc.height * 0.9, this.npc.width, this.npc.height).stroke({ width: 2, color: 0x2f7fd0 });
       for (const a of this.actors.values()) {
         const w = Math.abs(a.sprite.width), h = a.sprite.height;
@@ -817,11 +896,20 @@ export class Scene {
       a.lane = i;
       const set = this.game.spriteOf(p); if (!set) return;
       const weak = sim.isWeak(p);
-      if (weak) { a.pending = null; a.want = null; a.tx = a.x; this.release(a); this.setAction(a, 'sleep', 1000); }
-      else if (Math.abs(a.tx - a.x) > 4) {
-        a.dir = a.tx > a.x ? 1 : -1;
-        const step = (a.fast ? 520 : a.ball ? 230 : 95) * (dt / 1000);
-        a.x += a.dir * Math.min(step, Math.abs(a.tx - a.x));
+      const sc = PET_BASE * ASSETS.petScale * CONFIG.growth.stageScale[sim.stageOf(p)];
+      if (a.hop) {
+        // 正在跳上或跳下家具：跳完再做别的
+        if (this.now - a.hop.t0 >= HOP_MS) { a.perch = a.hop.up ? { kind: a.hop.kind, slot: a.hop.slot } : null; a.hop = null; }
+      } else if (a.perch && (weak || a.station !== a.perch.kind || a.slot !== a.perch.slot)) {
+        // 要离开这件家具了（事情做完了、被叫去吃饭洗澡）：先跳下来
+        a.hop = { t0: this.now, up: false, kind: a.perch.kind, slot: a.perch.slot }; a.t0 = this.now;
+      } else if (weak) { a.pending = null; a.want = null; this.stop(a); this.release(a); this.setAction(a, 'sleep', 1000); }
+      else if (this.far(a)) {
+        const dx = a.tx - a.x, dy = a.ty - a.y, dist = Math.hypot(dx, dy);
+        if (Math.abs(dx) > 2) a.dir = dx > 0 ? 1 : -1;
+        const step = Math.min(dist, (a.fast ? 520 : a.ball ? 230 : 95) * (dt / 1000));
+        a.x += (dx / dist) * step; a.y += (dy / dist) * step;
+        a.y = Math.min(a.y, this.depthLimit(a.x)); // 路过鱼塘时从它后面绕
         if (a.action !== 'walk') { a.action = 'walk'; a.t0 = this.now; }
       } else if (a.ball && !a.pending) {
         // 追球：跑一段，扑一下，再跑。时间到了球就留在原地
@@ -830,9 +918,9 @@ export class Scene {
         else if (this.now >= a.until) {
           a.ball.hop = false;
           const lo = zx(1) + 80, hi = zx(Math.min(N, 5)) - 80; // 只在屋里跑，不出阳台
-          if (a.ball.leader) a.tx = Math.max(lo, Math.min(hi, a.x + (Math.random() < 0.5 ? -1 : 1) * (140 + Math.random() * 200)));
-          else { const lead = [...this.actors.values()].find((o) => o.ball?.leader); a.tx = lead ? Math.max(lo, Math.min(hi, lead.tx - lead.dir * 84)) : a.x; }
-          if (Math.abs(a.tx - a.x) <= 4) this.setAction(a, 'play', 900);
+          if (a.ball.leader) this.go(a, Math.max(lo, Math.min(hi, a.x + (Math.random() < 0.5 ? -1 : 1) * (140 + Math.random() * 200))), depthMin() + 20 + Math.random() * (depthMax() - depthMin() - 20));
+          else { const lead = [...this.actors.values()].find((o) => o.ball?.leader); if (lead) this.go(a, Math.max(lo, Math.min(hi, lead.tx - lead.dir * 84)), lead.ty + 8); else this.stop(a); }
+          if (!this.far(a)) this.setAction(a, 'play', 900);
         }
       } else if (a.pending && a.want && this.now - a.want.since < 40_000 && !this.reserve(a, a.want.kind)) {
         // 位置还被占着：面朝家具等一等（最多等 40 秒，再等不到就原地做）
@@ -842,30 +930,38 @@ export class Scene {
         a.want = null; // 空出来了，走过去（下一帧开始走）
       } else if (a.pending) {
         a.want = null;
-        // 走到了：转向家具，开始做动作
-        if (a.station) a.dir = STATIONS[a.station][a.slot][1];
-        if (a.pending.ball && a.station === 'ball') { a.ball = { until: this.now + a.pending.dur, leader: ![...this.actors.values()].some((o) => o !== a && o.ball?.leader), hop: true }; this.setAction(a, 'play', 1100); }
-        else this.setAction(a, a.pending.action, a.pending.dur);
-        if (a.wandUntil) a.wandUntil = a.until;
-        a.pending = null; a.fast = false;
+        const st = a.station ? STATIONS[a.station][a.slot] : null;
+        if (st?.perch && !(a.perch && a.perch.kind === a.station && a.perch.slot === a.slot) && this.perchSpot(a.station!, a.slot, sc)) {
+          // 走到家具跟前了：先跳上去，落稳了再开始做动作
+          a.dir = st.dir; a.hop = { t0: this.now, up: true, kind: a.station!, slot: a.slot }; a.t0 = this.now;
+        } else {
+          // 到位了：转向家具，开始做动作
+          if (st) a.dir = st.dir;
+          if (a.pending.ball && a.station === 'ball') { a.ball = { until: this.now + a.pending.dur, leader: ![...this.actors.values()].some((o) => o !== a && o.ball?.leader), hop: true }; this.setAction(a, 'play', 1100); }
+          else this.setAction(a, a.pending.action, a.pending.dur);
+          if (a.wandUntil) a.wandUntil = a.until;
+          a.pending = null; a.fast = false;
+        }
       }
-      else if (this.now >= a.until) { if (a.action === 'walk') { a.action = 'idle'; a.t0 = this.now; } this.think(a); if (Math.abs(a.tx - a.x) <= 4 && this.now >= a.until) this.setAction(a, 'idle', 1200); }
+      else if (this.now >= a.until) { if (a.action === 'walk') { a.action = 'idle'; a.t0 = this.now; } this.think(a); if (!this.far(a) && this.now >= a.until) this.setAction(a, 'idle', 1200); }
       else if (a.action === 'walk') { a.action = 'idle'; a.t0 = this.now; }
 
-      const sc = PET_BASE * ASSETS.petScale * CONFIG.growth.stageScale[sim.stageOf(p)];
-      a.sprite.texture = set.tex[rowFor(set, a.action)][frameIndex(a.action, this.now - a.t0)];
+      // 画在哪：平时在地板上；在家具上就用家具的落脚点；跳上跳下时沿一条弧线过去
+      let px = a.x, py = a.y, z = a.y; let shown: ActionName = a.action;
+      const on = a.hop ?? a.perch; const spot = on ? this.perchSpot(on.kind, on.slot, sc) : null;
+      if (a.hop && spot) {
+        const t0 = Math.min(1, (this.now - a.hop.t0) / HOP_MS), t = a.hop.up ? t0 : 1 - t0, e = t * t * (3 - 2 * t);
+        px = a.x + (spot.x - a.x) * e; py = a.y + (spot.y - a.y) * e - Math.sin(Math.PI * t) * 46;
+        // 跳的时候排在前面；进浴缸的后半程要落到浴缸前面那一层的后面
+        z = a.hop.kind === 'tub' && t > 0.5 ? spot.z : Math.max(a.y, spot.z); shown = 'play';
+        if (Math.abs(spot.x - a.x) > 6) a.dir = (spot.x > a.x) === a.hop.up ? 1 : -1;
+      } else if (a.perch && spot) { px = spot.x; py = spot.y; z = spot.z; }
+      else if (on) { a.perch = null; a.hop = null; } // 家具不在了（收起来了、进了调整模式）：回到地上
+      if (spot && on!.kind === 'tub') bathing = true;
+      a.sprite.texture = set.tex[rowFor(set, shown)][frameIndex(shown, this.now - a.t0)];
       a.sprite.scale.set(sc * a.dir, sc);
       a.sprite.alpha = weak ? 0.75 : 1;
-      // 宠物踩在地板带里：位置跟着地板线走
-      const band = H - geo.floorY;
-      const inTub = a.station === 'tub' && a.action === 'bath' && this.objSprites.get('tub');
-      if (inTub) {
-        // 泡在浴缸里：下巴大约在浴缸边沿（遮挡线）的位置，身体被浴缸前面那一层挡住
-        const rim = inTub.y - inTub.height * (1 - (ASSETS.objects.tub.frontFrom ?? 0.2));
-        a.root.position.set(inTub.x + STATIONS.tub[a.slot][0] * (inTub.width / 260), rim + (0.9 * 256 - 152) * sc); bathing = true;
-      }
-      else a.root.position.set(a.x, geo.floorY + band * 0.36 + a.lane * band * 0.125);
-      a.root.zIndex = inTub ? -1 : a.lane;
+      a.root.position.set(px, py); a.root.zIndex = z;
 
       // 头顶的小提示
       const low = CONFIG.stats.lowThreshold;
@@ -888,6 +984,16 @@ export class Scene {
         if (wand) a.fx.ellipse(tx, ty + 8, 9, 15).fill(hex(PALETTE.coral)).ellipse(tx - 7, ty + 6, 5, 11).fill(hex(PALETTE.mustard));
         else a.fx.ellipse(tx, ty + 4, 5, 8).fill(0x93b893);
       }
+      if (a.action === 'play' && a.station === 'pond' && !a.hop) {
+        // 在鱼塘边用爪子捞鱼：溅起来的水珠和一圈圈水纹。站在后面岸上的两只，水花在它们脚前面（往下一点）
+        const down = a.slot === 0 ? 0 : 26;
+        for (let k = 0; k < 5; k++) {
+          const ph = (this.now / 700 + k * 0.23) % 1;
+          a.fx.circle(a.dir * (62 + k * 9) * sc, down - 12 * sc - Math.sin(ph * Math.PI) * (24 + k * 6) * sc, 3 + (k % 2) * 1.5).fill({ color: 0xd6ecf5, alpha: 0.95 * (1 - ph) });
+        }
+        const rp = (this.now / 900) % 1;
+        a.fx.ellipse(a.dir * 80 * sc, down + 4, (12 + rp * 26) * sc, (4 + rp * 7) * sc).stroke({ width: 2, color: 0xffffff, alpha: 0.85 * (1 - rp) });
+      }
       if (a.action === 'bath') {
         for (let k = 0; k < 7; k++) {
           const ph = (this.now / 900 + k * 0.37) % 1;
@@ -902,9 +1008,10 @@ export class Scene {
     const ballSp = this.objSprites.get('ball');
     if (ballSp && !this.editMode) {
       const lead = [...this.actors.values()].find((o) => o.ball?.leader);
-      const baseY = objPos(ASSETS.objects.ball).y;
-      if (lead) { this.ballX = lead.x + lead.dir * 62; ballSp.x += (this.ballX - ballSp.x) * Math.min(1, dt / 90); ballSp.y = baseY - Math.abs(Math.sin(this.now / 160)) * 16; }
-      else { if (this.ballX !== null) ballSp.x = this.ballX; ballSp.y = baseY; }
+      const base = objPos(ASSETS.objects.ball);
+      if (lead) { this.ballX = lead.x + lead.dir * 62; this.ballY = lead.y + 6; ballSp.x += (this.ballX - ballSp.x) * Math.min(1, dt / 90); ballSp.y = this.ballY - Math.abs(Math.sin(this.now / 160)) * 16; }
+      else { if (this.ballX !== null) ballSp.x = this.ballX; ballSp.y = this.ballY ?? base.y; }
+      ballSp.zIndex = this.ballY ?? base.y;
     }
     this.drawGlow(env);
     this.drawDebug();
