@@ -24,6 +24,10 @@ export interface ObjectDef {
   partOfBackground?: boolean;
   /** 需要先在商店买了才出现 */
   needsOwned?: string;
+  /** 遮挡线（0–1，从图片顶部算）：这条线以下的部分会盖在宠物前面。浴缸用它让宠物看起来泡在里面 */
+  frontFrom?: number;
+  /** 会发光的位置（0–1，相对图片的宽和高）。天黑了在这里画一团暖光，物品挪到哪光跟到哪 */
+  light?: [number, number];
 }
 
 export const ASSETS = {
@@ -61,7 +65,8 @@ export const ASSETS = {
     feeder: { src: 'objects/feeder.png', zone: 'kitchen', x: 262, y: 564, height: 128, label: '自动喂食机', needsOwned: 'feeder' },
     scratcher: { src: 'objects/scratcher.png', zone: 'living', x: 374, y: 568, height: 160, label: '猫抓板', needsOwned: 'scratcher' },
     ball: { src: 'objects/ball.png', zone: 'living', x: 120, y: 690, height: 32, label: '玩具球', needsOwned: 'ball' },
-    tub: { src: 'objects/tub.png', zone: 'bath', x: 216, y: 576, height: 128, label: '浴缸', partOfBackground: true },
+    lamp: { src: 'objects/lamp.png', zone: 'living', x: 60, y: 566, height: 250, label: '落地灯', needsOwned: 'lamp', light: [0.5, 0.14] },
+    tub: { src: 'objects/tub.png', zone: 'bath', x: 216, y: 576, height: 128, label: '浴缸', partOfBackground: true, frontFrom: 0.2 },
     bed: { src: 'objects/bed.png', zone: 'bedroom', x: 240, y: 566, height: 150, label: '小床', partOfBackground: true },
     cabinet: { src: 'objects/cabinet.png', zone: 'shelf', x: 130, y: 564, height: 280, label: '收藏柜', partOfBackground: true },
     album: { src: 'objects/album.png', zone: 'shelf', x: 318, y: 384, height: 170, label: '相册', partOfBackground: true },
@@ -70,7 +75,8 @@ export const ASSETS = {
 
   // ---------- 默认宠物的精灵图（上传规范：4 列，每格 256×256，每行一个动作） ----------
   pets: {
-    orange: 'pets/orange.png', grey: 'pets/grey.png', cream: 'pets/cream.png', black: 'pets/black.png',
+    orange: 'pets/orange.png', grey: 'pets/grey.png', cream: 'pets/cream.png', black: 'pets/black.png', tabby: 'pets/tabby.png',
+    calico: 'pets/calico.png', tortie: 'pets/tortie.png', cow: 'pets/cow.png', siamese: 'pets/siamese.png', persian: 'pets/persian.png',
   } as Record<string, string>,
 
   // ---------- 明信片背景（3:2，建议 1200×800），宠物由程序贴上去 ----------

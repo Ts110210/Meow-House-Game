@@ -147,3 +147,10 @@ textarea.export { width: 100%; font: 12px/1.5 ui-monospace, Menlo, Consolas, mon
 
 .volume { display: grid; grid-template-columns: 96px 1fr; align-items: center; gap: 10px; margin: 8px 0; font-size: 14px; }
 .volume input { accent-color: var(--coral); width: 100%; }
+
+.swatch { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; padding: 4px 10px 4px 4px; border-radius: 999px; background: var(--white, #fbf6ec); box-shadow: 0 1px 0 rgba(91,70,52,.18); }
+.swatch input { width: 34px; height: 34px; border: 0; padding: 0; background: none; border-radius: 50%; }
+.card.warn { border: 2px solid var(--coral); padding: 12px; margin-bottom: 12px; }
+.card.warn p { margin: 6px 0 10px; }
+.postcard.pick { display: flex; flex-direction: column; gap: 6px; }
+.postcard.pick .btn { align-self: stretch; }

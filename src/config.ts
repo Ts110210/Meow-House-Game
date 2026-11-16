@@ -29,7 +29,7 @@ export const TIME_NAMES: Record<DayTime, string> = { day: '白天', dusk: '傍�
 export const SEASON_NAMES: Record<Season, string> = { spring: '春', summer: '夏', autumn: '秋', winter: '冬' };
 
 export const CONFIG = {
-  version: 'v0.1 预览版',
+  version: '0.4.0 (build-4)',
 
   // ---------- 宠物数量 ----------
   maxPets: 5,
@@ -64,13 +64,27 @@ export const CONFIG = {
     notifyFoodBelow: 25,
   },
 
+  // ---------- 动作要做多久（毫秒，真实时间） ----------
+  durations: {
+    eat: 10_000,
+    bath: 15_000,
+    /** 主人用逗猫棒（或空手）陪玩 */
+    wand: 10_000,
+    /** 自己抓猫抓板：在这个范围里随机 */
+    scratcher: [5_000, 15_000] as [number, number],
+    /** 追球：带着球到处跑，玩完球留在原地 */
+    ball: [18_000, 22_000] as [number, number],
+    /** 被摸 */
+    pet: 2_200,
+  },
+
   // ---------- 互动 ----------
   actions: {
     petMood: 15,
     bathClean: 60,
-    playMood: 20,
-    playBonusBall: 8,
-    playBonusScratcher: 12,
+    /** 主人陪玩：空手逗只加一点，买了逗猫棒加得多 */
+    playMoodHand: 10,
+    playMoodWand: 24,
     /** 两只宠物自己一起玩时，各自加多少心情 */
     companionPlayMood: 3,
     /** 同一动作效果递减：每连续做一次，效果乘以这个数 */
@@ -218,8 +232,10 @@ export const FRY = { id: 'fry', name: '鱼苗', icon: '🐟', price: 6 };
 /** 只买一次的东西 */
 export const GEAR: GearDef[] = [
   { id: 'feeder', name: '自动喂食机', icon: '⚙️', price: 180, desc: '放在厨房，饱食度不会低于 35，不会再挨饿' },
-  { id: 'scratcher', name: '猫抓板', icon: '🪵', price: 120, desc: '玩耍多加 12 心情；宠物会自己玩，心情不会低于 15' },
-  { id: 'ball', name: '玩具球', icon: '⚽', price: 40, desc: '玩耍多加 8 心情；宠物会自己玩，心情不会低于 15' },
+  { id: 'wand', name: '逗猫棒', icon: '🪶', price: 60, desc: '陪它玩的时候用：玩耍从 +10 心情变成 +24' },
+  { id: 'scratcher', name: '猫抓板', icon: '🪵', price: 120, desc: '放在客厅，宠物会自己去抓，心情不会低于 15' },
+  { id: 'ball', name: '玩具球', icon: '⚽', price: 40, desc: '宠物会自己追着玩，两只还会一起玩；心情不会低于 15' },
+  { id: 'lamp', name: '落地灯', icon: '💡', price: 80, desc: '放在客厅，天黑了会亮' },
 ];
 
 // ============================================================
@@ -269,15 +285,52 @@ export const SOUVENIRS: Record<string, SouvenirDef> = {
 };
 
 /** 默认宠物可选的毛色 */
-export const FUR_COLORS: Record<string, { name: string; body: string; shade: string; belly: string; line: string }> = {
-  orange: { name: '橘色', body: '#F0994A', shade: '#D67A30', belly: '#FBE6CB', line: '#9A5A2E' },
-  grey: { name: '灰色', body: '#A9B0B8', shade: '#868E98', belly: '#EEF0F2', line: '#6B6F78' },
+/** 花纹：条纹、纯色、三花、玳瑁、奶牛、重点色（暹罗那种脸和四肢深色） */
+export type CoatPattern = 'stripes' | 'solid' | 'calico' | 'tortie' | 'cow' | 'point';
+export const PATTERN_NAMES: Record<CoatPattern, string> = { stripes: '条纹', solid: '纯色', calico: '三花', tortie: '玳瑁', cow: '奶牛', point: '重点色' };
+export interface Coat {
+  name: string; body: string; shade: string; belly: string; line: string;
+  /** 不写 = 条纹 */
+  pattern?: CoatPattern;
+  /** 花斑的第二、第三种颜色；重点色的脸和四肢用 c2 */
+  c2?: string; c3?: string;
+  /** 眼睛颜色，不写 = 深棕 */
+  eye?: string;
+  /** 长毛 */
+  long?: boolean;
+}
+/** 内置的毛色和品种。加新的：在这里加一行，再到 assets.config.ts 的 pets 里配上图片路径（没有图片就用代码画的占位图）。 */
+export const FUR_COLORS: Record<string, Coat> = {
+  orange: { name: '橘猫', body: '#F0994A', shade: '#D67A30', belly: '#FBE6CB', line: '#9A5A2E' },
+  grey: { name: '灰猫', body: '#A9B0B8', shade: '#868E98', belly: '#EEF0F2', line: '#6B6F78' },
   cream: { name: '奶白', body: '#F6E7CF', shade: '#E3CBA6', belly: '#FFF8EC', line: '#B08A5A' },
-  black: { name: '黑色', body: '#5A5560', shade: '#3F3B45', belly: '#8B8590', line: '#2E2A33' },
+  black: { name: '黑猫', body: '#5A5560', shade: '#3F3B45', belly: '#8B8590', line: '#2E2A33', pattern: 'solid', eye: '#E0B040' },
+  tabby: { name: '狸花', body: '#A89A82', shade: '#5F5444', belly: '#EDE6D8', line: '#4E4436', eye: '#8DAA4E' },
+  calico: { name: '三花', body: '#FBF6EC', shade: '#E4DACA', belly: '#FFFFFF', line: '#7A6A5A', pattern: 'calico', c2: '#F0994A', c3: '#4A4550' },
+  tortie: { name: '玳瑁', body: '#4E434A', shade: '#3A3138', belly: '#8A7A78', line: '#2A2228', pattern: 'tortie', c2: '#D98A3D', c3: '#F2C078', eye: '#E0B040' },
+  cow: { name: '奶牛', body: '#FBF8F2', shade: '#E2DDD2', belly: '#FFFFFF', line: '#5A5560', pattern: 'cow', c2: '#3F3B45' },
+  siamese: { name: '暹罗', body: '#F3E6D0', shade: '#DDCBAE', belly: '#FBF3E4', line: '#6B5143', pattern: 'point', c2: '#6B5143', eye: '#5E9BD6' },
+  persian: { name: '波斯', body: '#FAF7F0', shade: '#E3DDD0', belly: '#FFFFFF', line: '#9A8F80', pattern: 'solid', long: true, eye: '#E0A83A' },
 };
 
+/** 自己捏的猫：花纹 + 三种颜色 + 眼睛颜色 + 长短毛。存在 spriteId 里：look:花纹|主色|第二色|第三色|眼睛|长毛 */
+export interface Look { pattern: CoatPattern; body: string; c2: string; c3: string; eye: string; long: boolean }
+export const DEFAULT_LOOK: Look = { pattern: 'stripes', body: '#F0994A', c2: '#FBF6EC', c3: '#4A4550', eye: '#3B2A22', long: false };
+export const encodeLook = (l: Look) => `look:${[l.pattern, l.body, l.c2, l.c3, l.eye, l.long ? 1 : 0].join('|')}`;
+export function decodeLook(spriteId: string): Look | null {
+  if (!spriteId.startsWith('look:')) return null;
+  const [pattern, body, c2, c3, eye, long] = spriteId.slice(5).split('|'); const ok = (c: string) => /^#[0-9a-fA-F]{6}$/.test(c ?? '');
+  if (!(pattern in PATTERN_NAMES) || ![body, c2, c3, eye].every(ok)) return null;
+  return { pattern: pattern as CoatPattern, body, c2, c3, eye, long: long === '1' };
+}
+const mix = (hex: string, to: number, t: number) => '#' + [1, 3, 5].map((i) => Math.round(parseInt(hex.slice(i, i + 2), 16) * (1 - t) + to * t).toString(16).padStart(2, '0')).join('');
+/** 把捏出来的样子补成一套完整的颜色（阴影、肚皮、描线是从主色算出来的） */
+export function coatOfLook(l: Look): Coat {
+  return { name: '自定义', body: l.body, shade: mix(l.body, 0, 0.2), belly: mix(l.body, 255, 0.6), line: mix(l.body, 0, 0.55), pattern: l.pattern, c2: l.c2, c3: l.c3, eye: l.eye, long: l.long };
+}
+
 /** 不能领养的角色用的毛色：狸花猫（帮忙找回离家出走的宠物） */
-export const NPC_COLORS: Record<string, { name: string; body: string; shade: string; belly: string; line: string }> = {
+export const NPC_COLORS: Record<string, Coat> = {
   tabby: { name: '狸花猫', body: '#A89A82', shade: '#6F6351', belly: '#EDE6D8', line: '#4E4436' },
 };
 

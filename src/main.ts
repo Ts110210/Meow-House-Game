@@ -2,7 +2,7 @@ import './style.css';
 import { AssetStore } from './assets';
 import { Game } from './game';
 import { loadLayout } from './layout';
-import { cancelReminders, restoreFromMirror, scheduleReminders, setupAppEvents } from './platform/native';
+import { cancelReminders, isNative, notifyPermission, restoreFromMirror, scheduleReminders, setupAppEvents } from './platform/native';
 import * as sim from './sim';
 import { Scene } from './scene';
 import { UI } from './ui';
@@ -38,18 +38,25 @@ async function boot() {
   // 请浏览器尽量不要自动清掉这个页面的数据（不支持或被拒绝也没关系）
   try { void navigator.storage?.persist?.(); } catch { /* ignore */ }
   // 安卓 App：返回键先关面板，没东西可关就收到后台；切到后台时存档并安排提醒
-  const plan = () => {
+  // minAhead：只安排这么久以后的提醒。游戏开着时用 2 分钟，这样正在玩的时候不会弹通知；切到后台时用 0。
+  const plan = (minAhead: number) => {
     if (!game.state.settings.notify) { void cancelReminders(); return; }
     const now = Date.now();
-    void scheduleReminders(sim.planReminders(game.state).map((r) => ({ title: r.title, body: r.body, at: now + r.inMs })));
+    void scheduleReminders(sim.planReminders(game.state).filter((r) => r.inMs >= minAhead).map((r) => ({ title: r.title, body: r.body, at: now + r.inMs })));
   };
+  // 游戏开着的时候就把提醒排好，每分钟更新一次：不依赖「切到后台的那一瞬间」，那一瞬间系统可能已经把 App 冻住了
+  let front = true;
+  setInterval(() => { if (front) plan(2 * 60_000); }, 60_000);
+  setTimeout(() => plan(2 * 60_000), 3000);
+  // 提醒开着而系统还没问过通知权限：打开游戏时问一次（系统只会弹一次窗）
+  if (isNative && game.state.settings.notify) void notifyPermission(true);
   setupAppEvents({
     onBack: () => ui?.handleBack() ?? false,
-    onPause: () => { game.save(); plan(); pauseAudio(true); },
-    onResume: () => { void cancelReminders(); pauseAudio(false); },
+    onPause: () => { front = false; game.save(); plan(0); pauseAudio(true); },
+    onResume: () => { front = true; plan(2 * 60_000); pauseAudio(false); },
   });
   window.addEventListener('keydown', (e) => { if (e.key === 'Escape') ui?.handleBack(); });
-  (window as any).__game = game; (window as any).__scene = scene; // 方便在控制台里调试
+  (window as any).__game = game; (window as any).__scene = scene; (window as any).__sim = sim; // 方便在控制台里调试
 }
 
 // 地址以 #back-screen 结尾时，这个页面只当背屏画面用（安卓上由 BackScreenActivity 打开）

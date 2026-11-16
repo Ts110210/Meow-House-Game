@@ -85,9 +85,78 @@ function drawBackground(ctx: CanvasRenderingContext2D, dest: DestDef) {
   }
 }
 
-/** 画一张明信片。sets = 出门的宠物的精灵图（1 只或 2 只）。 */
-export function renderPostcard(destId: string, sets: (SpriteSet | undefined)[], background?: HTMLCanvasElement): HTMLCanvasElement {
-  const dest = DESTS.find((d) => d.id === destId) ?? DESTS[0];
+/** 落脚点：宠物在这张背景里可以待的地方。
+ *  x、y = 脚底的位置（明信片是 600×400）；size = 宠物多大（占明信片高度的比例，越远越小）；
+ *  poses = 在这里可以摆的姿势；water = 这是水里的位置，只有带了泳圈才会用到。
+ *  换成正式的背景图后，照着图把这张表改一下就行（开发者面板 → 显示范围框，可以在明信片上看到这些点）。 */
+export interface CardSpot { x: number; y: number; size: number; poses: ('idle' | 'happy' | 'walk' | 'sleep' | 'lick')[]; water?: boolean }
+const GROUND: CardSpot['poses'] = ['idle', 'happy', 'walk', 'lick'];
+export const CARD_SPOTS: Record<string, CardSpot[]> = {
+  city: [{ x: 300, y: 384, size: 0.42, poses: GROUND }, { x: 190, y: 372, size: 0.38, poses: ['idle', 'happy', 'walk'] }, { x: 450, y: 376, size: 0.4, poses: GROUND }, { x: 520, y: 330, size: 0.28, poses: ['idle', 'walk'] }],
+  sea: [{ x: 210, y: 384, size: 0.42, poses: [...GROUND, 'sleep'] }, { x: 400, y: 378, size: 0.4, poses: [...GROUND, 'sleep'] }, { x: 520, y: 350, size: 0.32, poses: ['idle', 'walk'] }, { x: 430, y: 292, size: 0.26, poses: ['idle', 'happy'], water: true }],
+  forest: [{ x: 200, y: 384, size: 0.42, poses: [...GROUND, 'sleep'] }, { x: 330, y: 376, size: 0.4, poses: GROUND }, { x: 120, y: 340, size: 0.3, poses: ['idle', 'walk'] }],
+  rain: [{ x: 300, y: 384, size: 0.42, poses: ['idle', 'walk', 'happy'] }, { x: 170, y: 374, size: 0.38, poses: ['idle', 'walk'] }, { x: 450, y: 376, size: 0.4, poses: ['idle', 'happy'] }],
+  mountain: [{ x: 220, y: 384, size: 0.42, poses: [...GROUND, 'sleep'] }, { x: 420, y: 376, size: 0.4, poses: GROUND }, { x: 520, y: 344, size: 0.3, poses: ['idle', 'walk'] }],
+};
+
+function rng(seed: number) { let a = seed >>> 0; return () => { a = (a + 0x6d2b79f5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
+const hash = (s: string) => { let h = 2166136261; for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 16777619); return h >>> 0; };
+
+/** 行李画在宠物身上。坐标按精灵图的一格 256×256 写（面朝右），画的时候跟着宠物缩放和翻转。
+ *  layer = 'back' 画在宠物后面，'front' 画在前面。 */
+function drawProp(ctx: CanvasRenderingContext2D, tool: string, layer: 'back' | 'front', x: number, y: number, size: number, flip: boolean, upright: boolean) {
+  ctx.save(); ctx.translate(x, y); ctx.scale(size / 256, size / 256); if (flip) { ctx.translate(256, 0); ctx.scale(-1, 1); }
+  ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.strokeStyle = '#5B4634'; ctx.lineWidth = 4;
+  if (tool === 'camera' && layer === 'front') {
+    // 站着：挂在脖子上；趴着或舔毛：放在脚边
+    const [cx, cy] = upright ? [168, 176] : [226, 214];
+    if (upright) { ctx.beginPath(); ctx.moveTo(140, 150); ctx.lineTo(cx - 8, cy); ctx.moveTo(204, 150); ctx.lineTo(cx + 8, cy); ctx.stroke(); }
+    ctx.fillStyle = '#4B4F58'; ctx.beginPath(); ctx.roundRect(cx - 22, cy - 6, 44, 30, 6); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = '#4B4F58'; ctx.fillRect(cx - 14, cy - 12, 14, 8);
+    ctx.fillStyle = '#BFD3E0'; ctx.beginPath(); ctx.arc(cx, cy + 9, 9, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+  } else if (tool === 'umbrella') {
+    if (layer === 'back') { ctx.beginPath(); ctx.moveTo(196, 30); ctx.lineTo(196, 176); ctx.stroke(); }
+    else {
+      ctx.fillStyle = '#E08E79'; ctx.beginPath(); ctx.moveTo(86, 62); ctx.quadraticCurveTo(196, -50, 306, 62);
+      for (let i = 3; i >= 0; i--) ctx.quadraticCurveTo(86 + i * 55 + 27, 44, 86 + i * 55, 62);
+      ctx.closePath(); ctx.fill(); ctx.stroke();
+    }
+  } else if (tool === 'float') {
+    // 泳圈套在身上：后半圈在身后，前半圈在身前
+    ctx.lineWidth = 22; ctx.strokeStyle = layer === 'back' ? '#D97B68' : '#E08E79';
+    ctx.beginPath(); ctx.ellipse(120, 182, 84, 24, 0, layer === 'back' ? Math.PI : 0, layer === 'back' ? Math.PI * 2 : Math.PI); ctx.stroke();
+    if (layer === 'front') { ctx.lineWidth = 22; ctx.strokeStyle = '#FBF6EC'; for (const a of [0.25, 0.75]) { ctx.beginPath(); ctx.ellipse(120, 182, 84, 24, 0, Math.PI * a - 0.12, Math.PI * a + 0.12); ctx.stroke(); } }
+  } else if (tool === 'boots' && layer === 'front' && upright) {
+    ctx.fillStyle = '#D9A94A'; ctx.lineWidth = 3;
+    for (const bx of [78, 100, 146, 166]) { ctx.beginPath(); ctx.roundRect(bx - 11, 212, 26, 20, 6); ctx.fill(); ctx.stroke(); }
+  } else if (tool === 'tent' && layer === 'back') {
+    // 帐篷搭在身后
+    ctx.fillStyle = '#A8B89A'; ctx.beginPath(); ctx.moveTo(-150, 232); ctx.lineTo(-40, 60); ctx.lineTo(70, 232); ctx.closePath(); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = '#5B4634'; ctx.beginPath(); ctx.moveTo(-70, 232); ctx.lineTo(-40, 130); ctx.lineTo(-10, 232); ctx.closePath(); ctx.fill();
+  }
+  ctx.restore();
+}
+
+export interface CardInfo { id: string; destId: string; seed?: number; tool?: string | null }
+
+/** 这张明信片里宠物怎么摆：站在哪个落脚点、什么姿势、脸朝哪。由明信片自己的随机数决定，所以每次画出来都一样。 */
+export function layoutCard(card: CardInfo, count: number) {
+  const dest = DESTS.find((d) => d.id === card.destId) ?? DESTS[0];
+  const r = rng(card.seed ?? hash(card.id));
+  const all = CARD_SPOTS[dest.type] ?? CARD_SPOTS.city;
+  // 水里的位置只有带了泳圈才去；带了泳圈而这里有水，就一定下水
+  const water = all.filter((s) => s.water);
+  const pool = card.tool === 'float' && water.length ? water : all.filter((s) => !s.water);
+  const spot = pool[Math.floor(r() * pool.length)];
+  const flip = r() < 0.5;
+  const pets = Array.from({ length: count }, (_, i) => ({ pose: spot.poses[Math.floor(r() * spot.poses.length)], frame: Math.floor(r() * 4), flip: i === 1 ? !flip : flip }));
+  return { dest, spot, pets };
+}
+
+/** 画一张明信片。sets = 出门的宠物的精灵图（1 只或 2 只）。showSpots = 把所有落脚点标出来（开发者用）。 */
+export function renderPostcard(card: CardInfo, sets: (SpriteSet | undefined)[], background?: HTMLCanvasElement, showSpots = false): HTMLCanvasElement {
+  const list = sets.filter((s): s is SpriteSet => !!s);
+  const { dest, spot, pets } = layoutCard(card, list.length);
   const cv = document.createElement('canvas'); cv.width = CARD_W; cv.height = CARD_H;
   const ctx = cv.getContext('2d')!;
   if (background) {
@@ -95,16 +164,32 @@ export function renderPostcard(destId: string, sets: (SpriteSet | undefined)[], 
     const k = Math.max(CARD_W / background.width, CARD_H / background.height); const w = background.width * k, h = background.height * k;
     ctx.drawImage(background, (CARD_W - w) / 2, (CARD_H - h) / 2, w, h);
   } else { drawBackground(ctx, dest); pencilOver(ctx, CARD_W, CARD_H, 23, 1.2); }
-  // 宠物贴在画面下方中间，大小约占画面高度的三分之一
-  const size = CARD_H * 0.42;
-  const list = sets.filter((s): s is SpriteSet => !!s);
-  const total = list.length * size * 0.8;
+  const size = CARD_H * spot.size;
+  const step = size * 0.78; const x0 = Math.max(size * 0.5, Math.min(CARD_W - size * 0.5 - step * (list.length - 1), spot.x - (step * (list.length - 1)) / 2));
   list.forEach((set, i) => {
-    const x = CARD_W / 2 - total / 2 + i * size * 0.8 - size * 0.1;
-    const y = CARD_H - size - 18;
+    const { pose, frame, flip } = pets[i];
+    const x = x0 + i * step - size / 2, y = spot.y - size * 0.9;
+    const tool = i === 0 ? card.tool ?? null : null; const upright = pose !== 'sleep' && pose !== 'lick';
+    if (spot.water) {
+      // 泡在水里：只露出上半身，水面画一圈波纹
+      if (tool) drawProp(ctx, tool, 'back', x, y, size, flip, upright);
+      ctx.save(); ctx.beginPath(); ctx.rect(x - size, y - size, size * 3, size * 1.72); ctx.clip(); drawFrame(ctx, set, pose, frame, x, y, size, flip); ctx.restore();
+      if (tool) drawProp(ctx, tool, 'front', x, y, size, flip, upright);
+      ctx.strokeStyle = 'rgba(255,255,255,0.8)'; ctx.lineWidth = 2.5;
+      for (const k of [0.5, 0.66]) { ctx.beginPath(); ctx.ellipse(x + size / 2, y + size * 0.76, size * k, size * k * 0.16, 0, 0.1 * Math.PI, 0.9 * Math.PI); ctx.stroke(); }
+      return;
+    }
     ctx.beginPath(); ctx.ellipse(x + size / 2, y + size * 0.9, size * 0.3, size * 0.06, 0, 0, Math.PI * 2);
     ctx.fillStyle = 'rgba(60,50,40,0.18)'; ctx.fill();
-    drawFrame(ctx, set, 'idle', 0, x, y, size, i === 1);
+    if (tool) drawProp(ctx, tool, 'back', x, y, size, flip, upright);
+    drawFrame(ctx, set, pose, frame, x, y, size, flip);
+    if (tool) drawProp(ctx, tool, 'front', x, y, size, flip, upright);
   });
+  if (showSpots) for (const s of CARD_SPOTS[dest.type] ?? []) {
+    const sz = CARD_H * s.size; ctx.strokeStyle = s.water ? '#2F7FD0' : '#D03A3A'; ctx.lineWidth = 2; ctx.setLineDash([6, 4]);
+    ctx.strokeRect(s.x - sz / 2, s.y - sz * 0.9, sz, sz); ctx.setLineDash([]);
+    ctx.fillStyle = ctx.strokeStyle; ctx.beginPath(); ctx.arc(s.x, s.y, 5, 0, Math.PI * 2); ctx.fill();
+    ctx.font = '12px sans-serif'; ctx.fillText(s.poses.join(' ') + (s.water ? '（水里）' : ''), s.x - sz / 2 + 4, s.y - sz * 0.9 + 14);
+  }
   return cv;
 }

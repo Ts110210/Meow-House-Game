@@ -119,7 +119,7 @@ export async function bootBackScreen() {
     if (newest && newest.id !== lastCardId) {
       if (!first) {
         const names = newest.petIds.map((id) => s.pets.find((p) => p.id === id)?.name ?? '').join(' 和 ');
-        card = { image: renderPostcard(newest.destId, newest.petIds.map((id) => sets.get(s.pets.find((p) => p.id === id)?.spriteId ?? '')), assets.get(`postcard.${newest.destId}`)), text: `${names}回来了` };
+        card = { image: renderPostcard(newest, newest.petIds.map((id) => sets.get(s.pets.find((p) => p.id === id)?.spriteId ?? '')), assets.get(`postcard.${newest.destId}`)), text: `${names}回来了` };
         cardUntil = performance.now() + 12000;
       }
       lastCardId = newest.id;

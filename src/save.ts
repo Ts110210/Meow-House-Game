@@ -70,7 +70,7 @@ export function repair(raw: Raw, now = Date.now()): GameState {
   for (const t of trips) for (const id of t.petIds) pets.find((p) => p.id === id)!.tripId = t.id;
   const postcards: Postcard[] = arr(raw.postcards).filter((c) => c && typeof c.id === 'string' && DESTS.some((d) => d.id === c.destId)).map((c) => ({
     id: c.id, destId: c.destId, petIds: arr(c.petIds).filter((x) => typeof x === 'string'), at: num(c.at, clock),
-    souvenir: typeof c.souvenir === 'string' ? c.souvenir : null, income: num(c.income, 0, 0), sold: arr(c.sold), unsold: arr(c.unsold),
+    souvenir: typeof c.souvenir === 'string' ? c.souvenir : null, tool: typeof c.tool === 'string' ? c.tool : null, ...(typeof c.seed === 'number' ? { seed: c.seed } : {}), income: num(c.income, 0, 0), sold: arr(c.sold), unsold: arr(c.unsold),
   }));
   const souvenirs: Record<string, number> = {}; for (const [k, n] of Object.entries(obj(raw.souvenirs))) if (n && SOUVENIRS[k]) souvenirs[k] = 1;
   const display = obj(raw.display);

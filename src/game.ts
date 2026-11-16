@@ -74,6 +74,7 @@ export class Game {
         }
       } catch { set = null; }
     }
+    if (!set && spriteId.startsWith('look:')) { const sheet = drawDefaultSheet(spriteId); set = buildSet(spriteId, sheet, drawDefaultAvatar(sheet)); }
     if (!set) {
       const color = spriteId.startsWith('default:') ? spriteId.slice(8) : spriteId.startsWith('npc:') ? spriteId.slice(4) : 'orange';
       // 默认宠物：assets.config.ts 里配了精灵图就用图片，否则用代码画的占位图

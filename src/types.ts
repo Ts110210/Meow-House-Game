@@ -44,6 +44,10 @@ export interface Postcard {
   petIds: string[];
   at: number;
   souvenir: string | null;
+  /** 带出门的行李（影响明信片里的样子）；旧明信片没有 */
+  tool?: string | null;
+  /** 这张明信片的随机数：决定宠物站在哪、什么姿势。同一张明信片永远画成一样 */
+  seed?: number;
   income: number;
   sold: string[];
   unsold: string[];
@@ -57,6 +61,8 @@ export interface DevSettings {
   /** 强制的昼夜和季节；'auto' = 跟着游戏里的时间走 */
   time: 'auto' | 'day' | 'dusk' | 'night';
   season: 'auto' | 'spring' | 'summer' | 'autumn' | 'winter';
+  /** 显示范围框：物品的图片范围、点击范围、站位、遮挡线、宠物脚底 */
+  debugBoxes?: boolean;
   growth: number;
   decay: Record<StatKey, number>;
 }

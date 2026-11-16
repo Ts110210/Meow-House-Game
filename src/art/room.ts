@@ -251,6 +251,10 @@ const OBJECT_ART: Record<string, { w: number; h: number; draw: (s: Sketch) => vo
     for (let y = 30; y < 144; y += 11) s.line(29, y, 55, y + 4, P.woodDark, 1.1, 0.6);
     s.rect(14, 4, 56, 16, { fill: P.mustard, r: 7 }); s.rect(6, 144, 72, 14, { fill: P.mustard, r: 6 });
   } },
+  lamp: { w: 96, h: 250, draw(s) {
+    s.rect(44, 60, 8, 176, { fill: P.woodDark, r: 3 }); s.rect(24, 232, 48, 14, { fill: P.woodDark, r: 6 });
+    s.poly([[26, 6], [70, 6], [88, 66], [8, 66]], { fill: P.mustard });
+  } },
   ball: { w: 32, h: 32, draw(s) { s.ellipse(16, 16, 13, 13, { fill: P.coral }); s.curve([[6, 12], [16, 16], [26, 10]], P.white, 2.5, 0.8); } },
   tub: { w: 260, h: 128, draw(s) {
     s.line(226, 4, 226, 40, P.ink, 3); s.curve([[226, 6], [204, 6], [204, 20]], P.ink, 3); s.ellipse(226, 26, 8, 8, { fill: P.mustard });

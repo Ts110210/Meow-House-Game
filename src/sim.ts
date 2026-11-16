@@ -1,5 +1,5 @@
 // 游戏规则。这个文件不碰画面，只改存档数据，方便单独测试。
-import { CONFIG, DAY, DESTS, FOODS, FRY, FUR_COLORS, GEAR, GOODS, HOUR, MIN, SOUVENIRS, TOOLS, TREAT, type DayTime, type Season, type StatKey } from './config';
+import { CONFIG, DAY, DESTS, FOODS, FRY, FUR_COLORS, GEAR, GOODS, HOUR, MIN, SOUVENIRS, TOOLS, TREAT, type DayTime, type Season, type StatKey, decodeLook } from './config';
 import type { GameEvent, GameState, Pet, Postcard, RepeatKey, Result, Trip } from './types';
 
 const clamp = (v: number, lo = 0, hi = 100) => Math.max(lo, Math.min(hi, v));
@@ -184,7 +184,7 @@ export function play(s: GameState, petId: string): Result {
   const u = usable(p); if (!u.ok) return u;
   if (isWeak(p!)) return { ok: false, msg: `${p!.name}太虚弱了，先喂点东西` };
   const a = CONFIG.actions;
-  const base = a.playMood + (s.owned.ball ? a.playBonusBall : 0) + (s.owned.scratcher ? a.playBonusScratcher : 0);
+  const base = s.owned.wand ? a.playMoodWand : a.playMoodHand;
   const gain = base * repeatMult(s, p!, 'play');
   p!.mood = clamp(p!.mood + gain);
   return { ok: true, msg: `心情 +${fmt(gain)}` };
@@ -202,7 +202,9 @@ export function companionPlay(s: GameState, aId: string, bId: string) {
 export function setColor(s: GameState, petId: string, color: string): Result {
   const p = s.pets.find((x) => x.id === petId);
   if (!p || p.dead) return { ok: false, msg: '找不到这只宠物' };
-  if (!p.spriteId.startsWith('default:')) return { ok: false, msg: '上传的宠物不能换毛色' };
+  if (p.spriteId.startsWith('custom:')) return { ok: false, msg: '上传的宠物不能换毛色' };
+  // color 可以是内置毛色的名字，也可以是自己捏的样子（look:…）
+  if (decodeLook(color)) { p.spriteId = color; return { ok: true }; }
   if (!FUR_COLORS[color]) return { ok: false, msg: '没有这种毛色' };
   p.spriteId = `default:${color}`;
   return { ok: true };
@@ -299,15 +301,10 @@ function resolveTrip(s: GameState, trip: Trip, events: GameEvent[]) {
 
   for (const p of pets) { p.tripId = null; p.clean = clamp(p.clean - t.cleanDropOnReturn); }
 
-  const card: Postcard = { id: newId('card'), destId: dest.id, petIds: trip.petIds, at: s.clock, souvenir, income, sold, unsold };
+  const card: Postcard = { id: newId('card'), destId: dest.id, petIds: trip.petIds, at: s.clock, souvenir, tool: trip.tool, seed: Math.floor(Math.random() * 1e9), income, sold, unsold };
+  // 相册满了也先收下：多出来的由主人自己决定删哪张（见 albumOver / discardOverflow），不会自动删
   s.postcards.push(card);
   s.pendingReturns.push(card.id);
-  // 相册有上限：满了就把最旧的、没挂在相册墙上的那张换掉
-  while (s.postcards.length > albumLimit()) {
-    const i = s.postcards.findIndex((c) => c.id !== card.id && !s.display.postcards.includes(c.id) && !s.pendingReturns.includes(c.id));
-    if (i < 0) break;
-    s.postcards.splice(i, 1);
-  }
   events.push({ type: 'return', postcardId: card.id });
 }
 
@@ -385,6 +382,26 @@ function resolveSearch(s: GameState, p: Pet, events: GameEvent[]) {
 }
 
 // ---------- 展示：收藏柜上摆哪几件、相册墙上挂哪几张 ----------
+
+/** 相册里超出上限的张数。大于 0 时要请主人删掉几张，或者放弃新带回来的 */
+export const albumOver = (s: GameState) => Math.max(0, s.postcards.length - albumLimit());
+
+/** 主人自己删一张明信片（纪念品和小鱼干不受影响） */
+export function deletePostcard(s: GameState, id: string): Result {
+  const i = s.postcards.findIndex((c) => c.id === id);
+  if (i < 0) return { ok: false, msg: '找不到这张明信片' };
+  s.postcards.splice(i, 1);
+  s.display.postcards = s.display.postcards.filter((x) => x !== id);
+  s.pendingReturns = s.pendingReturns.filter((x) => x !== id);
+  return { ok: true, msg: '已删除' };
+}
+
+/** 主人不想整理：放弃最新带回来的那几张，直到相册不超上限。返回放弃了几张 */
+export function discardOverflow(s: GameState): number {
+  let n = 0;
+  while (albumOver(s) > 0) { const last = s.postcards[s.postcards.length - 1]; deletePostcard(s, last.id); n++; }
+  return n;
+}
 
 export function toggleDisplaySouvenir(s: GameState, id: string): Result {
   if (!s.souvenirs[id]) return { ok: false, msg: '还没有这件纪念品' };

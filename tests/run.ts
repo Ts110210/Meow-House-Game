@@ -1,5 +1,5 @@
 // 规则和存档的自动检查。运行：npm test
-import { CONFIG, DAY, DESTS, HOUR, MIN, SOUVENIRS } from '../src/config';
+import { CONFIG, DAY, DESTS, FUR_COLORS, HOUR, MIN, SOUVENIRS, decodeLook, encodeLook } from '../src/config';
 import * as sim from '../src/sim';
 import { buildExport, migrate, parseImport, repair, SAVE_VERSION } from '../src/save';
 
@@ -78,14 +78,36 @@ console.log('旅行收藏');
   sim.toggleDisplayPostcard(s, 'c24'); sim.toggleDisplayPostcard(s, 'c0');
   check('可以自己换：取下一张、挂上一张', sim.shownPostcards(s).map((c) => c.id).join() === 'c23,c22,c21,c0');
   check('挂满 4 张后不能再加', !sim.toggleDisplayPostcard(s, 'c5').ok);
-  s.inv.kibble = 1; const p = s.pets[0]; sim.dispatch(s, { petIds: [p.id], bento: 'kibble', tool: null, goods: [] }); sim.advance(s, s.trips[0].returnAt - s.clock + MIN);
-  check('相册满了：换掉最旧的一张，挂在墙上的那张不会被换掉', s.postcards.length === 25 && s.postcards.some((c) => c.id === 'c0') && !s.postcards.some((c) => c.id === 'c1'));
+  s.inv.kibble = 1; s.inv.camera = 1; const p = s.pets[0]; sim.dispatch(s, { petIds: [p.id], bento: 'kibble', tool: 'camera', goods: [] }); sim.advance(s, s.trips[0].returnAt - s.clock + MIN);
+  const fresh = s.postcards[s.postcards.length - 1];
+  check('相册满了不会自动删：新的先收下，多出 1 张等主人整理', s.postcards.length === 26 && sim.albumOver(s) === 1 && s.postcards.some((c) => c.id === 'c1'));
+  check('明信片记着带了什么行李，还有自己的随机数', fresh.tool === 'camera' && typeof fresh.seed === 'number');
+  { const t = JSON.parse(JSON.stringify(s)); check('主人自己删一张旧的，就不超了', sim.deletePostcard(t, 'c1').ok && sim.albumOver(t) === 0 && t.postcards.some((c: any) => c.id === fresh.id)); }
+  { const t = JSON.parse(JSON.stringify(s)); sim.toggleDisplayPostcard(t, 'c0'); const before = sim.shownPostcards(t).length; sim.deletePostcard(t, sim.shownPostcards(t)[0].id); check('删掉挂在墙上的那张，墙上也跟着取下', sim.shownPostcards(t).every((c: any) => t.postcards.some((x: any) => x.id === c.id)) && before >= 1); }
+  { const t = JSON.parse(JSON.stringify(s)); check('不整理直接退出：放弃新带回来的那张，旧的一张不少', sim.discardOverflow(t) === 1 && t.postcards.length === 25 && !t.postcards.some((c: any) => c.id === fresh.id) && t.postcards.some((c: any) => c.id === 'c1') && !t.pendingReturns.includes(fresh.id)); }
+  sim.discardOverflow(s);
   for (let i = 0; i < 12; i++) s.souvenirs[Object.keys(SOUVENIRS)[i]] = 1;
   check('收藏柜默认摆 9 件，其余收着', sim.shownSouvenirs(s).length === 9);
   const hidden = Object.keys(s.souvenirs).find((id) => !sim.shownSouvenirs(s).includes(id))!;
   check('摆满 9 件后不能再加', !sim.toggleDisplaySouvenir(s, hidden).ok);
   sim.toggleDisplaySouvenir(s, sim.shownSouvenirs(s)[0]);
   check('收起一件再摆另一件', sim.toggleDisplaySouvenir(s, hidden).ok && sim.shownSouvenirs(s).includes(hidden) && sim.shownSouvenirs(s).length === 9);
+}
+
+console.log('逗猫棒和毛色');
+{
+  const s = sim.newState(T0); const p = s.pets[0]; p.mood = 20;
+  sim.play(s, p.id); check('空手陪玩：心情 +10', Math.abs(p.mood - 30) < 0.01, String(p.mood));
+  const s2 = sim.newState(T0); const q = s2.pets[0]; q.mood = 20; s2.fish = 100;
+  check('逗猫棒可以在商店买到', sim.buy(s2, 'wand').ok && s2.owned.wand === true);
+  sim.play(s2, q.id); check('有逗猫棒：心情 +24', Math.abs(q.mood - 44) < 0.01, String(q.mood));
+  check('有 10 种内置毛色', Object.keys(FUR_COLORS).length === 10 && ['tabby', 'calico', 'tortie', 'cow', 'siamese', 'persian'].every((k) => FUR_COLORS[k]));
+  const look = { pattern: 'calico' as const, body: '#fbf6ec', c2: '#f0994a', c3: '#4a4550', eye: '#3b2a22', long: true };
+  const id = encodeLook(look); const back = decodeLook(id);
+  check('自己捏的样子存进编号里再读出来不变', !!back && JSON.stringify(back) === JSON.stringify(look));
+  check('乱写的编号读不出来', decodeLook('look:zebra|#fff|x|y|z|0') === null && decodeLook('default:orange') === null);
+  check('领养自己捏的猫，之后还能换回内置毛色', sim.adopt(Object.assign(s, { slots: 2 }), '捏捏', id).ok && sim.setColor(s, s.pets[1].id, 'cow').ok && s.pets[1].spriteId === 'default:cow' && sim.setColor(s, s.pets[1].id, id).ok);
+  const r = repair(JSON.parse(JSON.stringify(s)), T0); check('自己捏的猫存档再读档还在', r.pets[1].spriteId === id);
 }
 
 console.log('昼夜和四季');
