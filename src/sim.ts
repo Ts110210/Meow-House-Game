@@ -1,6 +1,6 @@
 // 游戏规则。这个文件不碰画面，只改存档数据，方便单独测试。
 import { writeDiary } from './diary';
-import { CONFIG, DAY, DESTS, FOODS, FRY, FUR_COLORS, GEAR, GOODS, HOUR, MIN, SOUVENIRS, TOOLS, TREAT, type DayTime, type Season, type StatKey, decodeLook, TRAIT_IDS, type Trait, VISITORS, type VisitorWho, SPECIAL_DECOR } from './config';
+import { CONFIG, DAY, DESTS, FOODS, FRY, FUR_COLORS, GEAR, GOODS, HOUR, MIN, SOUVENIRS, TOOLS, TREAT, type DayTime, type Season, type StatKey, decodeLook, TRAIT_IDS, type Trait, VISITORS, type VisitorWho, SPECIAL_DECOR, DECOR, ZONES } from './config';
 import type { GameEvent, GameState, Pet, Postcard, RepeatKey, Result, Trip, Visitor } from './types';
 
 const T = CONFIG.traits;
@@ -275,6 +275,35 @@ export function claimMilestone(s: GameState, id: string): Result {
   let msg = `小鱼干 +${m.fish}`;
   if (m.decor && SPECIAL_DECOR[m.decor]) { s.decor.push({ id: newId('decor'), kind: m.decor, zone: null, x: 0, y: 0 }); msg += `，还有特殊装饰「${SPECIAL_DECOR[m.decor].name}」`; }
   return { ok: true, msg };
+}
+
+// ---------- 房间装饰 ----------
+
+export const decorCount = (s: GameState, kind: string) => s.decor.filter((d) => d.kind === kind).length;
+export const storedDecor = (s: GameState) => s.decor.filter((d) => d.zone === null);
+export function buyDecor(s: GameState, kind: string): Result {
+  const def = DECOR[kind];
+  if (!def || def.special) return { ok: false, msg: '商店里没有这件装饰' };
+  if (decorCount(s, kind) >= CONFIG.decor.maxPerKind) return { ok: false, msg: `${def.name}最多买 ${CONFIG.decor.maxPerKind} 件` };
+  if (s.fish < def.price) return { ok: false, msg: '小鱼干不够' };
+  s.fish -= def.price; s.decor.push({ id: newId('decor'), kind, zone: null, x: 0, y: 0 });
+  return { ok: true, msg: `买到了${def.name}。到菜单的「布置房间」里摆出来` };
+}
+/** 摆到某个区域的某个位置（已经摆着的就是挪动；可以挪到别的区域） */
+export function placeDecor(s: GameState, id: string, zone: string, x: number, y: number): Result {
+  const d = s.decor.find((it) => it.id === id);
+  if (!d || !DECOR[d.kind]) return { ok: false, msg: '找不到这件装饰' };
+  if (!ZONES.some((z) => z.id === zone)) return { ok: false, msg: '没有这个区域' };
+  if (d.zone !== zone && s.decor.filter((it) => it.zone === zone).length >= CONFIG.decor.maxPerZone) return { ok: false, msg: `这个区域最多摆 ${CONFIG.decor.maxPerZone} 件` };
+  d.zone = zone; d.x = Math.round(x); d.y = Math.round(y);
+  return { ok: true };
+}
+/** 收起来：不会丢，还能再摆 */
+export function storeDecor(s: GameState, id: string): Result {
+  const d = s.decor.find((it) => it.id === id);
+  if (!d) return { ok: false, msg: '找不到这件装饰' };
+  d.zone = null;
+  return { ok: true, msg: '收起来了' };
 }
 
 // ---------- 访客 ----------

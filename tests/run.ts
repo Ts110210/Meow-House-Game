@@ -1,5 +1,5 @@
 // 规则和存档的自动检查。运行：npm test
-import { CONFIG, DAY, DESTS, FUR_COLORS, HOUR, MIN, SOUVENIRS, decodeLook, encodeLook } from '../src/config';
+import { CONFIG, DAY, DECOR, DESTS, FUR_COLORS, HOUR, MIN, SOUVENIRS, decodeLook, encodeLook } from '../src/config';
 import * as sim from '../src/sim';
 import { diaryPlaceCount, writeDiary } from '../src/diary';
 import { buildExport, migrate, parseImport, repair, SAVE_VERSION } from '../src/save';
@@ -207,6 +207,28 @@ console.log('图鉴和里程碑');
   const r = repair(JSON.parse(JSON.stringify(s)), T0); check('图鉴、里程碑、装饰存档再读档还在', sim.variantTotal(r) === before && r.milestones.includes('v10') && r.decor.length === 1);
   const old = JSON.parse(JSON.stringify(blank())); delete old.variants; old.postcards = [{ id: 'c1', destId: 'bali', petIds: [], at: T0, souvenir: null, season: 'winter', time: 'night', income: 0, sold: [], unsold: [] }];
   check('旧存档：相册里已有的明信片会补记进图鉴', repair(old, T0).variants.bali?.[0] === 'winter-night');
+}
+
+console.log('房间装饰');
+{
+  const s = blank(); s.fish = 1000;
+  check('商店里的装饰价格都在 50–300 之间', Object.values(DECOR).filter((d) => !d.special).every((d) => d.price >= 50 && d.price <= 300) && Object.values(DECOR).filter((d) => !d.special).length >= 5);
+  check('买一件：扣小鱼干，先收着', sim.buyDecor(s, 'plant').ok && s.fish === 1000 - DECOR.plant.price && sim.storedDecor(s).length === 1);
+  check('特殊装饰买不到', !sim.buyDecor(s, 'trophy').ok);
+  const id = s.decor[0].id;
+  check('摆到客厅', sim.placeDecor(s, id, 'living', 120.4, 600).ok && s.decor[0].zone === 'living' && s.decor[0].x === 120 && sim.storedDecor(s).length === 0);
+  check('可以挪到别的房间', sim.placeDecor(s, id, 'bedroom', 200, 610).ok && s.decor[0].zone === 'bedroom');
+  check('不存在的房间放不了', !sim.placeDecor(s, id, 'attic', 0, 0).ok);
+  check('收起来不会丢，还能再摆', sim.storeDecor(s, id).ok && s.decor.length === 1 && s.decor[0].zone === null && sim.placeDecor(s, id, 'living', 50, 600).ok);
+  for (let i = 0; i < 5; i++) sim.buyDecor(s, 'plant');
+  check('同一种最多买 4 件', sim.decorCount(s, 'plant') === CONFIG.decor.maxPerKind);
+  s.fish = 5000; for (const k of ['cushion', 'mat', 'poster']) for (let i = 0; i < 4; i++) sim.buyDecor(s, k);
+  let placed = 0; for (const d of s.decor) if (sim.placeDecor(s, d.id, 'kitchen', 100, 600).ok) placed++;
+  check('一个区域最多摆 8 件', placed === CONFIG.decor.maxPerZone && s.decor.filter((d) => d.zone === 'kitchen').length === 8);
+  s.fish = 10; check('小鱼干不够买不了', !sim.buyDecor(s, 'shelf').ok);
+  const r = repair(JSON.parse(JSON.stringify(s)), T0); check('装饰和位置存档再读档还在', r.decor.length === s.decor.length && r.decor.filter((d) => d.zone === 'kitchen').length === 8);
+  const bad = JSON.parse(JSON.stringify(s)); bad.decor.push({ id: 'x', kind: 'unicorn', zone: 'living', x: 0, y: 0 }); bad.decor[0].zone = 'nowhere';
+  const rb = repair(bad, T0); check('存档里不认识的装饰丢掉，不认识的房间当作收起来', !rb.decor.some((d) => d.kind === 'unicorn') && rb.decor[0].zone === null);
 }
 
 console.log('新手保护');

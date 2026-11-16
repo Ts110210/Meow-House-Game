@@ -122,6 +122,14 @@ export const CONFIG = {
     { id: 's20', kind: 'souvenirs', need: 20, fish: 500, decor: 'trophy' },
   ] as { id: string; kind: 'variants' | 'souvenirs'; need: number; fish: number; decor?: string }[],
 
+  // ---------- 房间装饰 ----------
+  decor: {
+    /** 同一种装饰最多买几件 */
+    maxPerKind: 4,
+    /** 每个区域最多摆几件 */
+    maxPerZone: 8,
+  },
+
   // ---------- 访客 ----------
   visitors: {
     /** 每天来 0、1、2 个访客的可能性（加起来是 1） */
@@ -462,9 +470,23 @@ export const VISITORS: Record<VisitorWho, { name: string; look: string; hello: s
 
 export const SEASON_IDS: Season[] = ['spring', 'summer', 'autumn', 'winter'];
 export const TIME_IDS: DayTime[] = ['day', 'dusk', 'night'];
-/** 里程碑奖励的特殊装饰（商店里买不到）。摆放见「房间装饰」 */
-export const SPECIAL_DECOR: Record<string, { name: string; icon: string }> = {
-  globe: { name: '小地球仪', icon: '🌏' },
-  goldframe: { name: '金边相框', icon: '🖼️' },
-  trophy: { name: '收藏家奖杯', icon: '🏆' },
+/** 房间装饰。layer：wall 挂在墙上；floor 铺在地上（宠物踩在上面）；stand 摆在地上。
+ *  height = 显示高度；light = 天黑了发光的位置（相对图片）；special = 里程碑奖励，商店不卖（price 0）。
+ *  加一件新的：在这里加一行，在 art/decor.ts 里画个占位图（或者直接放 PNG）。 */
+export interface DecorDef { name: string; icon: string; price: number; height: number; layer: 'wall' | 'floor' | 'stand'; desc: string; light?: [number, number]; special?: boolean }
+export const DECOR: Record<string, DecorDef> = {
+  cushion: { name: '靠垫', icon: '🟨', price: 50, height: 46, layer: 'stand', desc: '软软的，放在哪都行' },
+  mat: { name: '小圆垫', icon: '🔵', price: 60, height: 40, layer: 'floor', desc: '铺在地上的小垫子' },
+  poster: { name: '小鱼挂画', icon: '🐟', price: 70, height: 80, layer: 'wall', desc: '挂在墙上的小画' },
+  plant: { name: '小盆栽', icon: '🪴', price: 80, height: 90, layer: 'stand', desc: '一小盆绿叶' },
+  rug: { name: '编织地毯', icon: '🧶', price: 120, height: 64, layer: 'floor', desc: '椭圆的大地毯' },
+  painting: { name: '风景挂画', icon: '🖼️', price: 150, height: 120, layer: 'wall', desc: '远山和太阳' },
+  nightlight: { name: '小夜灯', icon: '🌙', price: 180, height: 70, layer: 'stand', desc: '天黑了会亮', light: [0.5, 0.4] },
+  bigplant: { name: '龟背竹', icon: '🌿', price: 200, height: 210, layer: 'stand', desc: '一大盆，很占地方' },
+  shelf: { name: '小书架', icon: '📚', price: 300, height: 190, layer: 'stand', desc: '摆满了书和小东西' },
+  globe: { name: '小地球仪', icon: '🌏', price: 0, height: 96, layer: 'stand', desc: '图鉴里程碑的奖励', special: true },
+  goldframe: { name: '金边相框', icon: '🖼️', price: 0, height: 130, layer: 'wall', desc: '图鉴里程碑的奖励', special: true },
+  trophy: { name: '收藏家奖杯', icon: '🏆', price: 0, height: 100, layer: 'stand', desc: '图鉴里程碑的奖励', special: true },
 };
+/** 兼容旧名字：里程碑奖励的特殊装饰 */
+export const SPECIAL_DECOR: Record<string, { name: string; icon: string }> = Object.fromEntries(Object.entries(DECOR).filter(([, d]) => d.special).map(([k, d]) => [k, { name: d.name, icon: d.icon }]));

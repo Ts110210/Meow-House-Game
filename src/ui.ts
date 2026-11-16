@@ -1,5 +1,5 @@
 // 界面：顶部和底部的按钮，以及所有从下方弹出的面板。
-import { ZONES, CONFIG, DAY, DESTS, TREAT, TIME_NAMES, SEASON_NAMES, FOODS, FRY, FUR_COLORS, VISITORS, SEASON_IDS, TIME_IDS, SPECIAL_DECOR, TRAITS, TRAIT_IDS, type Trait, PATTERN_NAMES, DEFAULT_LOOK, encodeLook, decodeLook, type Look, type CoatPattern, GEAR, GOODS, HOUR, MIN, SOUVENIRS, SPRITE, TOOLS, type ActionName } from './config';
+import { ZONES, CONFIG, DAY, DESTS, TREAT, TIME_NAMES, SEASON_NAMES, FOODS, FRY, FUR_COLORS, DECOR, VISITORS, SEASON_IDS, TIME_IDS, SPECIAL_DECOR, TRAITS, TRAIT_IDS, type Trait, PATTERN_NAMES, DEFAULT_LOOK, encodeLook, decodeLook, type Look, type CoatPattern, GEAR, GOODS, HOUR, MIN, SOUVENIRS, SPRITE, TOOLS, type ActionName } from './config';
 import { renderPostcard } from './art/postcard';
 import { drawDefaultSheet } from './art/defaultPet';
 import type { Game } from './game';
@@ -131,6 +131,7 @@ export class UI {
   /** 返回键（安卓）或 Esc：有面板就关面板，在调整模式就退出。返回 false 表示没有东西可关。 */
   handleBack(): boolean {
     if (this.sheet) { this.close(); return true; }
+    if (this.decorBar) { this.stopDecor(); return true; }
     if (this.editBar) { if (this.scene.bgMode) this.stopBgEdit(); else this.stopEdit(); return true; }
     return false;
   }
@@ -678,7 +679,12 @@ export class UI {
         h('h3', null, '行商货物（宠物带出门卖）'), h('div', { class: 'card' }, GOODS.map((g) => row(g.id, g.icon, g.name, `卖 ${g.sellMin}–${g.sellMax}，${Math.round(g.sellChance * 100)}% 能卖掉`, g.price))),
         h('h3', null, '鱼塘'), h('div', { class: 'card' }, row(FRY.id, FRY.icon, FRY.name, `${fmtDur(CONFIG.pond.growTime)}后收获 ${CONFIG.pond.fishPerFry} 小鱼干`, FRY.price)),
         h('h3', null, '其他'), h('div', { class: 'card' }, row(TREAT.id, TREAT.icon, TREAT.name, TREAT.desc, TREAT.price)),
-        h('h3', null, '家里的东西（买一次就一直在）'), h('div', { class: 'card' }, GEAR.map((g) => row(g.id, g.icon, g.name, g.desc, g.price, !!s.owned[g.id])))];
+        h('h3', null, '家里的东西（买一次就一直在）'), h('div', { class: 'card' }, GEAR.map((g) => row(g.id, g.icon, g.name, g.desc, g.price, !!s.owned[g.id]))),
+        h('h3', null, '房间装饰（买了到「布置房间」里摆）'),
+        h('div', { class: 'card' }, Object.entries(DECOR).filter(([, d]) => !d.special).map(([k, d]) => { const n = sim.decorCount(s, k); const full = n >= CONFIG.decor.maxPerKind;
+          return h('div', { class: 'item' }, h('span', { class: 'ico' }, d.icon), h('div', { class: 'txt' }, h('b', null, d.name), h('span', { class: 'soft' }, `${d.desc}${n ? ` · 已有 ${n} 件` : ''}`)),
+            h('button', { class: 'btn small', disabled: full || s.fish < d.price, onclick: () => { const r = this.game.act((st) => sim.buyDecor(st, k)); this.say(r); sfx(r.ok ? 'buy' : 'error'); } }, full ? '买满了' : `🐟 ${d.price}`)); })),
+        h('p', null, h('button', { class: 'btn block', onclick: () => this.startDecor() }, '去布置房间'))];
     } });
   }
 
@@ -691,6 +697,7 @@ export class UI {
       return [h('div', { class: 'grid2' },
         h('button', { class: 'btn', onclick: () => this.openFamily() }, '家庭成员'), h('button', { class: 'btn', onclick: () => this.openAlbum() }, '纪念相册'),
         h('button', { class: 'btn', onclick: () => this.openCabinet() }, '收藏柜'), h('button', { class: 'btn' + (sim.milestoneStatus(s).some((m) => m.ready) ? ' primary' : ''), onclick: () => this.openCodex() }, '图鉴'), h('button', { class: 'btn', onclick: () => this.openBack() }, '背屏预览'),
+        h('button', { class: 'btn', onclick: () => this.startDecor() }, '布置房间'),
         h('button', { class: 'btn', onclick: () => this.openDoor() }, '派宠物出门'), h('button', { class: 'btn', onclick: () => this.openPond() }, '鱼塘')),
         h('h3', null, '声音'),
         h('label', { class: 'volume' }, '音乐', h('input', { type: 'range', min: '0', max: '100', step: '5', value: String(Math.round(audioSettings.music * 100)), oninput: (e: Event) => setVolume('music', Number((e.target as HTMLInputElement).value) / 100) })),
@@ -918,6 +925,37 @@ export class UI {
   }
 
   // ---------- 调整点击区域 ----------
+
+  // ---------- 布置房间 ----------
+
+  private decorBar: HTMLElement | null = null;
+  startDecor() {
+    this.close(); if (this.decorBar) return;
+    this.decorBar = h('div', { class: 'editbar decorbar' }); this.root.append(this.decorBar); this.root.classList.add('editing');
+    this.scene.setDecorMode(true); this.renderDecorBar();
+  }
+  stopDecor() {
+    this.decorBar?.remove(); this.decorBar = null; this.root.classList.remove('editing');
+    this.scene.setDecorMode(false); this.game.save();
+  }
+  /** 场景里选中、拖动了装饰时调用 */
+  decorChanged(_id: string | null, msg?: string) { if (msg) this.toast(msg); this.renderDecorBar(); }
+  private renderDecorBar() {
+    const bar = this.decorBar; if (!bar) return;
+    const s = this.game.state; const sel = s.decor.find((d) => d.id === this.scene.decorSelected && d.zone !== null);
+    const stored = sim.storedDecor(s); const kinds = [...new Set(stored.map((d) => d.kind))];
+    bar.replaceChildren(...([
+      h('div', { class: 'editbar-text' }, h('b', null, '布置房间'), h('span', { class: 'soft' }, sel ? `选中了：${DECOR[sel.kind].name}。拖动可以挪位置，也可以拖到别的房间` : '点下面收着的装饰摆出来；点一下摆好的装饰可以拖动')),
+      sel ? h('button', { class: 'btn small', onclick: () => { this.game.act((st) => sim.storeDecor(st, sel.id)); this.scene.selectDecor(null); this.renderDecorBar(); sfx('close'); } }, '收起来') : null,
+      h('button', { class: 'btn small on', onclick: () => this.stopDecor() }, '完成'),
+      h('div', { class: 'decor-tray' }, kinds.length ? kinds.map((k) => h('button', { class: 'chip', onclick: () => {
+        const it = stored.find((d) => d.kind === k)!; const spot = this.scene.defaultDecorSpot(k);
+        const r = this.game.act((st) => sim.placeDecor(st, it.id, spot.zone, spot.x, spot.y));
+        if (!r.ok) { this.say(r); sfx('error'); return; }
+        sfx('open'); this.scene.selectDecor(it.id); this.renderDecorBar();
+      } }, `${DECOR[k].icon} ${DECOR[k].name}` + (stored.filter((d) => d.kind === k).length > 1 ? ` ×${stored.filter((d) => d.kind === k).length}` : '')))
+        : h('span', { class: 'soft' }, s.decor.length ? '装饰都摆出来了。商店里还有别的。' : '还没有装饰。到商店的「房间装饰」里买。'))].filter(Boolean) as HTMLElement[]));
+  }
 
   private editBar: HTMLElement | null = null; private editInfo: HTMLElement | null = null;
 

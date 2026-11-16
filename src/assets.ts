@@ -1,6 +1,6 @@
 // 素材加载器。每个素材位按这个顺序找图：页面里上传的 → public/assets/ 里的文件 → 没有（用代码画的占位图）。
 import { ASSETS } from './assets.config';
-import { DESTS, FUR_COLORS, ZONES } from './config';
+import { DESTS, FUR_COLORS, ZONES, DECOR } from './config';
 import { blobs } from './platform/storage';
 import { fileToDataUrl, knockOutWhite, loadImage } from './sprites';
 
@@ -17,6 +17,7 @@ export class AssetStore {
     out.push({ key: 'room.strip', group: '房间背景', name: `长图（盖住左边 ${ASSETS.room.strip.coverZones} 个区域）`, src: ASSETS.room.strip.src, hint: '约 3:1，建议 2160×720', kind: 'room' });
     for (const z of ZONES) out.push({ key: `room.zone.${z.id}`, group: '房间背景', name: `${z.name}（单独一张）`, src: ASSETS.room.zones[z.id], hint: '3:5，建议 432×720 的倍数', kind: 'room' });
     for (const [k, d] of Object.entries(ASSETS.objects)) out.push({ key: `object.${k}`, group: '家具和物品', name: d.label, src: d.src, hint: `透明背景 PNG，显示高度 ${d.height}`, kind: 'object' });
+    for (const [k, src] of Object.entries(ASSETS.decor)) out.push({ key: `decor.${k}`, group: '装饰', name: DECOR[k]?.name ?? k, src, hint: `透明背景 PNG，底边贴地，显示高度 ${DECOR[k]?.height ?? 80}`, kind: 'object' });
     for (const [k, src] of Object.entries(ASSETS.pets)) out.push({ key: `pet.${k}`, group: '默认宠物精灵图', name: FUR_COLORS[k]?.name ?? k, src, hint: '4 列，每格 256×256，每行一个动作', kind: 'pet' });
     for (const [k, src] of Object.entries(ASSETS.pets)) out.push({ key: `avatar.${k}`, group: '默认宠物头像', name: FUR_COLORS[k]?.name ?? k, src: src.replace(/\.png$/, '-avatar.png'), hint: '正方形，建议 256×256', kind: 'avatar' });
     for (const d of DESTS) out.push({ key: `postcard.${d.id}`, group: '明信片背景', name: d.name, src: ASSETS.postcards[d.id], hint: '3:2，建议 1200×800', kind: 'postcard' });

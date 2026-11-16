@@ -80,6 +80,11 @@ export const ASSETS = {
   } as Record<string, string>,
 
   // ---------- 明信片背景（3:2，建议 1200×800），宠物由程序贴上去 ----------
+  /** 装饰的图片。没有图片就用代码画的占位图。加新装饰时在这里加一行 */
+  decor: {
+    cushion: 'decor/cushion.png', mat: 'decor/mat.png', poster: 'decor/poster.png', plant: 'decor/plant.png', rug: 'decor/rug.png', painting: 'decor/painting.png',
+    nightlight: 'decor/nightlight.png', bigplant: 'decor/bigplant.png', shelf: 'decor/shelf.png', globe: 'decor/globe.png', goldframe: 'decor/goldframe.png', trophy: 'decor/trophy.png',
+  } as Record<string, string>,
   postcards: {
     singapore: 'postcards/singapore.png', penang: 'postcards/penang.png', langkawi: 'postcards/langkawi.png', bangkok: 'postcards/bangkok.png', chiangmai: 'postcards/chiangmai.png',
     bali: 'postcards/bali.png', cameron: 'postcards/cameron.png', angkor: 'postcards/angkor.png', halong: 'postcards/halong.png', borneo: 'postcards/borneo.png',

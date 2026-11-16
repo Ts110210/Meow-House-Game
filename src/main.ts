@@ -23,6 +23,7 @@ async function boot() {
     onObject: (kind, id) => ui?.onObject(kind, id),
     onZone: (i) => ui?.setZone(i),
     onEdit: (kind) => ui?.editChanged(kind),
+    onDecor: (id, msg) => ui?.decorChanged(id, msg),
     onBgEdit: (done) => ui?.bgChanged(done),
   });
   await scene.init(document.getElementById('stage')!);
