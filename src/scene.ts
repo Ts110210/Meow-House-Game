@@ -6,13 +6,13 @@ import { ASSETS, type ObjectDef } from './assets.config';
 import type { AssetStore } from './assets';
 import { drawObject, drawZone, groundColor, objectAspect, type Env } from './art/room';
 import { renderPostcard } from './art/postcard';
-import { CONFIG, PALETTE, SOUVENIRS, SPRITE, ZONES, type ActionName } from './config';
+import { CONFIG, PALETTE, SOUVENIRS, SPRITE, VISITORS, ZONES, type ActionName } from './config';
 import type { Game } from './game';
 import { BASE_FY, BASE_ZW, geo, recompute } from './geo';
 import * as sim from './sim';
 import { frameIndex, rowFor } from './sprites';
 
-export type ObjectKind = 'door' | 'bowl' | 'tub' | 'bed' | 'cabinet' | 'album' | 'pond' | 'scratcher' | 'feeder' | 'ball' | 'npc';
+export type ObjectKind = 'door' | 'bowl' | 'tub' | 'bed' | 'cabinet' | 'album' | 'pond' | 'scratcher' | 'feeder' | 'ball' | 'npc' | 'visitor';
 
 /** 家具旁边的位置：每件家具能同时容纳几只、各自站在哪（离家具中心的距离）、脸朝哪边。
  *  有位置才过去，位置满了就不去挤，所以不会重叠，也不会互相打断。 */
@@ -59,7 +59,7 @@ interface Actor {
   want: { kind: string; since: number } | null;
 }
 
-export interface SceneHooks { onPet(id: string): void; onObject(kind: ObjectKind): void; onZone(index: number): void; onEdit?(kind: string | null): void; onBgEdit?(done: boolean): void }
+export interface SceneHooks { onPet(id: string): void; onObject(kind: ObjectKind, id?: string): void; onZone(index: number): void; onEdit?(kind: string | null): void; onBgEdit?(done: boolean): void }
 interface EditBox { sp: Sprite; frame: Graphics; handle: Graphics; label: Text }
 
 export class Scene {
@@ -75,7 +75,7 @@ export class Scene {
   private actors = new Map<string, Actor>();
   private textures: Texture[] = [];
   private weather = new Graphics(); private shade = new Graphics(); private frontLayer = new Container();
-  private tubFront: Sprite | null = null; private npc: Sprite | null = null; private fishes: Graphics[] = [];
+  private tubFront: Sprite | null = null; private npc: Sprite | null = null; private visitorSprites = new Map<string, Sprite>(); private fishes: Graphics[] = [];
   private floats: { t: Text; t0: number }[] = [];
   private follow: { id: string; until: number } | null = null;
   private envSig = ''; private ownedSig: string | null = null;
@@ -226,11 +226,11 @@ export class Scene {
 
   private rebuildObjects() {
     const s = this.game.state;
-    const sig = JSON.stringify([this.editMode, s.owned, sim.shownSouvenirs(s), sim.shownPostcards(s).map((c) => c.id), s.pets.map((p) => p.spriteId), sim.lostPets(s).length, s.pets.some((p) => p.searchUntil !== null), s.pond.map((p, i) => (p == null ? 0 : sim.pondReady(s, i) ? 2 : 1))]);
+    const sig = JSON.stringify([this.editMode, s.owned, sim.shownSouvenirs(s), sim.shownPostcards(s).map((c) => c.id), s.pets.map((p) => p.spriteId), sim.lostPets(s).length, s.pets.some((p) => p.searchUntil !== null), s.visitors.map((v) => v.id), s.pond.map((p, i) => (p == null ? 0 : sim.pondReady(s, i) ? 2 : 1))]);
     if (sig === this.objSig) return;
     this.objSig = sig;
     this.objects.removeChildren().forEach((c) => c.destroy({ children: true })); this.objSprites.clear(); this.editBoxes.clear();
-    this.frontLayer.removeChildren().forEach((c) => c.destroy()); this.tubFront = null; this.npc = null; this.fishes = [];
+    this.frontLayer.removeChildren().forEach((c) => c.destroy()); this.tubFront = null; this.npc = null; this.visitorSprites.clear(); this.fishes = [];
 
     for (const [kind, def] of Object.entries(ASSETS.objects) as [ObjectKind, ObjectDef][]) {
       if (def.needsOwned && !s.owned[def.needsOwned] && !this.editMode) continue;
@@ -300,6 +300,17 @@ export class Scene {
       n.eventMode = 'static'; n.cursor = 'pointer'; n.on('pointertap', this.tap(() => this.hooks.onObject('npc')));
       this.objects.addChild(n); this.npc = n;
     }
+    // 访客：站在门口，头顶有个小气泡，点一下看它来干什么
+    if (!this.editMode) s.visitors.forEach((v, i) => {
+      const set = this.game.sprites.get(VISITORS[v.who].look); if (!set) return;
+      const door = objPos(ASSETS.objects.door); const sc = PET_BASE * ASSETS.petScale * 0.95;
+      const n = new Sprite(set.tex[0][0]); n.anchor.set(0.5, 0.9); n.scale.set(-sc, sc);
+      n.position.set(door.x + (this.npc ? -118 - i * 90 : 118 - i * 236) * door.k, geo.floorY + (H - geo.floorY) * (0.34 + i * 0.06));
+      n.eventMode = 'static'; n.cursor = 'pointer'; n.on('pointertap', this.tap(() => this.hooks.onObject('visitor', v.id)));
+      const bubble = new Text({ text: v.kind === 'gift' ? '🎁' : v.kind === 'trade' ? '🔁' : '✉️', style: { fontSize: 64 } });
+      bubble.anchor.set(0.5, 1); bubble.scale.set(-1 / sc * 0.42, 1 / sc * 0.42); bubble.position.set(0, -256 * 0.86); bubble.eventMode = 'none'; n.addChild(bubble);
+      this.objects.addChild(n); this.visitorSprites.set(v.id, n);
+    });
     if (this.editMode) for (const [kind, sp] of this.objSprites) {
       const frame = new Graphics(); const handle = new Graphics();
       const label = new Text({ text: '', style: { fontFamily: 'system-ui, sans-serif', fontSize: 24, fill: 0xffffff, fontWeight: '600' } });
@@ -847,6 +858,7 @@ export class Scene {
     // 狸花猫的待机动画
     const tabby = this.game.sprites.get('npc:tabby');
     if (this.npc && tabby) this.npc.texture = tabby.tex[0][frameIndex('idle', this.now)];
+    for (const v of s.visitors) { const sp = this.visitorSprites.get(v.id), set = this.game.sprites.get(VISITORS[v.who].look); if (sp && set) sp.texture = set.tex[0][frameIndex('idle', this.now + 300)]; }
 
     this.drawWeather(env);
 

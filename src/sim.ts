@@ -1,7 +1,7 @@
 // 游戏规则。这个文件不碰画面，只改存档数据，方便单独测试。
 import { writeDiary } from './diary';
-import { CONFIG, DAY, DESTS, FOODS, FRY, FUR_COLORS, GEAR, GOODS, HOUR, MIN, SOUVENIRS, TOOLS, TREAT, type DayTime, type Season, type StatKey, decodeLook, TRAIT_IDS, type Trait } from './config';
-import type { GameEvent, GameState, Pet, Postcard, RepeatKey, Result, Trip } from './types';
+import { CONFIG, DAY, DESTS, FOODS, FRY, FUR_COLORS, GEAR, GOODS, HOUR, MIN, SOUVENIRS, TOOLS, TREAT, type DayTime, type Season, type StatKey, decodeLook, TRAIT_IDS, type Trait, VISITORS, type VisitorWho } from './config';
+import type { GameEvent, GameState, Pet, Postcard, RepeatKey, Result, Trip, Visitor } from './types';
 
 const T = CONFIG.traits;
 const clamp = (v: number, lo = 0, hi = 100) => Math.max(lo, Math.min(hi, v));
@@ -20,7 +20,7 @@ export function newState(now: number): GameState {
   const s: GameState = {
     v: 4, createdAt: now, settings: { notify: true }, clock: now, lastReal: now, fish: CONFIG.startFish, slots: 1,
     pets: [], trips: [], postcards: [], souvenirs: {}, inv: { ...CONFIG.startItems }, owned: {},
-    pond: Array(CONFIG.pond.slots).fill(null), lastCheckin: '', pendingReturns: [], friends: {}, display: { souvenirs: [], postcards: [] },
+    pond: Array(CONFIG.pond.slots).fill(null), lastCheckin: '', pendingReturns: [], friends: {}, visitors: [], visitorQuota: 0, visitorDay: '', lastVisitorAt: 0, errand: null, display: { souvenirs: [], postcards: [] },
     dev: { enabled: false, background: false, time: 'auto', season: 'auto', speed: 1, growth: 1, decay: { food: 1, mood: 1, clean: 1 } },
   };
   s.pets.push(newPet(CONFIG.startPet.name, `default:${CONFIG.startPet.color}`, now));
@@ -98,6 +98,8 @@ export function advance(s: GameState, dt: number): GameEvent[] {
     left -= step;
     s.clock += step;
     stepPets(s, step, events);
+    for (const v of [...s.visitors]) if (s.clock >= v.leaveAt) { s.visitors = s.visitors.filter((x) => x.id !== v.id); events.push({ type: 'visitorLeft', who: v.who }); }
+    if (s.errand && s.clock >= s.errand.expiresAt) s.errand = null;
     for (const trip of s.trips) if (!trip.letterSent && s.clock >= trip.letterAt) sendLetter(s, trip, events);
     for (const trip of [...s.trips]) if (s.clock >= trip.returnAt) resolveTrip(s, trip, events);
     for (const p of s.pets) if (p.searchUntil !== null && s.clock >= p.searchUntil) resolveSearch(s, p, events);
@@ -248,7 +250,65 @@ export function rename(s: GameState, petId: string, name: string): Result {
 
 // ---------- 出门 ----------
 
-export interface DispatchPlan { petIds: string[]; bento: string; tool: string | null; goods: string[] }
+// ---------- 访客 ----------
+
+const weighted = <K extends string>(w: Record<K, number>): K => { let r = Math.random() * (Object.values(w) as number[]).reduce((a, b) => a + b, 0); for (const k of Object.keys(w) as K[]) { r -= w[k]; if (r <= 0) return k; } return Object.keys(w)[0] as K; };
+const between = ([a, b]: [number, number]) => Math.round(a + Math.random() * (b - a));
+
+/** 主人打开 App（或回到前台）时调用：新的一天先定今天来几个；今天还有名额、门口没人、离上一个够久，就来一个。 */
+export function openDoorToVisitors(s: GameState): GameEvent[] {
+  const V = CONFIG.visitors; const day = dayKey(s.clock);
+  if (s.visitorDay !== day) {
+    s.visitorDay = day;
+    let r = Math.random(); s.visitorQuota = 0;
+    for (let n = 0; n < V.perDayChance.length; n++) { r -= V.perDayChance[n]; if (r <= 0) { s.visitorQuota = n; break; } }
+  }
+  if (s.visitorQuota <= 0 || s.visitors.length > 0 || s.clock - s.lastVisitorAt < V.gap) return [];
+  s.visitorQuota--; s.lastVisitorAt = s.clock;
+  const v = makeVisitor(s); s.visitors.push(v);
+  return [{ type: 'visitor', visitorId: v.id }];
+}
+
+export function makeVisitor(s: GameState, who?: VisitorWho, kind?: Visitor['kind']): Visitor {
+  const V = CONFIG.visitors; const ids = Object.keys(VISITORS) as VisitorWho[];
+  const w: Record<string, number> = { ...V.kindWeight }; if (s.errand) w.errand = 0; // 手上已经有一封信，就不再托第二封
+  const v: Visitor = { id: newId('visitor'), who: who ?? ids[Math.floor(Math.random() * ids.length)], kind: kind ?? (weighted(w) as Visitor['kind']), arrivedAt: s.clock, leaveAt: s.clock + V.stay };
+  if (v.kind === 'gift') { if (Math.random() < V.giftItemChance) v.item = V.giftItems[Math.floor(Math.random() * V.giftItems.length)]; else v.fish = between(V.giftFish); }
+  else if (v.kind === 'trade') {
+    v.wants = V.tradeWants[Math.floor(Math.random() * V.tradeWants.length)];
+    const rare = Object.keys(SOUVENIRS).filter((id) => SOUVENIRS[id].rare && !s.souvenirs[id]);
+    v.gives = rare.length ? rare[Math.floor(Math.random() * rare.length)] : 'fish';
+  } else v.destId = DESTS[Math.floor(Math.random() * DESTS.length)].id;
+  return v;
+}
+
+/** 回应访客。yes = 收下礼物、同意交换、接下这封信；no = 婉拒。不管哪种，访客办完事就走。 */
+export function answerVisitor(s: GameState, id: string, yes: boolean): Result {
+  const v = s.visitors.find((x) => x.id === id); const V = CONFIG.visitors;
+  if (!v) return { ok: false, msg: '它已经走了' };
+  const name = VISITORS[v.who].name; let msg = `${name}走了`;
+  if (yes) {
+    if (v.kind === 'gift') {
+      if (v.item) { addItem(s, v.item, 1); msg = `收下了：${itemName(v.item)} ×1`; } else { s.fish += v.fish ?? 0; msg = `收下了：小鱼干 +${v.fish}`; }
+    } else if (v.kind === 'trade') {
+      if (count(s, v.wants!) < 1) return { ok: false, msg: `家里没有${itemName(v.wants!)}，换不了` };
+      addItem(s, v.wants!, -1);
+      if (v.gives === 'fish' || !SOUVENIRS[v.gives!] || s.souvenirs[v.gives!]) { s.fish += V.tradeFallbackFish; msg = `换到了：小鱼干 +${V.tradeFallbackFish}`; }
+      else { s.souvenirs[v.gives!] = 1; msg = `换到了稀有纪念品：${SOUVENIRS[v.gives!].name}`; }
+    } else {
+      if (s.errand) return { ok: false, msg: '手上已经有一封信了，先送完那封' };
+      s.errand = { destId: v.destId!, reward: between(V.errandFish), from: v.who, expiresAt: s.clock + V.errandExpire };
+      msg = `接下了信。派宠物出门时可以选「顺路送信」`;
+    }
+  }
+  s.visitors = s.visitors.filter((x) => x.id !== id);
+  return { ok: true, msg };
+}
+const itemName = (id: string) => [...FOODS, ...TOOLS, ...GOODS, FRY, TREAT].find((x) => x.id === id)?.name ?? id;
+/** 这份便当够不够送到信上写的地方（远的地方要好一点的便当） */
+export const errandReachable = (s: GameState, bento: string) => !!s.errand && (FOODS.find((f) => f.id === bento)?.tier ?? 0) >= (DESTS.find((d) => d.id === s.errand!.destId)?.tier ?? 9);
+
+export interface DispatchPlan { petIds: string[]; bento: string; tool: string | null; goods: string[]; /** 顺路送信：去信上写的那个地方 */ errand?: boolean }
 
 export function checkDispatch(s: GameState, plan: DispatchPlan): Result {
   const t = CONFIG.travel;
@@ -286,12 +346,14 @@ export function dispatch(s: GameState, plan: DispatchPlan): Result {
   addItem(s, plan.bento, -1);
   if (tool) addItem(s, tool.id, -1); // 行李回家时还回来
   for (const g of plan.goods) addItem(s, g, -1);
-  const dest = pickDest(food.tier, tool?.type ?? null, plan.petIds.some((id) => s.pets.find((p) => p.id === id)?.trait === 'adventurer'));
+  const errand = plan.errand && errandReachable(s, plan.bento) ? s.errand : null;
+  const dest = errand ? DESTS.find((d) => d.id === errand.destId)! : pickDest(food.tier, tool?.type ?? null, plan.petIds.some((id) => s.pets.find((p) => p.id === id)?.trait === 'adventurer'));
   const trip: Trip = {
     id: newId('trip'), petIds: [...plan.petIds], bento: plan.bento, tool: tool?.id ?? null, goods: [...plan.goods],
     startAt: s.clock, returnAt: s.clock + food.tripTime, destId: dest.id,
     letterAt: s.clock + food.tripTime * (CONFIG.travel.letterWindow[0] + Math.random() * (CONFIG.travel.letterWindow[1] - CONFIG.travel.letterWindow[0])), letterSent: false,
   };
+  if (errand) { trip.errandReward = errand.reward; s.errand = null; }
   s.trips.push(trip);
   for (const id of plan.petIds) s.pets.find((p) => p.id === id)!.tripId = trip.id;
   return { ok: true, msg: '出门啦，路上小心' };
@@ -326,6 +388,7 @@ function resolveTrip(s: GameState, trip: Trip, events: GameEvent[]) {
     } else { unsold.push(g); addItem(s, g, 1); }
   }
   s.fish += income;
+  if (trip.errandReward) { s.fish += trip.errandReward; events.push({ type: 'errandDone', destId: dest.id, reward: trip.errandReward }); }
 
   // 纪念品
   const tool = trip.tool ? TOOLS.find((x) => x.id === trip.tool) : null;

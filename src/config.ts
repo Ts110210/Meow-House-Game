@@ -92,6 +92,28 @@ export const CONFIG = {
     bestSouvenirBonus: 0.1,
   },
 
+  // ---------- 访客 ----------
+  visitors: {
+    /** 每天来 0、1、2 个访客的可能性（加起来是 1） */
+    perDayChance: [0.25, 0.5, 0.25],
+    /** 没人理的话，待多久自己走 */
+    stay: 4 * HOUR,
+    /** 同一天两个访客之间至少隔多久 */
+    gap: 2 * HOUR,
+    /** 三类事各占多少（送礼、换东西、托送信） */
+    kindWeight: { gift: 0.45, trade: 0.3, errand: 0.25 },
+    /** 小礼物：小鱼干的范围；或者有这么大的可能送一样东西 */
+    giftFish: [8, 20] as [number, number],
+    giftItemChance: 0.4,
+    giftItems: ['kibble', 'can', 'fry', 'treat'],
+    /** 换东西：想要的食物；全部稀有纪念品都有了，就改给这么多小鱼干 */
+    tradeWants: ['can', 'feast'],
+    tradeFallbackFish: 60,
+    /** 托送信：送到之后的奖励；接了信之后多久没送就作废 */
+    errandFish: [40, 70] as [number, number],
+    errandExpire: 3 * DAY,
+  },
+
   // ---------- 动作要做多久（毫秒，真实时间） ----------
   durations: {
     eat: 10_000,
@@ -399,3 +421,11 @@ export const TRAITS: Record<Trait, { name: string; icon: string; desc: string }>
   adventurer: { name: '爱冒险', icon: '🧭', desc: '更爱去远的地方，更容易带回纪念品' },
 };
 export const TRAIT_IDS = Object.keys(TRAITS) as Trait[];
+
+/** 访客。look = 用捏猫系统画的占位样子（以后可以换成图片） */
+export type VisitorWho = 'tabby' | 'neighbor' | 'courier';
+export const VISITORS: Record<VisitorWho, { name: string; look: string; hello: string }> = {
+  tabby: { name: '狸花猫', look: 'look:stripes|#A89A82|#EDE6D8|#4A4550|#8DAA4E|0', hello: '路过，顺便来看看你们。' },
+  neighbor: { name: '邻居家的猫', look: 'look:point|#F3E6D0|#8A6A58|#4A4550|#5E9BD6|1', hello: '我就住隔壁，过来串个门。' },
+  courier: { name: '快递猫', look: 'look:cow|#FBF8F2|#3F6FA8|#4A4550|#3B2A22|0', hello: '有你家的东西，签收一下。' },
+};

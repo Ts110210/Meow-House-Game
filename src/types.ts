@@ -1,4 +1,4 @@
-import type { DayTime, Season, Trait } from './config';
+import type { DayTime, Season, Trait, VisitorWho } from './config';
 import type { StatKey } from './config';
 
 export type RepeatKey = 'feed' | 'pet' | 'bath' | 'play';
@@ -32,6 +32,13 @@ export interface Pet {
   adoptedAt: number;
 }
 
+/** 访客想做的事：gift 送礼（fish 或 item）；trade 想用 wants 这种食物换 gives（纪念品编号，或 fish 小鱼干）；errand 托送信到 destId */
+export interface Visitor {
+  id: string; who: VisitorWho; kind: 'gift' | 'trade' | 'errand';
+  arrivedAt: number; leaveAt: number;
+  fish?: number; item?: string; wants?: string; gives?: string; destId?: string;
+}
+
 export interface Trip {
   id: string;
   petIds: string[];
@@ -44,6 +51,8 @@ export interface Trip {
   /** 路上什么时候寄一张明信片回家（行程的 30%–70% 之间） */
   letterAt: number;
   letterSent: boolean;
+  /** 这一趟顺路送信：送到之后的奖励 */
+  errandReward?: number;
 }
 
 export interface Postcard {
@@ -103,6 +112,12 @@ export interface GameState {
   pond: (number | null)[];
   lastCheckin: string;
   /** 主人自己挑的展示内容：收藏柜上摆哪几件、相册墙上挂哪几张。空 = 自动用最新的 */
+  /** 现在在门口的访客 */
+  visitors: Visitor[];
+  /** 访客今天还会来几个（每天第一次打开时定下来）、是哪一天定的、上一个是什么时候来的 */
+  visitorQuota: number; visitorDay: string; lastVisitorAt: number;
+  /** 已经接下、还没送到的信 */
+  errand: { destId: string; reward: number; from: VisitorWho; expiresAt: number } | null;
   /** 每两只宠物之间的友情值。键 = 两个编号按字母顺序用 | 连起来 */
   friends: Record<string, number>;
   display: { souvenirs: string[]; postcards: string[] };
@@ -114,6 +129,9 @@ export interface GameState {
 export type GameEvent =
   | { type: 'return'; postcardId: string }
   | { type: 'letter'; postcardId: string }
+  | { type: 'visitor'; visitorId: string }
+  | { type: 'visitorLeft'; who: VisitorWho }
+  | { type: 'errandDone'; destId: string; reward: number }
   | { type: 'weak'; petId: string }
   | { type: 'ranAway'; petId: string }
   | { type: 'found'; petId: string }

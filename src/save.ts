@@ -5,7 +5,7 @@
 //   2. 在 MIGRATIONS 里加一条「从上一个版本升到这个版本」的函数
 //   3. 在 repair() 里给新字段补默认值
 // 旧存档会在打开时自动一步一步升上来，升级前的原样会另存一份。
-import { CONFIG, DESTS, FOODS, SOUVENIRS, TRAIT_IDS } from './config';
+import { CONFIG, DESTS, FOODS, SOUVENIRS, TRAIT_IDS, VISITORS } from './config';
 import { kv } from './platform/storage';
 import type { GameState, Pet, Postcard, Trip } from './types';
 
@@ -67,6 +67,7 @@ export function repair(raw: Raw, now = Date.now()): GameState {
     goods: arr(t.goods).filter((g) => typeof g === 'string'), startAt: num(t.startAt, clock), returnAt: num(t.returnAt, clock),
     destId: DESTS.some((d) => d.id === t.destId) ? t.destId : DESTS[0].id,
     // 旧存档里正在路上的那一趟没有「寄信」这回事：当作已经寄过
+    ...(typeof t.errandReward === 'number' ? { errandReward: t.errandReward } : {}),
     letterAt: num(t.letterAt, num(t.returnAt, clock)), letterSent: typeof t.letterSent === 'boolean' ? t.letterSent : true,
   })).filter((t) => t.petIds.length > 0);
   // 宠物和行程要对得上：说在路上但找不到行程的，算在家
@@ -90,6 +91,10 @@ export function repair(raw: Raw, now = Date.now()): GameState {
     pets, trips, postcards, souvenirs, inv: counts(raw.inv), owned, pond,
     lastCheckin: str(raw.lastCheckin, ''),
     friends: Object.fromEntries(Object.entries(obj(raw.friends)).filter(([k, v]) => typeof v === 'number' && k.split('|').length === 2 && k.split('|').every((id) => pets.some((p) => p.id === id))).map(([k, v]) => [k, Math.max(0, Math.min(CONFIG.friendship.best, v as number))])),
+    visitors: arr(raw.visitors).filter((v) => v && typeof v.id === 'string' && v.who in VISITORS && ['gift', 'trade', 'errand'].includes(v.kind) && (v.kind !== 'errand' || DESTS.some((d) => d.id === v.destId)))
+      .map((v) => ({ id: v.id, who: v.who, kind: v.kind, arrivedAt: num(v.arrivedAt, clock), leaveAt: num(v.leaveAt, clock), ...(typeof v.fish === 'number' ? { fish: v.fish } : {}), ...(typeof v.item === 'string' ? { item: v.item } : {}), ...(typeof v.wants === 'string' ? { wants: v.wants } : {}), ...(typeof v.gives === 'string' ? { gives: v.gives } : {}), ...(typeof v.destId === 'string' ? { destId: v.destId } : {}) })),
+    visitorQuota: num(raw.visitorQuota, 0, 0, 2), visitorDay: str(raw.visitorDay, ''), lastVisitorAt: num(raw.lastVisitorAt, 0),
+    errand: raw.errand && DESTS.some((d) => d.id === raw.errand.destId) && raw.errand.from in VISITORS ? { destId: raw.errand.destId, reward: num(raw.errand.reward, 40, 0), from: raw.errand.from, expiresAt: num(raw.errand.expiresAt, clock) } : null,
     display: { souvenirs: arr(display.souvenirs).filter((id) => souvenirs[id]).slice(0, CONFIG.travel.displaySouvenirs), postcards: arr(display.postcards).filter((id) => postcards.some((c) => c.id === id)).slice(0, CONFIG.travel.displayPostcards) },
     pendingReturns: arr(raw.pendingReturns).filter((id) => postcards.some((c) => c.id === id)),
     dev: { enabled: !!dev.enabled, background: !!dev.background, time: ['day', 'dusk', 'night'].includes(dev.time) ? dev.time : 'auto', season: ['spring', 'summer', 'autumn', 'winter'].includes(dev.season) ? dev.season : 'auto', speed: num(dev.speed, 1, 1, 100000), growth: num(dev.growth, 1, 0, 100000), decay: { food: num(decay.food, 1, 0, 1000), mood: num(decay.mood, 1, 0, 1000), clean: num(decay.clean, 1, 0, 1000) } },

@@ -20,7 +20,7 @@ async function boot() {
   let ui: UI | null = null;
   const scene = new Scene(game, assets, {
     onPet: (id) => ui?.openPet(id),
-    onObject: (kind) => ui?.onObject(kind),
+    onObject: (kind, id) => ui?.onObject(kind, id),
     onZone: (i) => ui?.setZone(i),
     onEdit: (kind) => ui?.editChanged(kind),
     onBgEdit: (done) => ui?.bgChanged(done),
@@ -32,7 +32,8 @@ async function boot() {
   ui.setZone(2);
   assets.onChange(async (key) => { if (key.startsWith('pet.') || key.startsWith('avatar.')) await game.reloadDefaultSprites(); ui?.assetsChanged(); scene.rebuildArt(); });
   // 切到后台或关掉页面时存一次档
-  document.addEventListener('visibilitychange', () => { if (document.hidden) game.save(); });
+  document.addEventListener('visibilitychange', () => { if (document.hidden) game.save(); else game.welcome(); });
+  setTimeout(() => game.welcome(), 1500); // 打开游戏：看看门口有没有客人
   window.addEventListener('pagehide', () => game.save());
   window.addEventListener('beforeunload', () => game.save());
   // 请浏览器尽量不要自动清掉这个页面的数据（不支持或被拒绝也没关系）
@@ -53,7 +54,7 @@ async function boot() {
   setupAppEvents({
     onBack: () => ui?.handleBack() ?? false,
     onPause: () => { front = false; game.save(); plan(0); pauseAudio(true); },
-    onResume: () => { front = true; plan(2 * 60_000); pauseAudio(false); },
+    onResume: () => { front = true; game.welcome(); plan(2 * 60_000); pauseAudio(false); },
   });
   window.addEventListener('keydown', (e) => { if (e.key === 'Escape') ui?.handleBack(); });
   (window as any).__game = game; (window as any).__scene = scene; (window as any).__sim = sim; // 方便在控制台里调试

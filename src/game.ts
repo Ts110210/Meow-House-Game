@@ -1,5 +1,5 @@
 // 把存档、规则、精灵图串在一起。画面（scene）和界面（ui）都只和它打交道。
-import { CONFIG, DAY, FUR_COLORS, NPC_COLORS } from './config';
+import { CONFIG, DAY, FUR_COLORS, NPC_COLORS, VISITORS } from './config';
 import { drawDefaultAvatar, drawDefaultSheet } from './art/defaultPet';
 import { blobs } from './platform/storage';
 import { notifyNow } from './platform/notify';
@@ -44,6 +44,7 @@ export class Game {
     this.loadInfo = loaded ? { from: loaded.from, source: loaded.source } : null;
     for (const p of this.state.pets) await this.ensureSprite(p.spriteId);
     await this.ensureSprite('npc:tabby'); // 狸花猫
+    for (const v of Object.values(VISITORS)) await this.ensureSprite(v.look); // 访客（用捏猫系统画的占位样子）
     await this.loadPetAvatars();
     if (loaded) {
       // 关掉 App 期间的变化，打开时一次算清。系统时间被往回调时不倒着算。
@@ -140,6 +141,12 @@ export class Game {
     if (events.length) { events.forEach((e) => this.emitEvent(e)); this.changed(); }
     const now = performance.now();
     if (now - this.lastSave > (this.dirty ? 1500 : 10000)) this.save();
+  }
+
+  /** 主人打开 App、或者从后台回来：看看今天有没有访客上门 */
+  welcome() {
+    const events = sim.openDoorToVisitors(this.state);
+    if (events.length) { events.forEach((e) => this.emitEvent(e)); this.changed(); }
   }
 
   /** 开发者模式：直接跳过一段时间 */

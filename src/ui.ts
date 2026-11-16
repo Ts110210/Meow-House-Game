@@ -1,5 +1,5 @@
 // 界面：顶部和底部的按钮，以及所有从下方弹出的面板。
-import { ZONES, CONFIG, DAY, DESTS, TREAT, TIME_NAMES, SEASON_NAMES, FOODS, FRY, FUR_COLORS, TRAITS, TRAIT_IDS, type Trait, PATTERN_NAMES, DEFAULT_LOOK, encodeLook, decodeLook, type Look, type CoatPattern, GEAR, GOODS, HOUR, MIN, SOUVENIRS, SPRITE, TOOLS, type ActionName } from './config';
+import { ZONES, CONFIG, DAY, DESTS, TREAT, TIME_NAMES, SEASON_NAMES, FOODS, FRY, FUR_COLORS, VISITORS, TRAITS, TRAIT_IDS, type Trait, PATTERN_NAMES, DEFAULT_LOOK, encodeLook, decodeLook, type Look, type CoatPattern, GEAR, GOODS, HOUR, MIN, SOUVENIRS, SPRITE, TOOLS, type ActionName } from './config';
 import { renderPostcard } from './art/postcard';
 import { drawDefaultSheet } from './art/defaultPet';
 import type { Game } from './game';
@@ -78,6 +78,9 @@ export class UI {
         sfx('return'); meow('happy');
       }
       if (e.type === 'letter') { if (!this.sheet) this.showReturns(); else this.toast('路上寄来了一张明信片'); sfx('door'); }
+      if (e.type === 'visitor') { const v = game.state.visitors.find((x) => x.id === e.visitorId); if (v) { this.toast(`门口来了客人：${VISITORS[v.who].name}`); sfx('door'); } }
+      if (e.type === 'visitorLeft') this.toast(`${VISITORS[e.who].name}等了很久，自己走了`);
+      if (e.type === 'errandDone') { const d = DESTS.find((x) => x.id === e.destId); this.toast(`信送到${d?.name ?? ''}了，谢礼：小鱼干 +${e.reward}`); sfx('coin'); }
       if (e.type === 'hungry' || e.type === 'weak') meow('hungry');
       if (e.type === 'ranAway' || e.type === 'notFound') meow('sad');
       if (e.type === 'found') { sfx('return'); meow('happy'); }
@@ -266,12 +269,43 @@ export class UI {
 
   // ---------- 场景里点到东西 ----------
 
-  onObject(kind: ObjectKind) {
+  onObject(kind: ObjectKind, id?: string) {
+    if (kind === 'visitor' && id) { this.openVisitor(id); return; }
     if (kind === 'door') this.openDoor();
     else if (kind === 'album') this.openAlbum();
     else if (kind === 'cabinet') this.openCabinet();
     else if (kind === 'pond') this.openPond();
     else if (kind === 'npc') this.openRescue();
+  }
+
+  // ---------- 访客 ----------
+
+  openVisitor(id: string) {
+    const s = this.game.state; const v0 = s.visitors.find((x) => x.id === id); if (!v0) return;
+    const who = VISITORS[v0.who]; meow('short');
+    const answer = (yes: boolean) => { const r = this.game.act((st) => sim.answerVisitor(st, id, yes)); this.say(r); if (r.ok) { sfx(yes ? 'coin' : 'close'); this.close(); } else sfx('error'); };
+    this.open({ title: who.name, render: () => {
+      const v = s.visitors.find((x) => x.id === id);
+      if (!v) return [h('p', { class: 'center soft' }, '它已经走了。'), h('button', { class: 'btn block', onclick: () => this.close() }, '好')];
+      const set = this.game.sprites.get(who.look); const name = (item: string) => [...FOODS, ...TOOLS, ...GOODS, FRY, TREAT].find((x) => x.id === item)?.name ?? item;
+      const out: Kid[] = [h('div', { class: 'pethead' }, set ? this.petAnim(set, () => 'idle') : null, h('div', { style: 'flex:1' }, h('p', null, `「${who.hello}」`), h('p', { class: 'soft' }, '再过 ', this.countdown(() => v.leaveAt, '马上'), ' 它就走了')))];
+      if (v.kind === 'gift') {
+        out.push(h('div', { class: 'card' }, h('div', { class: 'item' }, h('span', { class: 'ico' }, '🎁'), h('div', { class: 'txt' }, h('b', null, '带了一份小礼物'), h('span', { class: 'soft' }, v.item ? `${name(v.item)} ×1` : `小鱼干 ${v.fish}`)))));
+        out.push(h('p', null, h('button', { class: 'btn primary block', onclick: () => answer(true) }, '收下，谢谢')));
+      } else if (v.kind === 'trade') {
+        const sv = v.gives && v.gives !== 'fish' ? SOUVENIRS[v.gives] : null; const have = sim.count(s, v.wants!);
+        out.push(h('div', { class: 'card' }, h('div', { class: 'item' }, h('span', { class: 'ico' }, sv ? sv.icon : '🐟'), h('div', { class: 'txt' }, h('b', null, `想用一件东西换你的${name(v.wants!)}`),
+          h('span', { class: 'soft' }, sv ? `它带来的是稀有纪念品「${sv.name}」：${sv.desc}` : `它带来的是 ${CONFIG.visitors.tradeFallbackFish} 小鱼干`), h('span', { class: 'soft' }, `家里现在有 ${have} 份${name(v.wants!)}`)))));
+        out.push(h('div', { class: 'grid2' }, h('button', { class: 'btn primary', disabled: have < 1, onclick: () => answer(true) }, have < 1 ? `没有${name(v.wants!)}` : '换'), h('button', { class: 'btn', onclick: () => answer(false) }, '这次不换')));
+        if (have < 1) out.push(h('p', { class: 'soft' }, '可以先去商店买，它走之前回来换。'));
+      } else {
+        const d = DESTS.find((x) => x.id === v.destId)!; const tier = ['', '任何便当都能到', '要带鱼罐头或更好的便当', '要带豪华便当'][d.tier];
+        out.push(h('div', { class: 'card' }, h('div', { class: 'item' }, h('span', { class: 'ico' }, '✉️'), h('div', { class: 'txt' }, h('b', null, `想托你家宠物送一封信到${d.name}`),
+          h('span', { class: 'soft' }, `${tier}。接下之后，派宠物出门时选「顺路送信」，回来有谢礼。${fmtDur(CONFIG.visitors.errandExpire)}内没送就作废。`)))));
+        out.push(h('div', { class: 'grid2' }, h('button', { class: 'btn primary', disabled: !!s.errand, onclick: () => answer(true) }, s.errand ? '手上已经有一封信' : '接下这封信'), h('button', { class: 'btn', onclick: () => answer(false) }, '帮不上忙')));
+      }
+      return out;
+    } });
   }
 
   // ---------- 狸花猫：找回离家出走的宠物 ----------
@@ -446,6 +480,13 @@ export class UI {
     });
     out.push(goodsRows.length ? h('div', { class: 'card' }, goodsRows) : h('p', { class: 'soft' }, '还没有货物，商店里可以买。'));
 
+    if (s.errand) {
+      const d = DESTS.find((x) => x.id === s.errand!.destId)!; const can = sim.errandReachable(s, plan.bento); if (!can) plan.errand = false;
+      out.push(h('h3', null, '顺路送信'));
+      out.push(h('div', { class: 'card' }, h('div', { class: 'item' }, h('span', { class: 'ico' }, '✉️'), h('div', { class: 'txt' }, h('b', null, `${VISITORS[s.errand.from].name}托的信：送到${d.name}`),
+        h('span', { class: 'soft' }, can ? `选了就一定去${d.name}，回来有谢礼 🐟 ${s.errand.reward}` : `这份便当到不了${d.name}，要换好一点的便当`)),
+        h('button', { class: 'btn small' + (plan.errand ? ' on' : ''), disabled: !can, onclick: () => { plan.errand = !plan.errand; this.refresh(true); } }, plan.errand ? '顺路送' : '不送'))));
+    }
     const chk = sim.checkDispatch(s, plan);
     out.push(h('p', { style: 'margin-top:16px' }, h('button', { class: 'btn primary block', disabled: !chk.ok, onclick: () => {
       const r = this.game.act((st) => sim.dispatch(st, plan)); this.say(r);
@@ -1094,6 +1135,9 @@ export class UI {
         h('h3', null, '昼夜'), h('div', { class: 'seg' }, (['auto', 'day', 'dusk', 'night'] as const).map((v) => h('button', { class: 'chip' + (d.time === v ? ' on' : ''), onclick: () => { d.time = v; this.game.changed(); } }, v === 'auto' ? '跟着时间' : TIME_NAMES[v]))),
         h('h3', null, '季节'), h('div', { class: 'seg' }, (['auto', 'spring', 'summer', 'autumn', 'winter'] as const).map((v) => h('button', { class: 'chip' + (d.season === v ? ' on' : ''), onclick: () => { d.season = v; this.game.changed(); } }, v === 'auto' ? '跟着日期' : SEASON_NAMES[v]))),
         h('p', { class: 'soft' }, `现在是${SEASON_NAMES[sim.season(s)]}天的${TIME_NAMES[sim.dayTime(s)]}。到阳台和院子看效果最明显。`),
+        h('h3', null, '访客'),
+        h('div', { class: 'seg' }, (['gift', 'trade', 'errand'] as const).map((k) => h('button', { class: 'chip', onclick: () => { this.game.act((st) => { st.visitors.push(sim.makeVisitor(st, undefined, k)); return { ok: true }; }); this.close(); this.toast('门口来了一位访客'); } }, `叫一个来：${{ gift: '送礼', trade: '换东西', errand: '托送信' }[k]}`))),
+        h('p', { class: 'soft' }, `今天还会来 ${s.visitorQuota} 个（每天第一次打开时随机定 0–2 个，回到游戏时出现）。`),
         h('h3', null, '范围框'),
         h('button', { class: 'btn block' + (d.debugBoxes ? ' on' : ''), onclick: () => { d.debugBoxes = !d.debugBoxes; this.cardCache.clear(); this.game.changed(); if (d.debugBoxes) { this.close(); this.toast('范围框已打开：蓝=物品，绿=站位，橙=遮挡线，红=宠物，紫=地板'); } } }, `显示范围框：${d.debugBoxes ? '开' : '关'}`),
         h('p', { class: 'soft' }, '蓝框 = 物品的图片范围（也是点击范围）；绿点 = 宠物用这件家具时站的位置；橙线 = 遮挡线，线以下盖在宠物前面；黄点 = 发光的位置；红框 = 宠物的图片范围，红点 = 脚底；紫线 = 地板线和每只宠物走的线。明信片上会标出所有落脚点。'),

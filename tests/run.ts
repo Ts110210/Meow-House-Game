@@ -148,6 +148,46 @@ console.log('性格和友情');
     const fa = far('adventurer'), fo = far('tidy'); check('爱冒险：更常去远的地方', fa > fo + 0.03, `${fa} ${fo}`); }
 }
 
+console.log('访客');
+{
+  const V = CONFIG.visitors; const counts = [0, 0, 0]; const kinds: Record<string, number> = {};
+  for (let i = 0; i < 3000; i++) { const s = blank(); sim.openDoorToVisitors(s); counts[s.visitorQuota + s.visitors.length]++; for (const v of s.visitors) kinds[v.kind] = (kinds[v.kind] ?? 0) + 1; }
+  check('每天来 0–2 个，比例大约 25% / 50% / 25%', Math.abs(counts[0] / 3000 - 0.25) < 0.04 && Math.abs(counts[1] / 3000 - 0.5) < 0.04 && Math.abs(counts[2] / 3000 - 0.25) < 0.04, counts.join());
+  check('三类事都会出现', ['gift', 'trade', 'errand'].every((k) => kinds[k] > 100), JSON.stringify(kinds));
+  const real = Math.random;
+  try {
+    Math.random = () => 0.99; // 今天来 2 个
+    const s = blank(); const e1 = sim.openDoorToVisitors(s);
+    check('打开游戏时出现在门口，一次只来一个', e1.length === 1 && s.visitors.length === 1 && s.visitorQuota === 1);
+    check('门口有人时不会再来', sim.openDoorToVisitors(s).length === 0);
+    const ev = sim.advance(s, V.stay + MIN);
+    check('几个小时没理会，自己走了', s.visitors.length === 0 && ev.some((e) => e.type === 'visitorLeft'));
+    check('同一天的第二个：再打开时来', sim.openDoorToVisitors(s).length === 1 && s.visitorQuota === 0);
+    s.visitors = []; sim.advance(s, 3 * HOUR); check('今天的名额用完就不来了', sim.openDoorToVisitors(s).length === 0);
+    sim.advance(s, DAY); check('第二天重新算', sim.openDoorToVisitors(s).length === 1);
+  } finally { Math.random = real; }
+  { const s = blank(); const v = sim.makeVisitor(s, 'courier', 'gift'); v.fish = 12; delete v.item; s.visitors.push(v); const f = s.fish;
+    check('送礼：收下就拿到，访客离开', sim.answerVisitor(s, v.id, true).ok && s.fish === f + 12 && s.visitors.length === 0); }
+  { const s = blank(); const v = sim.makeVisitor(s, 'neighbor', 'trade'); v.wants = 'can'; s.visitors.push(v); s.inv.can = 0;
+    check('换东西：给的是一件还没有的稀有纪念品', !!SOUVENIRS[v.gives!]?.rare);
+    check('换东西：没有它想要的食物换不了，访客还在', !sim.answerVisitor(s, v.id, true).ok && s.visitors.length === 1);
+    s.inv.can = 1; check('换东西：有了就能换到', sim.answerVisitor(s, v.id, true).ok && (s.inv.can ?? 0) === 0 && s.souvenirs[v.gives!] === 1); }
+  { const s = blank(); const v = sim.makeVisitor(s, 'tabby', 'errand'); v.destId = 'bali'; s.visitors.push(v);
+    check('托送信：接下后记在手上', sim.answerVisitor(s, v.id, true).ok && s.errand?.destId === 'bali' && s.visitors.length === 0);
+    check('手上有信时，新来的访客不会再托信', Array.from({ length: 200 }, () => sim.makeVisitor(s)).every((x) => x.kind !== 'errand'));
+    const tier = DESTS.find((d) => d.id === 'bali')!.tier; const bento = ['', 'kibble', 'can', 'feast'][tier]; s.inv[bento] = 1; s.inv.kibble = 1;
+    if (tier > 1) check('便当不够好到不了那里', !sim.errandReachable(s, 'kibble'));
+    const p = s.pets[0]; p.food = p.mood = p.clean = 90; const reward = s.errand!.reward;
+    sim.dispatch(s, { petIds: [p.id], bento, tool: null, goods: [], errand: true });
+    check('选了顺路送信，就一定去那里', s.trips[0].destId === 'bali' && s.errand === null && s.trips[0].errandReward === reward);
+    const f = s.fish; const ev = sim.advance(s, s.trips[0].returnAt - s.clock + MIN);
+    check('送到后拿到谢礼', ev.some((e) => e.type === 'errandDone') && s.fish >= f + reward); }
+  { const s = blank(); const v = sim.makeVisitor(s, 'tabby', 'errand'); s.visitors.push(v); sim.answerVisitor(s, v.id, true); sim.advance(s, V.errandExpire + MIN);
+    check('信太久没送就作废', s.errand === null); }
+  { const s = blank(); s.visitors.push(sim.makeVisitor(s, 'courier', 'trade')); const v = sim.makeVisitor(s, 'tabby', 'errand'); s.visitors.push(v); sim.answerVisitor(s, v.id, true);
+    const r = repair(JSON.parse(JSON.stringify(s)), T0); check('访客和手上的信存档再读档还在', r.visitors.length === 1 && r.visitors[0].kind === 'trade' && r.errand?.destId === s.errand!.destId); }
+}
+
 console.log('新手保护');
 {
   const s = blank(); const p = s.pets[0]; p.food = 80; s.slots = 2; sim.adopt(s, '二号', 'default:grey'); const q = s.pets[1]; q.food = 80;
