@@ -4,7 +4,7 @@ import 'pixi.js/unsafe-eval';
 import { Application, Circle, Container, Graphics, Rectangle, Sprite, Text, Texture, type FederatedPointerEvent } from 'pixi.js';
 import { ASSETS, type ObjectDef } from './assets.config';
 import type { AssetStore } from './assets';
-import { drawObject, drawZone, groundColor, objectAspect, type Env } from './art/room';
+import { drawObject, drawZone, groundColor, objectAspect, ZONE_LIGHTS, type Env } from './art/room';
 import { renderPostcard } from './art/postcard';
 import { CONFIG, DECOR, PALETTE, SOUVENIRS, SPRITE, VISITORS, ZONES, type ActionName } from './config';
 import { drawDecor } from './art/decor';
@@ -108,7 +108,7 @@ export class Scene {
     await this.app.init({ resizeTo: el, background: hex(PALETTE.wall), antialias: true, resolution: Math.min(window.devicePixelRatio || 1, 2), autoDensity: true, preference: 'webgl' });
     el.appendChild(this.app.canvas);
     this.weather.eventMode = 'none'; this.shade.eventMode = 'none'; this.frontLayer.eventMode = 'none'; this.glow.eventMode = 'none'; this.debug.eventMode = 'none';
-    this.glow.blendMode = 'add';
+    this.glow.blendMode = 'add'; this.shade.blendMode = 'multiply';
     this.decorBox.eventMode = 'none';
     this.world.addChild(this.fill, this.bgLayer, this.weather, this.objects, this.petLayer, this.frontLayer, this.shade, this.glow, this.overlay, this.decorBox, this.debug);
     this.petLayer.sortableChildren = true;
@@ -188,9 +188,19 @@ export class Scene {
     // 屏幕底部往下延伸的地面：院子是草地，其他是木地板
     const env = this.env();
     ZONES.forEach((z, i) => { const c = groundColor(z.id, env); if (c !== PALETTE.floor && this.zoneSprites[i]?.code) g.rect(zx(i), H - 2, zw(i) + (i === N - 1 ? 3000 : 0), 3000).fill(c.startsWith('#') ? hex(c) : c); });
-    // 傍晚偏暖、夜里偏暗：整个画面盖一层颜色
+    // 傍晚偏暖、夜里压暗但保留暖色：整个画面乘上一个颜色（正片叠底）。屋里和室外（阳台、院子）各用各的颜色
     this.shade.clear();
-    if (env.time !== 'day') this.shade.rect(-3000, -3000, W + 6000, 6000 + H).fill(env.time === 'night' ? { color: 0x1b2444, alpha: 0.34 } : { color: 0xd9824a, alpha: 0.1 });
+    if (env.time !== 'day') {
+      const tone = CONFIG.light[env.time];
+      ZONES.forEach((z, i) => {
+        const x0 = i === 0 ? -3000 : zx(i), x1 = i === N - 1 ? W + 3000 : zx(i + 1);
+        const outdoor = z.id === 'balcony' || z.id === 'garden';
+        // 阳台有屋檐，木地板和屋里连着：地板以下用屋里的颜色，不然和隔壁的地板接不上
+        const split = z.id === 'balcony' ? fy : outdoor ? 6000 + H : -3000;
+        if (split > -3000) this.shade.rect(x0, -3000, x1 - x0, split + 3000).fill(hex(tone.outdoor));
+        if (split < 6000 + H) this.shade.rect(x0, split, x1 - x0, 6000 + H - split).fill(hex(tone.indoor));
+      });
+    }
     if (this.stripSprite && geo.strip) { this.stripSprite.position.set(geo.strip.x, 0); this.stripSprite.width = geo.strip.w; this.stripSprite.height = H; }
     this.zoneSprites.forEach((z, i) => {
       if (!z) return;
@@ -694,17 +704,19 @@ export class Scene {
     if (idle.length) this.follow = { id: idle[0].id, until: this.now + 5000 };
   }
 
-  /** 天黑了，会发光的物品（落地灯）周围画一团暖光。光的位置跟着物品走，物品挪到哪光到哪。 */
+  /** 天黑了，灯的周围画一圈暖色光晕：会发光的物品（落地灯、小夜灯）和代码画的背景里的灯（吊灯、落地灯、台灯）。
+   *  物品的光跟着物品走，物品挪到哪光到哪。 */
   private drawGlow(env: Env) {
     const g = this.glow.clear(); if (env.time === 'day') return;
-    const strength = env.time === 'night' ? 1 : 0.4;
-    const lit: [Sprite, [number, number]][] = [];
-    for (const [kind, sp] of this.objSprites) { const light = ASSETS.objects[kind]?.light; if (light && sp.alpha !== 0) lit.push([sp, light]); }
-    for (const d of this.game.state.decor) { const sp = this.decorSprites.get(d.id), light = DECOR[d.kind]?.light; if (sp && light) lit.push([sp, light]); }
-    for (const [sp, light] of lit) {
-      const x = sp.x - sp.width / 2 + sp.width * light[0], y = sp.y - sp.height + sp.height * light[1];
-      // 很多层很淡的圆叠起来，越靠近灯越亮，边缘看不出一圈一圈
-      for (let i = 30; i >= 1; i--) g.ellipse(x, y + 40 + i * 2, 12 * i, 11 * i).fill({ color: 0xffc977, alpha: 0.016 * strength });
+    const G = CONFIG.light.glow; const strength = G.strength * (env.time === 'night' ? 1 : G.duskStrength); const color = hex(G.color);
+    const lit: [number, number][] = [];
+    for (const [kind, sp] of this.objSprites) { const light = ASSETS.objects[kind]?.light; if (light && sp.alpha !== 0) lit.push([sp.x - sp.width / 2 + sp.width * light[0], sp.y - sp.height + sp.height * light[1]]); }
+    for (const d of this.game.state.decor) { const sp = this.decorSprites.get(d.id), light = DECOR[d.kind]?.light; if (sp && light) lit.push([sp.x - sp.width / 2 + sp.width * light[0], sp.y - sp.height + sp.height * light[1]]); }
+    this.zoneSprites.forEach((z, i) => { if (z?.code) for (const [x, y] of ZONE_LIGHTS[ZONES[i].id] ?? []) lit.push([zx(i) + x * (zw(i) / BASE_ZW), y + geo.floorY - BASE_FY]); });
+    const n = 26;
+    for (const [x, y] of lit) {
+      // 很多层很淡的圆叠起来：越靠近灯越亮，边缘慢慢淡出，看不出一圈一圈；光稍微往下落一点
+      for (let i = n; i >= 1; i--) { const r = G.radius * Math.pow(i / n, 1.5); g.circle(x, y + r * 0.2, r).fill({ color, alpha: strength / n }); }
     }
   }
 

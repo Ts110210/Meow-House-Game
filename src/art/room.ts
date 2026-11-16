@@ -12,7 +12,7 @@ const darken = (hex: string, t: number) => { const n = parseInt(hex.slice(1), 16
 
 export interface Env { time: DayTime; season: Season }
 let ENV: Env = { time: 'day', season: 'summer' };
-const SKY: Record<DayTime, string> = { day: '#D5E3EA', dusk: '#F2C9A4', night: '#55628A' };
+const SKY: Record<DayTime, string> = { day: '#D5E3EA', dusk: '#F2C9A4', night: '#3F4C80' };
 const SEASON = {
   spring: { leaf: '#EFB7C4', leaf2: '#F6D3DB', grass: '#B8D3A0', hill: '#C6DDB2', hill2: '#A8C894', ground: '#B7CF9C' },
   summer: { leaf: '#8DB07E', leaf2: '#A8C596', grass: '#9DBF87', hill: '#B4CDA6', hill2: '#A8B89A', ground: '#A5C28C' },
@@ -25,11 +25,24 @@ const sea = () => SEASON[ENV.season];
 function skyThings(s: Sketch, x: number, y: number, w: number) {
   if (ENV.time === 'night') {
     s.ellipse(x + w * 0.76, y + 44, 20, 20, { fill: '#F6ECC6', width: 1.1 }); s.ellipse(x + w * 0.76 + 8, y + 38, 16, 16, { fill: SKY.night, stroke: false, hatch: 0 });
-    for (let i = 0; i < 9; i++) s.ellipse(x + 16 + s.r() * (w - 32), y + 10 + s.r() * 110, 1.8, 1.8, { fill: '#FFFFFF', stroke: false, hatch: 0 });
+    stars(s, x + 10, y - 40, w - 20, 300, 26);
   } else {
     s.ellipse(x + w * 0.76, y + (ENV.time === 'dusk' ? 100 : 44), 24, 24, { fill: ENV.time === 'dusk' ? '#F0A46A' : '#F4E3A6', width: 1.1 });
     s.ellipse(x + w * 0.24, y + 40, 38, 11, { fill: P.white, width: 1 }); s.ellipse(x + w * 0.32, y + 30, 28, 11, { fill: P.white, width: 1 });
   }
+}
+
+/** 夜空里的星星：大小不一，有几颗偏暖。画在给定的方框里 */
+function stars(s: Sketch, x: number, y: number, w: number, h: number, n: number) {
+  for (let i = 0; i < n; i++) {
+    const r = i % 5 === 0 ? 2.6 : i % 2 ? 1.3 : 1.8;
+    s.ellipse(x + r + s.r() * (w - r * 2), y + r + s.r() * (h - r * 2), r, r, { fill: i % 4 === 0 ? '#FFF1C4' : '#FFFFFF', stroke: false, hatch: 0 });
+  }
+}
+
+/** 窗外的月牙 */
+function moon(s: Sketch, x: number, y: number, r: number) {
+  s.ellipse(x, y, r, r, { fill: '#F6ECC6', width: 1 }); s.ellipse(x + r * 0.42, y - r * 0.3, r * 0.82, r * 0.82, { fill: SKY.night, stroke: false, hatch: 0 });
 }
 
 /** 一棵树：春天开花，夏天绿，秋天黄，冬天光秃秃挂着雪 */
@@ -116,7 +129,7 @@ const ZONE_ART: Record<ZoneId, (s: Sketch) => void> = {
   },
   kitchen(s) {
     windowPane(s, 46, 174, 150, 124, lighten(SKY[ENV.time], ENV.time === 'night' ? 0 : 0.25), P.mustard);
-    if (ENV.time === 'night') s.ellipse(160, 206, 11, 11, { fill: '#F6ECC6', width: 1 }); else s.ellipse(150, 268, 34, 22, { fill: sea().hill2, width: 1 });
+    if (ENV.time === 'night') { stars(s, 50, 178, 142, 116, 9); moon(s, 160, 208, 13); } else s.ellipse(150, 268, 34, 22, { fill: sea().hill2, width: 1 });
     plant(s, 120, 304, 30, P.coral, 5);
     // 置物架和瓶瓶罐罐
     shelf(s, 238, 224, 168);
@@ -163,7 +176,7 @@ const ZONE_ART: Record<ZoneId, (s: Sketch) => void> = {
   },
   bedroom(s) {
     windowPane(s, 250, 174, 140, 130, lighten(SKY[ENV.time], ENV.time === 'night' ? 0 : 0.25), P.coral);
-    if (ENV.time === 'night') { s.ellipse(350, 214, 17, 17, { fill: '#F6ECC6', width: 1.1 }); for (const [x, y] of [[282, 204], [300, 254], [330, 274], [372, 260]]) s.ellipse(x, y, 2, 2, { fill: '#FFFFFF', stroke: false, hatch: 0 }); }
+    if (ENV.time === 'night') { stars(s, 254, 178, 132, 122, 10); moon(s, 350, 214, 15); }
     else { s.ellipse(350, 214, 15, 15, { fill: ENV.time === 'dusk' ? '#F0A46A' : '#F4E3A6', width: 1.1 }); s.ellipse(300, 284, 40, 18, { fill: sea().hill2, width: 1 }); }
     frame(s, 64, 200, 110, 82, P.sage, 'hill'); frame(s, 80, 300, 70, 56, P.mist, 'fish');
     // 床头柜和台灯
@@ -217,6 +230,12 @@ const ZONE_ART: Record<ZoneId, (s: Sketch) => void> = {
     // 通往屋里的踏脚石
     s.ellipse(40, 640, 30, 9, { fill: '#D9D4CB', width: 1.1 }); s.ellipse(100, 664, 26, 8, { fill: '#D9D4CB', width: 1.1 });
   },
+};
+
+/** 背景里画着的灯（吊灯、落地灯、台灯）的发光位置，天黑了在这里画光晕。坐标和上面画灯的位置对应；
+ *  只对代码画的占位背景有用，换成背景图后不再使用。 */
+export const ZONE_LIGHTS: Partial<Record<ZoneId, Pt[]>> = {
+  door: [[66, 176]], living: [[306, 384]], bedroom: [[49, 432]], shelf: [[340, 176]],
 };
 
 /** 每个区域的地面颜色（院子是草地，其他是木地板）。画面底部往下延伸时用。 */

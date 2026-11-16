@@ -251,6 +251,16 @@ export const CONFIG = {
     days: 7,
   },
 
+  // ---------- 傍晚和夜晚的光线 ----------
+  light: {
+    /** 整个画面乘上这个颜色（正片叠底，不是盖一层半透明的颜色，所以不会发灰）：越接近白色变化越小。
+     *  indoor = 屋里，outdoor = 阳台和院子 */
+    dusk: { indoor: '#F8E2CC', outdoor: '#F8E0CC' },
+    night: { indoor: '#B8A59F', outdoor: '#A6ACD2' },
+    /** 灯周围的暖色光晕：颜色、半径、最亮处的强度（0–1）；傍晚灯刚亮，强度再乘以 duskStrength */
+    glow: { color: '#FFC977', radius: 180, strength: 0.5, duskStrength: 0.35 },
+  },
+
   // ---------- 每日签到 ----------
   checkinFish: 30,
 
