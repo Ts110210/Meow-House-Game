@@ -1,4 +1,5 @@
 // 游戏规则。这个文件不碰画面，只改存档数据，方便单独测试。
+import { writeDiary } from './diary';
 import { CONFIG, DAY, DESTS, FOODS, FRY, FUR_COLORS, GEAR, GOODS, HOUR, MIN, SOUVENIRS, TOOLS, TREAT, type DayTime, type Season, type StatKey, decodeLook } from './config';
 import type { GameEvent, GameState, Pet, Postcard, RepeatKey, Result, Trip } from './types';
 
@@ -83,6 +84,7 @@ export function advance(s: GameState, dt: number): GameEvent[] {
     left -= step;
     s.clock += step;
     stepPets(s, step, events);
+    for (const trip of s.trips) if (!trip.letterSent && s.clock >= trip.letterAt) sendLetter(s, trip, events);
     for (const trip of [...s.trips]) if (s.clock >= trip.returnAt) resolveTrip(s, trip, events);
     for (const p of s.pets) if (p.searchUntil !== null && s.clock >= p.searchUntil) resolveSearch(s, p, events);
   }
@@ -268,13 +270,27 @@ export function dispatch(s: GameState, plan: DispatchPlan): Result {
   const trip: Trip = {
     id: newId('trip'), petIds: [...plan.petIds], bento: plan.bento, tool: tool?.id ?? null, goods: [...plan.goods],
     startAt: s.clock, returnAt: s.clock + food.tripTime, destId: dest.id,
+    letterAt: s.clock + food.tripTime * (CONFIG.travel.letterWindow[0] + Math.random() * (CONFIG.travel.letterWindow[1] - CONFIG.travel.letterWindow[0])), letterSent: false,
   };
   s.trips.push(trip);
   for (const id of plan.petIds) s.pets.find((p) => p.id === id)!.tripId = trip.id;
   return { ok: true, msg: '出门啦，路上小心' };
 }
 
+const petNames = (s: GameState, ids: string[]) => ids.map((id) => s.pets.find((p) => p.id === id)?.name ?? '').filter(Boolean);
+
+/** 路上寄一张明信片回家：只有明信片和日记，纪念品和卖货的钱要等回家 */
+function sendLetter(s: GameState, trip: Trip, events: GameEvent[]) {
+  trip.letterSent = true;
+  const season_ = season(s), time = dayTime(s);
+  const card: Postcard = { id: newId('card'), kind: 'letter', destId: trip.destId, petIds: trip.petIds, at: s.clock, souvenir: null, tool: trip.tool, seed: Math.floor(Math.random() * 1e9),
+    season: season_, time, diary: writeDiary({ destId: trip.destId, season: season_, time, tool: trip.tool, names: petNames(s, trip.petIds), letter: true }), income: 0, sold: [], unsold: [] };
+  s.postcards.push(card); s.pendingReturns.push(card.id);
+  events.push({ type: 'letter', postcardId: card.id });
+}
+
 function resolveTrip(s: GameState, trip: Trip, events: GameEvent[]) {
+  if (!trip.letterSent) sendLetter(s, trip, events); // 开发者一键结束时，信也照样寄到
   const t = CONFIG.travel;
   s.trips = s.trips.filter((x) => x.id !== trip.id);
   const dest = DESTS.find((d) => d.id === trip.destId) ?? DESTS[0];
@@ -307,7 +323,10 @@ function resolveTrip(s: GameState, trip: Trip, events: GameEvent[]) {
 
   for (const p of pets) { p.tripId = null; p.clean = clamp(p.clean - t.cleanDropOnReturn); }
 
-  const card: Postcard = { id: newId('card'), destId: dest.id, petIds: trip.petIds, at: s.clock, souvenir, tool: trip.tool, seed: Math.floor(Math.random() * 1e9), income, sold, unsold };
+  const season_ = season(s), time = dayTime(s);
+  const card: Postcard = { id: newId('card'), destId: dest.id, petIds: trip.petIds, at: s.clock, souvenir, tool: trip.tool, seed: Math.floor(Math.random() * 1e9),
+    season: season_, time, diary: writeDiary({ destId: dest.id, season: season_, time, tool: trip.tool, names: petNames(s, trip.petIds), letter: false,
+      avoid: [...s.postcards].reverse().find((c) => c.kind === 'letter' && c.destId === dest.id && c.petIds.join() === trip.petIds.join())?.diary }), income, sold, unsold };
   // 相册满了也先收下：多出来的由主人自己决定删哪张（见 albumOver / discardOverflow），不会自动删
   s.postcards.push(card);
   s.pendingReturns.push(card.id);
@@ -464,6 +483,7 @@ export function planReminders(s: GameState): ReminderPlan[] {
   for (const p of s.pets) if (p.searchUntil !== null) out.push({ title: '狸花猫回来了', body: `去找${p.name}有结果了，快来看看`, inMs: p.searchUntil - s.clock });
   for (const t of s.trips) {
     const names = t.petIds.map((id) => s.pets.find((p) => p.id === id)?.name).filter(Boolean).join(' 和 ');
+    if (!t.letterSent) out.push({ title: `${names}寄来了一张明信片`, body: '路上写了几句话给你', inMs: t.letterAt - s.clock });
     out.push({ title: `${names}回家了`, body: '带回了一张明信片，快来看看', inMs: t.returnAt - s.clock });
   }
   // inMs 是游戏时间；开了「后台也按倍速」时，真实时间要除以倍速

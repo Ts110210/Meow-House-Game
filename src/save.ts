@@ -64,13 +64,15 @@ export function repair(raw: Raw, now = Date.now()): GameState {
     bento: FOODS.some((f) => f.id === t.bento) ? t.bento : FOODS[0].id, tool: typeof t.tool === 'string' ? t.tool : null,
     goods: arr(t.goods).filter((g) => typeof g === 'string'), startAt: num(t.startAt, clock), returnAt: num(t.returnAt, clock),
     destId: DESTS.some((d) => d.id === t.destId) ? t.destId : DESTS[0].id,
+    // 旧存档里正在路上的那一趟没有「寄信」这回事：当作已经寄过
+    letterAt: num(t.letterAt, num(t.returnAt, clock)), letterSent: typeof t.letterSent === 'boolean' ? t.letterSent : true,
   })).filter((t) => t.petIds.length > 0);
   // 宠物和行程要对得上：说在路上但找不到行程的，算在家
   for (const p of pets) if (p.dead || !trips.some((t) => t.id === p.tripId && t.petIds.includes(p.id))) p.tripId = null;
   for (const t of trips) for (const id of t.petIds) pets.find((p) => p.id === id)!.tripId = t.id;
   const postcards: Postcard[] = arr(raw.postcards).filter((c) => c && typeof c.id === 'string' && DESTS.some((d) => d.id === c.destId)).map((c) => ({
     id: c.id, destId: c.destId, petIds: arr(c.petIds).filter((x) => typeof x === 'string'), at: num(c.at, clock),
-    souvenir: typeof c.souvenir === 'string' ? c.souvenir : null, tool: typeof c.tool === 'string' ? c.tool : null, ...(typeof c.seed === 'number' ? { seed: c.seed } : {}), income: num(c.income, 0, 0), sold: arr(c.sold), unsold: arr(c.unsold),
+    souvenir: typeof c.souvenir === 'string' ? c.souvenir : null, tool: typeof c.tool === 'string' ? c.tool : null, ...(c.kind === 'letter' ? { kind: 'letter' as const } : {}), ...(typeof c.diary === 'string' ? { diary: c.diary } : {}), ...(typeof c.season === 'string' ? { season: c.season } : {}), ...(typeof c.time === 'string' ? { time: c.time } : {}), ...(typeof c.seed === 'number' ? { seed: c.seed } : {}), income: num(c.income, 0, 0), sold: arr(c.sold), unsold: arr(c.unsold),
   }));
   const souvenirs: Record<string, number> = {}; for (const [k, n] of Object.entries(obj(raw.souvenirs))) if (n && SOUVENIRS[k]) souvenirs[k] = 1;
   const display = obj(raw.display);

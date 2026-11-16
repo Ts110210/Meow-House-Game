@@ -139,7 +139,10 @@ export const CONFIG = {
     /** 带回纪念品时，是稀有那一件的概率 */
     souvenirRareChance: 0.25,
     /** 相册最多放几张 = 目的地数量 × 这个数（现在 10 个地方就是 25 张） */
-    albumPerDest: 2.5,
+    /** 相册上限 = 地点数 × 这个数。现在每趟出门有 2 张明信片（路上寄 1 张 + 带回 1 张），所以是原来的两倍 */
+    albumPerDest: 5,
+    /** 路上寄明信片的时间点：行程进行到这个比例之间的随机一刻 */
+    letterWindow: [0.3, 0.7] as [number, number],
     /** 收藏柜上最多摆几件、相册墙上最多挂几张 */
     displaySouvenirs: 9,
     displayPostcards: 4,

@@ -1,3 +1,4 @@
+import type { DayTime, Season } from './config';
 import type { StatKey } from './config';
 
 export type RepeatKey = 'feed' | 'pet' | 'bath' | 'play';
@@ -36,6 +37,9 @@ export interface Trip {
   startAt: number;
   returnAt: number;
   destId: string;
+  /** 路上什么时候寄一张明信片回家（行程的 30%–70% 之间） */
+  letterAt: number;
+  letterSent: boolean;
 }
 
 export interface Postcard {
@@ -44,6 +48,13 @@ export interface Postcard {
   petIds: string[];
   at: number;
   souvenir: string | null;
+  /** letter = 路上寄回来的；不写 = 回家时带回来的 */
+  kind?: 'letter';
+  /** 背面的一句日记 */
+  diary?: string;
+  /** 拍下这张的季节和时段（决定明信片的色调） */
+  season?: Season;
+  time?: DayTime;
   /** 带出门的行李（影响明信片里的样子）；旧明信片没有 */
   tool?: string | null;
   /** 这张明信片的随机数：决定宠物站在哪、什么姿势。同一张明信片永远画成一样 */
@@ -96,6 +107,7 @@ export interface GameState {
 
 export type GameEvent =
   | { type: 'return'; postcardId: string }
+  | { type: 'letter'; postcardId: string }
   | { type: 'weak'; petId: string }
   | { type: 'ranAway'; petId: string }
   | { type: 'found'; petId: string }

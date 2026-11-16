@@ -77,6 +77,7 @@ export class UI {
         if (!this.sheet) this.showReturns(); else this.toast('有宠物回家了');
         sfx('return'); meow('happy');
       }
+      if (e.type === 'letter') { if (!this.sheet) this.showReturns(); else this.toast('路上寄来了一张明信片'); sfx('door'); }
       if (e.type === 'hungry' || e.type === 'weak') meow('hungry');
       if (e.type === 'ranAway' || e.type === 'notFound') meow('sad');
       if (e.type === 'found') { sfx('return'); meow('happy'); }
@@ -110,6 +111,7 @@ export class UI {
       if (e.type === 'weak') weak.add(e.petId);
     }
     for (const e of g.awayEvents) {
+      if (e.type === 'letter') { const c = g.state.postcards.find((x) => x.id === e.postcardId); if (c) lines.push(`${c.petIds.map(name).join(' 和 ')}在路上寄来了一张明信片`); }
       if (e.type === 'return') { const c = g.state.postcards.find((x) => x.id === e.postcardId); if (c) lines.push(`${c.petIds.map(name).join(' 和 ')}旅行回来了，带回一张明信片`); }
       if (e.type === 'stage') lines.push(`${name(e.petId)}长大了，现在是${CONFIG.growth.stageNames[e.stage]}`);
       if (e.type === 'weak' && !died.has(e.petId)) lines.push(`${name(e.petId)}饿得很虚弱，快喂点东西`);
@@ -456,9 +458,10 @@ export class UI {
     const src = this.cardCanvas(card); const cv = h('canvas', { width: src.width, height: src.height }) as HTMLCanvasElement;
     cv.getContext('2d')!.drawImage(src, 0, 0); return cv;
   }
-  private cardDetail(card: Postcard): Kid[] {
+  private cardDetail(card: Postcard, brief = false): Kid[] {
     const dest = DESTS.find((d) => d.id === card.destId)!; const names = card.petIds.map((id) => this.game.pet(id)?.name ?? '？').join(' 和 ');
-    const out: Kid[] = [h('div', { class: 'postcard' }, this.cardCopy(card), h('span', null, `${dest.name} · ${names} · ${fmtDate(card.at)}`))];
+    const out: Kid[] = [h('div', { class: 'postcard' }, this.cardCopy(card), h('span', null, `${dest.name} · ${names} · ${fmtDate(card.at)}` + (card.kind === 'letter' ? ' · 路上寄来' : '')))];
+    if (card.diary) out.push(h('p', { class: 'diary' }, card.diary, h('span', null, `—— ${names}`)));
     const pinned = sim.shownPostcards(this.game.state).some((c) => c.id === card.id);
     out.push(h('p', null, h('button', { class: 'btn block' + (pinned ? ' on' : ''), onclick: () => { const r = this.game.act((st) => sim.toggleDisplayPostcard(st, card.id)); if (!r.ok) this.say(r); sfx(r.ok ? 'click' : 'error'); } }, pinned ? '挂在相册墙上（点一下取下）' : `挂到相册墙上（最多 ${CONFIG.travel.displayPostcards} 张）`)));
     out.push(h('div', { class: 'grid2' },
@@ -468,6 +471,7 @@ export class UI {
         this.deleteArmed = null; const r = this.game.act((st) => sim.deletePostcard(st, card.id)); this.cardCache.delete(card.id); this.say(r);
         if (sim.albumOver(this.game.state) > 0) this.openAlbumFull(); else this.open({ title: '纪念相册', render: () => this.renderAlbum() });
       } }, this.deleteArmed === card.id ? '再点一次，确认删除' : '删除这张')));
+    if (brief || card.kind === 'letter') return out;
     const sv = card.souvenir ? SOUVENIRS[card.souvenir] : null;
     out.push(h('div', { class: 'card', style: 'margin-top:12px' },
       h('div', { class: 'item' }, h('span', { class: 'ico' }, sv ? sv.icon : '·'), h('div', { class: 'txt' }, h('b', null, sv ? `带回纪念品：${sv.name}` : '这次没带回纪念品'), h('span', { class: 'soft' }, sv ? '已经摆进收藏柜' : '心情好、带对行李，更容易带回来'))),
@@ -481,6 +485,11 @@ export class UI {
     const card = s.postcards.find((c) => c.id === id);
     if (!card) { s.pendingReturns.shift(); return; }
     const names = card.petIds.map((pid) => this.game.pet(pid)?.name ?? '？').join(' 和 ');
+    if (card.kind === 'letter') {
+      this.open({ title: `${names}寄来了一张明信片`, onClose: () => { const i = s.pendingReturns.indexOf(id); if (i >= 0) s.pendingReturns.splice(i, 1); this.game.save(); },
+        render: () => [...this.cardDetail(card, true), h('button', { class: 'btn primary block', onclick: () => this.close() }, '收进相册')] });
+      return;
+    }
     this.open({ title: `${names}回家了`, onClose: () => { const i = s.pendingReturns.indexOf(id); if (i >= 0) s.pendingReturns.splice(i, 1); this.game.save(); },
       render: () => [...this.cardDetail(card), h('p', { class: 'soft center' }, `旅行回来有点脏，干净值 −${CONFIG.travel.cleanDropOnReturn}`), h('button', { class: 'btn primary block', onclick: () => this.close() }, '收进相册')] });
   }

@@ -154,3 +154,6 @@ textarea.export { width: 100%; font: 12px/1.5 ui-monospace, Menlo, Consolas, mon
 .card.warn p { margin: 6px 0 10px; }
 .postcard.pick { display: flex; flex-direction: column; gap: 6px; }
 .postcard.pick .btn { align-self: stretch; }
+
+.diary { background: #fffdf6; border-radius: 12px; padding: 12px 14px; margin: 10px 0; line-height: 1.7; box-shadow: 0 1px 0 rgba(91,70,52,.15); }
+.diary span { display: block; text-align: right; opacity: .6; font-size: 13px; margin-top: 4px; }
