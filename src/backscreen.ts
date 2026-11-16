@@ -45,6 +45,11 @@ export function drawBackScreen(ctx: CanvasRenderingContext2D, t: number, v: Back
   ctx.fillStyle = '#c99a6b'; ctx.fillRect(x0, 470, w, B.height - 470);
   ctx.fillStyle = '#5b4634'; ctx.font = 'bold 38px sans-serif'; ctx.textAlign = 'left'; ctx.fillText(p.name, x0 + 36, 70);
   ctx.textAlign = 'center';
+  if (p.lostSince !== null) {
+    ctx.fillStyle = '#8f7b66'; ctx.font = 'bold 50px sans-serif'; ctx.fillText('离家出走了', cx, 280);
+    ctx.font = '28px sans-serif'; ctx.fillText(p.searchUntil !== null ? '狸花猫正在找它' : '去门口找狸花猫帮忙', cx, 336);
+    return;
+  }
   if (p.tripId) {
     const trip = s.trips.find((x) => x.id === p.tripId);
     ctx.fillStyle = '#8f7b66'; ctx.font = 'bold 54px sans-serif'; ctx.fillText('出门中', cx, 280);

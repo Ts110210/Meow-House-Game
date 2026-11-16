@@ -140,3 +140,10 @@ textarea.export { width: 100%; font: 12px/1.5 ui-monospace, Menlo, Consolas, mon
 
 .editbar { padding-top: calc(8px + var(--safe-area-inset-top, 0px)); }
 .toasts { top: calc(60px + var(--safe-area-inset-top, 0px)); }
+
+.item.dim { opacity: .55; }
+.tagchip { display: inline-block; margin-left: 6px; padding: 0 7px; border-radius: 9px; font-size: 11px; font-weight: 600; line-height: 18px; background: #eadfca; color: var(--ink-soft); vertical-align: 1px; }
+.tagchip.rare { background: var(--mustard); color: #fff; }
+
+.volume { display: grid; grid-template-columns: 96px 1fr; align-items: center; gap: 10px; margin: 8px 0; font-size: 14px; }
+.volume input { accent-color: var(--coral); width: 100%; }

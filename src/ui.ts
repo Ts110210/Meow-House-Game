@@ -1,11 +1,12 @@
 // 界面：顶部和底部的按钮，以及所有从下方弹出的面板。
-import { ZONES, CONFIG, DAY, DESTS, FOODS, FRY, FUR_COLORS, GEAR, GOODS, HOUR, MIN, SOUVENIRS, SPRITE, TOOLS, type ActionName } from './config';
+import { ZONES, CONFIG, DAY, DESTS, TREAT, TIME_NAMES, SEASON_NAMES, FOODS, FRY, FUR_COLORS, GEAR, GOODS, HOUR, MIN, SOUVENIRS, SPRITE, TOOLS, type ActionName } from './config';
 import { renderPostcard } from './art/postcard';
 import { drawDefaultSheet } from './art/defaultPet';
 import type { Game } from './game';
 import { setToastHandler } from './platform/notify';
 import type { ObjectKind, Scene } from './scene';
 import * as sim from './sim';
+import { audioSettings, meow, setVolume, sfx } from './audio';
 import { drawBackScreen, takeBackTaps } from './backscreen';
 import { ASSETS } from './assets.config';
 import { exportLayout, isChanged, resetBackground, resetObjects, saveLayout } from './layout';
@@ -73,8 +74,13 @@ export class UI {
       if (e.type === 'return') {
         this.backCard = { id: e.postcardId, until: performance.now() + 9000 };
         if (!this.sheet) this.showReturns(); else this.toast('有宠物回家了');
+        sfx('return'); meow('happy');
       }
-      if (e.type === 'died') { const p = game.pet(e.petId); if (p) this.toast(`${p.name}离开了……它会留在相册里`); }
+      if (e.type === 'hungry' || e.type === 'weak') meow('hungry');
+      if (e.type === 'ranAway' || e.type === 'notFound') meow('sad');
+      if (e.type === 'found') { sfx('return'); meow('happy'); }
+      if (e.type === 'stage') sfx('checkin');
+      if (e.type === 'ranAway' || e.type === 'found' || e.type === 'notFound') { this.stripSig = ''; this.updateHud(); }
     });
     setInterval(() => { this.live.forEach((f) => f()); this.updateHudLive(); }, 500);
     // 真正的背屏上点了宠物：在这里记到存档里
@@ -98,7 +104,7 @@ export class UI {
     const lines: string[] = [];
     const died = new Set<string>(), weak = new Set<string>();
     for (const e of g.awayEvents) {
-      if (e.type === 'died') died.add(e.petId);
+      if (e.type === 'ranAway') died.add(e.petId);
       if (e.type === 'weak') weak.add(e.petId);
     }
     for (const e of g.awayEvents) {
@@ -106,7 +112,9 @@ export class UI {
       if (e.type === 'stage') lines.push(`${name(e.petId)}长大了，现在是${CONFIG.growth.stageNames[e.stage]}`);
       if (e.type === 'weak' && !died.has(e.petId)) lines.push(`${name(e.petId)}饿得很虚弱，快喂点东西`);
       if (e.type === 'hungry' && !weak.has(e.petId) && !died.has(e.petId)) lines.push(`${name(e.petId)}饿了`);
-      if (e.type === 'died') lines.push(`${name(e.petId)}饿了太久，离开了。它会留在相册里。`);
+      if (e.type === 'ranAway') lines.push(`${name(e.petId)}饿了太久，离家出走了。去门口找狸花猫帮忙。`);
+      if (e.type === 'found') lines.push(`狸花猫把${name(e.petId)}带回来了，它又饿又脏`);
+      if (e.type === 'notFound') lines.push(`狸花猫没找到${name(e.petId)}，可以再请它找一次`);
     }
     if (!lines.length) { this.toast(`你离开了 ${fmtDur(g.awayMs)}，这段时间的变化已经算好了`); return; }
     this.open({ title: `你离开了 ${fmtDur(g.awayMs)}`, render: () => [h('div', { class: 'card' }, lines.map((l) => h('div', { class: 'item' }, h('div', { class: 'txt' }, l)))),
@@ -134,7 +142,7 @@ export class UI {
 
   private buildHud() {
     this.hudFish = h('button', { class: 'pill', onclick: () => this.openShop() });
-    this.hudCheck = h('button', { class: 'pill', onclick: () => { this.say(this.game.act((s) => sim.checkin(s))); } }, '签到');
+    this.hudCheck = h('button', { class: 'pill', onclick: () => { const r = this.game.act((s) => sim.checkin(s)); this.say(r); sfx(r.ok ? 'checkin' : 'error'); } }, '签到');
     this.hudDev = h('button', { class: 'pill dev', onclick: () => this.openDev() });
     const top = h('div', { class: 'hud-top' }, this.hudFish, this.hudCheck, h('div', { class: 'spacer' }), this.hudDev,
       h('button', { class: 'pill', onclick: () => this.openShop() }, '商店'),
@@ -164,8 +172,8 @@ export class UI {
 
   private avatarCanvas(pet: Pet, size = 92) {
     const cv = h('canvas', { width: size, height: size }) as HTMLCanvasElement;
-    const set = this.game.spriteOf(pet);
-    if (set) cv.getContext('2d')!.drawImage(set.avatar, 0, 0, size, size);
+    const av = this.game.avatarOf(pet);
+    if (av) cv.getContext('2d')!.drawImage(av, 0, 0, size, size);
     return cv;
   }
 
@@ -178,10 +186,10 @@ export class UI {
     this.hudDev.style.display = s.dev.enabled ? '' : 'none';
     this.hudDev.textContent = `调试×${s.dev.speed}`;
     this.scene.relayout();
-    const sig = sim.alivePets(s).map((p) => `${p.id}${p.name}${p.tripId ? 1 : 0}`).join('|');
+    const sig = sim.alivePets(s).map((p) => `${p.id}${p.name}${p.tripId ? 1 : 0}${sim.isLost(p) ? 1 : 0}${p.spriteId}`).join('|') + this.game.avatarRev;
     if (sig !== this.stripSig) {
       this.stripSig = sig;
-      this.strip.replaceChildren(...sim.alivePets(s).map((p) => h('button', { class: 'petchip' + (p.tripId ? ' out' : ''), 'data-pet': p.id, title: p.name, onclick: () => { this.scene.focusPet(p.id); this.openPet(p.id); } }, this.avatarCanvas(p), h('span', { class: 'dot' }))));
+      this.strip.replaceChildren(...sim.alivePets(s).map((p) => h('button', { class: 'petchip' + (p.tripId || sim.isLost(p) ? ' out' : ''), 'data-pet': p.id, title: p.name, onclick: () => { this.scene.focusPet(p.id); this.openPet(p.id); } }, this.avatarCanvas(p), h('span', { class: 'dot' }))));
     }
     this.updateHudLive();
   }
@@ -190,9 +198,9 @@ export class UI {
     this.hudCheck.classList.toggle('hot', sim.canCheckin(s));
     for (const chip of this.strip.children as any as HTMLElement[]) {
       const p = this.game.pet(chip.dataset.pet!); const dot = chip.querySelector('.dot') as HTMLElement; if (!p) continue;
-      const text = p.tripId ? '外出' : sim.isWeak(p) ? '虚弱' : p.food < low ? '饿' : p.clean < low ? '脏' : p.mood < low ? '闷' : '';
+      const text = sim.isLost(p) ? '出走' : p.tripId ? '外出' : sim.isWeak(p) ? '虚弱' : p.food < low ? '饿' : p.clean < low ? '脏' : p.mood < low ? '闷' : '';
       dot.textContent = text; dot.style.display = text ? '' : 'none';
-      dot.className = 'dot' + (p.tripId ? ' blue' : sim.isWeak(p) ? ' grey' : '');
+      dot.className = 'dot' + (sim.isLost(p) ? ' grey' : p.tripId ? ' blue' : sim.isWeak(p) ? ' grey' : '');
     }
   }
 
@@ -200,7 +208,7 @@ export class UI {
 
   private openedAt = 0;
   private open(sheet: Sheet) {
-    if (!this.scrim) this.openedAt = performance.now();
+    if (!this.scrim) { this.openedAt = performance.now(); sfx('open'); }
     if (this.sheet?.onClose) this.sheet.onClose();
     this.sheet = sheet;
     if (!this.scrim) {
@@ -219,6 +227,7 @@ export class UI {
   close() {
     if (this.sheet?.onClose) this.sheet.onClose();
     this.sheet = null; this.anims = []; this.live = []; this.editingName = false;
+    if (this.scrim) sfx('close');
     this.scrim?.remove(); this.scrim = null; this.body = null;
     if (this.game.state.pendingReturns.length) setTimeout(() => { if (!this.sheet) this.showReturns(); }, 250);
   }
@@ -256,12 +265,31 @@ export class UI {
     else if (kind === 'album') this.openAlbum();
     else if (kind === 'cabinet') this.openCabinet();
     else if (kind === 'pond') this.openPond();
+    else if (kind === 'npc') this.openRescue();
+  }
+
+  // ---------- 狸花猫：找回离家出走的宠物 ----------
+
+  openRescue() {
+    meow('short');
+    this.open({ title: '狸花猫', render: () => {
+      const s = this.game.state; const lost = sim.lostPets(s);
+      if (!lost.length) return [h('p', { class: 'soft center', style: 'padding:20px 0' }, '狸花猫打了个哈欠：现在没有谁需要找。')];
+      return [h('div', { class: 'card soft' }, `「喵。有猫条吗？」狸花猫认识附近所有的猫。给它一根猫条，它出去找 ${fmtDur(CONFIG.runaway.searchTime)}，${Math.round((1 - CONFIG.runaway.failChance) * 100)}% 能带回来。一次只能找一只。你有 ${sim.count(s, TREAT.id)} 根猫条。`),
+        h('div', { class: 'card', style: 'margin-top:10px' }, lost.map((p) => h('div', { class: 'item' }, h('span', { class: 'ico' }, h('span', { class: 'chip', style: 'padding:0;box-shadow:none;background:none' }, this.avatarCanvas(p, 56))),
+          h('div', { class: 'txt' }, h('b', null, p.name), p.searchUntil !== null ? h('span', { class: 'soft' }, '正在找，还要 ', this.countdown(() => p.searchUntil ?? 0, '马上回来')) : h('span', { class: 'soft' }, '离家出走了')),
+          p.searchUntil === null ? h('button', { class: 'btn small primary', onclick: () => { const r = this.game.act((st) => sim.sendSearch(st, p.id)); this.say(r); sfx(r.ok ? 'buy' : 'error'); } }, '请它去找') : null))),
+        h('p', null, h('button', { class: 'btn block', onclick: () => this.openShop() }, `去商店买猫条（🐟 ${TREAT.price}）`))];
+    } });
   }
 
   // ---------- 宠物面板 ----------
 
   openPet(id: string) {
     this.editingName = false;
+    // 点到它时叫一声：饿了、不开心、平时，叫法不一样
+    const pet = this.game.pet(id); const low = CONFIG.stats.lowThreshold;
+    if (pet && !pet.dead && !sim.isLost(pet) && !pet.tripId) meow(pet.food < low ? 'hungry' : pet.mood < low ? 'sad' : 'short');
     this.open({ title: '宠物', render: () => this.renderPet(id) });
   }
 
@@ -273,12 +301,25 @@ export class UI {
       h('div', { class: 'pethead' }, this.avatarCanvas(p, 208), h('div', null, h('b', null, p.name), h('p', { class: 'soft' }, `陪伴了 ${fmtDur(p.age)}`), h('p', { class: 'soft' }, `${fmtDate(p.adoptedAt)} – ${fmtDate(p.diedAt ?? s.clock)}`))),
       h('div', { class: 'banner grey' }, `${p.name}已经离开了。它的明信片还留在相册里。`),
     ];
+    if (sim.isLost(p)) {
+      const searching = p.searchUntil !== null;
+      return [h('div', { class: 'pethead' }, this.avatarCanvas(p, 208), h('div', null, h('b', { style: 'font-size:20px' }, p.name), h('p', { class: 'soft' }, `${sim.stageName(p)} · 离家出走了`))),
+        h('div', { class: 'banner' }, `${p.name}饿了太久，自己跑出去了。门口的狸花猫认识附近所有的猫，给它一根猫条，它会出去找 ${fmtDur(CONFIG.runaway.searchTime)}，有 ${Math.round(CONFIG.runaway.failChance * 100)}% 的可能找不到。找回来的时候它会又饿又脏又不开心。`),
+        searching ? h('div', { class: 'banner grey' }, '狸花猫正在外面找，还要 ', this.countdown(() => p.searchUntil ?? 0, '马上回来'))
+          : h('button', { class: 'btn primary block', onclick: () => { const r = this.game.act((st) => sim.sendSearch(st, id)); this.say(r); sfx(r.ok ? 'buy' : 'error'); if (r.ok) meow('short'); } }, `给狸花猫一根猫条（有 ${sim.count(s, TREAT.id)} 根）`),
+        !searching && sim.count(s, TREAT.id) < 1 ? h('p', null, h('button', { class: 'btn block', onclick: () => this.openShop() }, `去商店买猫条（🐟 ${TREAT.price}）`)) : null];
+    }
     const trip = s.trips.find((t) => t.id === p.tripId);
     const action = (): ActionName => (this.preview && this.preview.petId === id && performance.now() < this.preview.until ? this.preview.action : sim.isWeak(p) ? 'sleep' : 'idle');
     const nameEl = this.editingName
       ? h('div', { class: 'row' }, h('input', { type: 'text', maxlength: 8, value: p.name, id: 'rename', style: 'flex:1;width:auto' }),
         h('button', { class: 'btn small primary', onclick: () => { const v = (document.getElementById('rename') as HTMLInputElement).value; this.editingName = false; if (!this.say(this.game.act((st) => sim.rename(st, id, v)))) this.refresh(true); } }, '保存'))
-      : h('div', { class: 'row' }, h('b', { style: 'font-size:20px' }, p.name), h('button', { class: 'btn small', onclick: () => { this.editingName = true; this.refresh(true); } }, '改名'));
+      : h('div', { class: 'row' }, h('b', { style: 'font-size:20px' }, p.name), h('button', { class: 'btn small', onclick: () => { this.editingName = true; this.refresh(true); } }, '改名'),
+        h('div', { class: 'btn small file' }, '换头像', h('input', { type: 'file', accept: 'image/*', onchange: async (e: Event) => {
+          const file = (e.target as HTMLInputElement).files?.[0]; if (!file) return;
+          try { await this.game.setPetAvatar(id, imageToAvatar(await loadImage(await fileToDataUrl(file)))); this.stripSig = ''; this.updateHud(); this.toast('头像换好了'); sfx('ok'); }
+          catch { this.toast('这张图读不出来'); }
+        } })));
     const ageEl = h('p', { class: 'soft' });
     this.live.push(() => {
       const st = sim.stageOf(p); const next = (st + 1) * CONFIG.growth.stageDuration - p.age;
@@ -307,8 +348,16 @@ export class UI {
 
     const mult = (k: 'feed' | 'pet' | 'bath' | 'play') => { const m = sim.peekMult(s, p, k); return m < 1 ? h('small', null, `连续做，效果 ×${m}`) : null; };
     const doAct = (fn: (st: typeof s) => Result, anim: ActionName) => {
-      const r = this.game.act(fn); this.say(r);
-      if (r.ok) { this.preview = { petId: id, action: anim, until: performance.now() + 2600 }; this.scene.perform(id, anim); }
+      const r = this.game.act(fn);
+      if (!r.ok) { this.say(r); sfx('error'); return; }
+      sfx(anim === 'eat' ? 'eat' : anim === 'bath' ? 'bath' : anim === 'play' ? 'play' : 'purr'); if (anim !== 'bath') meow(anim === 'eat' ? 'happy' : 'short');
+      if (anim === 'happy') {
+        // 摸摸：面板不关，直接在面板里看它开心
+        this.preview = { petId: id, action: anim, until: performance.now() + 2600 }; this.scene.perform(id, anim, false); this.say(r);
+      } else {
+        // 喂食、洗澡、玩耍：收起面板，镜头跟着它走到饭碗、浴缸、玩具那里
+        this.close(); this.scene.perform(id, anim); if (r.msg) this.scene.floatText(id, r.msg);
+      }
     };
     out.push(h('h3', null, '喂食'));
     out.push(h('div', { class: 'grid3' }, FOODS.map((f) => h('button', { class: 'act', disabled: sim.count(s, f.id) < 1, onclick: () => doAct((st) => sim.feed(st, id, f.id), 'eat') },
@@ -378,7 +427,7 @@ export class UI {
     const chk = sim.checkDispatch(s, plan);
     out.push(h('p', { style: 'margin-top:16px' }, h('button', { class: 'btn primary block', disabled: !chk.ok, onclick: () => {
       const r = this.game.act((st) => sim.dispatch(st, plan)); this.say(r);
-      if (r.ok) { this.plan = { petIds: [], bento: plan.bento, tool: null, goods: [] }; this.close(); }
+      if (r.ok) { this.plan = { petIds: [], bento: plan.bento, tool: null, goods: [] }; this.close(); sfx('door'); meow('short'); } else sfx('error');
     } }, chk.ok ? '出发' : chk.msg)));
     out.push(h('p', { class: 'row' }, h('button', { class: 'btn small', onclick: () => this.openShop() }, '去商店')));
     return out;
@@ -398,6 +447,8 @@ export class UI {
   private cardDetail(card: Postcard): Kid[] {
     const dest = DESTS.find((d) => d.id === card.destId)!; const names = card.petIds.map((id) => this.game.pet(id)?.name ?? '？').join(' 和 ');
     const out: Kid[] = [h('div', { class: 'postcard' }, this.cardCopy(card), h('span', null, `${dest.name} · ${names} · ${fmtDate(card.at)}`))];
+    const pinned = sim.shownPostcards(this.game.state).some((c) => c.id === card.id);
+    out.push(h('p', null, h('button', { class: 'btn block' + (pinned ? ' on' : ''), onclick: () => { const r = this.game.act((st) => sim.toggleDisplayPostcard(st, card.id)); if (!r.ok) this.say(r); sfx(r.ok ? 'click' : 'error'); } }, pinned ? '挂在相册墙上（点一下取下）' : `挂到相册墙上（最多 ${CONFIG.travel.displayPostcards} 张）`)));
     const sv = card.souvenir ? SOUVENIRS[card.souvenir] : null;
     out.push(h('div', { class: 'card', style: 'margin-top:12px' },
       h('div', { class: 'item' }, h('span', { class: 'ico' }, sv ? sv.icon : '·'), h('div', { class: 'txt' }, h('b', null, sv ? `带回纪念品：${sv.name}` : '这次没带回纪念品'), h('span', { class: 'soft' }, sv ? '已经摆进收藏柜' : '心情好、带对行李，更容易带回来'))),
@@ -425,7 +476,7 @@ export class UI {
     const petsIn = s.pets.filter((p) => s.postcards.some((c) => c.petIds.includes(p.id)));
     const destsIn = DESTS.filter((d) => s.postcards.some((c) => c.destId === d.id));
     const cards = s.postcards.filter((c) => f === 'all' || c.petIds.includes(f.slice(4)) || c.destId === f.slice(5)).slice().reverse();
-    const out: Kid[] = [h('div', { class: 'row' }, chip('all', '全部'), petsIn.map((p) => chip('pet:' + p.id, p.name)), destsIn.map((d) => chip('dest:' + d.id, d.name)))];
+    const out: Kid[] = [h('p', { class: 'soft' }, `${s.postcards.length} / ${sim.albumLimit()} 张。满了以后，新的明信片会换掉最旧的、没挂在相册墙上的那张。`), h('div', { class: 'row' }, chip('all', '全部'), petsIn.map((p) => chip('pet:' + p.id, p.name)), destsIn.map((d) => chip('dest:' + d.id, d.name)))];
     out.push(cards.length ? h('div', { class: 'postgrid', style: 'margin-top:12px' }, cards.map((c) => {
       const dest = DESTS.find((d) => d.id === c.destId)!;
       return h('button', { class: 'postcard', onclick: () => this.open({ title: dest.name, render: () => [...this.cardDetail(c), h('p', null, h('button', { class: 'btn block', onclick: () => this.open({ title: '纪念相册', render: () => this.renderAlbum() }) }, '回到相册'))] }) },
@@ -441,10 +492,18 @@ export class UI {
 
   openCabinet() {
     this.open({ title: '收藏柜', render: () => {
-      const s = this.game.state; const ids = Object.keys(SOUVENIRS);
-      return [h('p', { class: 'soft' }, `已收集 ${Object.keys(s.souvenirs).length} / ${ids.length} 种纪念品`),
-        h('div', { class: 'grid4' }, ids.map((id) => { const n = s.souvenirs[id] ?? 0; const dest = DESTS.find((d) => d.souvenirs.includes(id));
-          return h('div', { class: 'souv' + (n ? '' : ' none') }, h('span', { class: 'ico' }, n ? SOUVENIRS[id].icon : '？'), n ? `${SOUVENIRS[id].name}${n > 1 ? ' ×' + n : ''}` : dest?.name ?? ''); }))];
+      const s = this.game.state; const shown = sim.shownSouvenirs(s); const max = CONFIG.travel.displaySouvenirs;
+      const out: Kid[] = [h('p', { class: 'soft' }, `已收集 ${Object.keys(s.souvenirs).length} / ${Object.keys(SOUVENIRS).length} 件。每个地方两件，一件普通一件稀有，不会重复。点「摆出来」可以挑哪 ${max} 件放在收藏柜上（现在摆着 ${shown.length} 件）。`)];
+      for (const d of DESTS) {
+        out.push(h('h3', null, `${d.name} · ${d.country}`));
+        out.push(h('div', { class: 'card' }, d.souvenirs.map((id) => {
+          const def = SOUVENIRS[id]; const have = !!s.souvenirs[id]; const on = shown.includes(id);
+          return h('div', { class: 'item' + (have ? '' : ' dim') }, h('span', { class: 'ico' }, have ? def.icon : '？'),
+            h('div', { class: 'txt' }, h('b', null, have ? def.name : '还没带回来', h('span', { class: 'tagchip' + (def.rare ? ' rare' : '') }, def.rare ? '稀有' : '普通')), have ? h('span', { class: 'soft' }, def.desc) : null),
+            have ? h('button', { class: 'btn small' + (on ? ' on' : ''), onclick: () => { const r = this.game.act((st) => sim.toggleDisplaySouvenir(st, id)); if (!r.ok) this.say(r); sfx(r.ok ? 'click' : 'error'); } }, on ? '摆着' : '摆出来') : null);
+        })));
+      }
+      return out;
     } });
   }
 
@@ -457,7 +516,7 @@ export class UI {
         h('div', { class: 'card' }, s.pond.map((p, i) => h('div', { class: 'item' }, h('span', { class: 'ico' }, p == null ? '◌' : '🐟'),
           h('div', { class: 'txt' }, h('b', null, `位置 ${i + 1}`), p == null ? h('span', { class: 'soft' }, '空着') : sim.pondReady(s, i) ? h('span', { class: 'soft' }, '长大了，可以收获') : h('span', { class: 'soft' }, '还要 ', this.countdown(() => p + CONFIG.pond.growTime, '长大了'))),
           p == null ? h('button', { class: 'btn small', disabled: sim.count(s, FRY.id) < 1, onclick: () => this.say(this.game.act((st) => sim.plantFry(st, i))) }, '放鱼苗')
-            : h('button', { class: 'btn small primary', disabled: !sim.pondReady(s, i), 'data-ready': i, onclick: () => this.say(this.game.act((st) => sim.harvest(st, i))) }, '收获')))),
+            : h('button', { class: 'btn small primary', disabled: !sim.pondReady(s, i), 'data-ready': i, onclick: () => { const r = this.game.act((st) => sim.harvest(st, i)); this.say(r); sfx(r.ok ? 'coin' : 'error'); } }, '收获')))),
         h('p', null, h('button', { class: 'btn block', disabled: s.fish < FRY.price, onclick: () => this.say(this.game.act((st) => sim.buy(st, FRY.id))) }, `买一条鱼苗（🐟 ${FRY.price}）`))];
     } });
     // 鱼长大的那一刻，把「收获」按钮点亮
@@ -472,12 +531,13 @@ export class UI {
       const s = this.game.state;
       const row = (id: string, icon: string, name: string, desc: string, price: number, owned?: boolean) => h('div', { class: 'item' }, h('span', { class: 'ico' }, icon),
         h('div', { class: 'txt' }, h('b', null, name, owned === undefined ? h('span', { class: 'soft' }, `  有 ${sim.count(s, id)}`) : null), h('span', { class: 'soft' }, desc)),
-        h('button', { class: 'btn small' + (owned ? '' : ' primary'), disabled: owned || s.fish < price, onclick: () => this.say(this.game.act((st) => sim.buy(st, id))) }, owned ? '已拥有' : `🐟 ${price}`));
+        h('button', { class: 'btn small' + (owned ? '' : ' primary'), disabled: owned || s.fish < price, onclick: () => { const r = this.game.act((st) => sim.buy(st, id)); this.say(r); sfx(r.ok ? 'buy' : 'error'); } }, owned ? '已拥有' : `🐟 ${price}`));
       return [h('p', null, `你有 🐟 ${s.fish} 小鱼干`),
         h('h3', null, '食物（也可以当出门的便当）'), h('div', { class: 'card' }, FOODS.map((f) => row(f.id, f.icon, f.name, f.desc, f.price))),
         h('h3', null, '行李道具（回家后会还回来）'), h('div', { class: 'card' }, TOOLS.map((t) => row(t.id, t.icon, t.name, t.desc, t.price))),
         h('h3', null, '行商货物（宠物带出门卖）'), h('div', { class: 'card' }, GOODS.map((g) => row(g.id, g.icon, g.name, `卖 ${g.sellMin}–${g.sellMax}，${Math.round(g.sellChance * 100)}% 能卖掉`, g.price))),
         h('h3', null, '鱼塘'), h('div', { class: 'card' }, row(FRY.id, FRY.icon, FRY.name, `${fmtDur(CONFIG.pond.growTime)}后收获 ${CONFIG.pond.fishPerFry} 小鱼干`, FRY.price)),
+        h('h3', null, '其他'), h('div', { class: 'card' }, row(TREAT.id, TREAT.icon, TREAT.name, TREAT.desc, TREAT.price)),
         h('h3', null, '家里的东西（买一次就一直在）'), h('div', { class: 'card' }, GEAR.map((g) => row(g.id, g.icon, g.name, g.desc, g.price, !!s.owned[g.id])))];
     } });
   }
@@ -492,6 +552,9 @@ export class UI {
         h('button', { class: 'btn', onclick: () => this.openFamily() }, '家庭成员'), h('button', { class: 'btn', onclick: () => this.openAlbum() }, '纪念相册'),
         h('button', { class: 'btn', onclick: () => this.openCabinet() }, '收藏柜'), h('button', { class: 'btn', onclick: () => this.openBack() }, '背屏预览'),
         h('button', { class: 'btn', onclick: () => this.openDoor() }, '派宠物出门'), h('button', { class: 'btn', onclick: () => this.openPond() }, '鱼塘')),
+        h('h3', null, '声音'),
+        h('label', { class: 'volume' }, '音乐', h('input', { type: 'range', min: '0', max: '100', step: '5', value: String(Math.round(audioSettings.music * 100)), oninput: (e: Event) => setVolume('music', Number((e.target as HTMLInputElement).value) / 100) })),
+        h('label', { class: 'volume' }, '音效和猫叫', h('input', { type: 'range', min: '0', max: '100', step: '5', value: String(Math.round(audioSettings.sound * 100)), oninput: (e: Event) => setVolume('sound', Number((e.target as HTMLInputElement).value) / 100), onchange: () => meow('short') })),
         h('h3', null, '界面大小'),
         h('div', { class: 'seg' }, ([[0.9, '小'], [1, '标准'], [1.15, '大'], [1.3, '特大']] as [number, string][]).map(([v, label]) => h('button', { class: 'chip' + (Math.abs(this.uiScale - v) < 0.01 ? ' on' : ''), onclick: () => { this.applyUiScale(v); this.refresh(true); } }, label))),
         h('p', null, h('button', { class: 'btn block', onclick: async () => {
@@ -533,7 +596,7 @@ export class UI {
     const setFor = (c: string) => { if (!previews.has(c)) previews.set(c, buildSet('preview:' + c, drawDefaultSheet(c))); return previews.get(c)!; };
     this.open({ title: '领养新宠物', render: () => {
       const f = this.adoptForm;
-      return [h('h3', null, '方式一：默认宠物'),
+      return [
         h('div', { class: 'pethead' }, this.petAnim(setFor(f.color), () => 'idle'),
           h('div', { style: 'flex:1' }, h('div', { class: 'seg' }, Object.entries(FUR_COLORS).map(([k, v]) => h('button', { class: 'chip' + (f.color === k ? ' on' : ''), onclick: () => { f.color = k; this.refresh(true); } }, v.name))),
             h('p', null, h('input', { type: 'text', maxlength: 8, placeholder: '取个名字（最多 8 个字）', value: f.name, oninput: (e: Event) => { f.name = (e.target as HTMLInputElement).value; } })))),
@@ -542,9 +605,7 @@ export class UI {
           const r = this.game.act((s) => sim.adopt(s, f.name, 'default:' + f.color)); this.say(r);
           if (r.ok && r.petId) this.openPet(r.petId);
         } }, '领养'),
-        h('h3', null, '方式二：上传你自己做的宠物'),
-        h('button', { class: 'btn block', onclick: () => this.openAssembler('adopt') }, '每个动作上传一张图，自动拼好'),
-        h('p', null, h('button', { class: 'btn small', onclick: () => this.openImport() }, '我已经有拼好的整张精灵图'))];
+        h('p', { class: 'soft' }, '领养之后，可以在宠物面板里给它换一张自己的头像。')];
     } });
   }
 
@@ -840,7 +901,7 @@ export class UI {
       for (const r of this.simOut ?? []) {
         out.push(h('h3', null, r.label));
         out.push(h('div', { class: 'card simcard' },
-          h('div', null, h('b', null, '首次虚弱 '), hoursToText(r.firstWeakHour), '　', h('b', null, '首次死亡 '), hoursToText(r.firstDeathHour), r.deaths ? `（共 ${r.deaths} 只）` : '', r.rescues ? `　救回 ${r.rescues} 次` : ''),
+          h('div', null, h('b', null, '首次虚弱 '), hoursToText(r.firstWeakHour), '　', h('b', null, '首次离家出走 '), hoursToText(r.firstDeathHour), r.deaths ? `（共 ${r.deaths} 只）` : '', r.rescues ? `　救回 ${r.rescues} 次` : ''),
           h('div', null, h('b', null, '在家时间里 '), `饿 ${r.hungryPct}%　闷 ${r.sadPct}%　脏 ${r.dirtyPct}%`),
           h('div', null, h('b', null, '小鱼干 '), `${r.fishStart} → ${r.fishEnd}（平均每天 ${r.fishPerDay >= 0 ? '+' : ''}${r.fishPerDay}）`),
           h('div', { class: 'soft' }, `签到 +${r.earned.checkin}　鱼塘 ${r.earned.pond >= 0 ? '+' : ''}${r.earned.pond}　行商 ${r.earned.trade >= 0 ? '+' : ''}${r.earned.trade}　买食物 −${r.spentOnFood}`),
@@ -912,6 +973,9 @@ export class UI {
         h('h3', null, '时间倍速（出门、鱼塘、状态下降、成长都会一起变快）'), seg(D.speedOptions, d.speed, (v) => { d.speed = v; }),
         h('div', { class: 'seg', style: 'margin-top:8px' }, h('button', { class: 'chip' + (d.background ? ' on' : ''), onclick: () => { d.background = !d.background; this.game.changed(); } }, `退到桌面、关掉再开的那段时间也按倍速：${d.background ? '开' : '关'}`)),
         h('p', { class: 'soft' }, d.background ? '注意：倍速开得很高时，离开一会儿宠物就可能饿坏。测完记得关掉。' : '现在倍速只在游戏开着的时候生效，离开期间按真实时间算。'),
+        h('h3', null, '昼夜'), h('div', { class: 'seg' }, (['auto', 'day', 'dusk', 'night'] as const).map((v) => h('button', { class: 'chip' + (d.time === v ? ' on' : ''), onclick: () => { d.time = v; this.game.changed(); } }, v === 'auto' ? '跟着时间' : TIME_NAMES[v]))),
+        h('h3', null, '季节'), h('div', { class: 'seg' }, (['auto', 'spring', 'summer', 'autumn', 'winter'] as const).map((v) => h('button', { class: 'chip' + (d.season === v ? ' on' : ''), onclick: () => { d.season = v; this.game.changed(); } }, v === 'auto' ? '跟着日期' : SEASON_NAMES[v]))),
+        h('p', { class: 'soft' }, `现在是${SEASON_NAMES[sim.season(s)]}天的${TIME_NAMES[sim.dayTime(s)]}。到阳台和院子看效果最明显。`),
         h('h3', null, '通知'),
         h('button', { class: 'btn block', onclick: async () => { const err = await testNotification(60); this.toast(err || '已安排：1 分钟后发一条测试通知。现在退到桌面等着。'); } }, '1 分钟后发一条测试通知'),
         h('h3', null, '直接跳过一段时间'), h('div', { class: 'seg' }, ([['10 分钟', 10 * MIN], ['1 小时', HOUR], ['6 小时', 6 * HOUR], ['1 天', DAY], ['7 天', 7 * DAY]] as [string, number][]).map(([n, ms]) => h('button', { class: 'chip', onclick: () => { this.game.skip(ms); this.toast(`跳过了 ${n}`); } }, n))),

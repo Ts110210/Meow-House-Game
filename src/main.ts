@@ -6,6 +6,7 @@ import { cancelReminders, restoreFromMirror, scheduleReminders, setupAppEvents }
 import * as sim from './sim';
 import { Scene } from './scene';
 import { UI } from './ui';
+import { initAudio, pauseAudio } from './audio';
 import { bootBackScreen } from './backscreen';
 
 async function boot() {
@@ -25,6 +26,7 @@ async function boot() {
     onBgEdit: (done) => ui?.bgChanged(done),
   });
   await scene.init(document.getElementById('stage')!);
+  initAudio();
   ui = new UI(game, scene, document.getElementById('ui')!);
   scene.relayout(); scene.scrollToZone(2, true);
   ui.setZone(2);
@@ -43,8 +45,8 @@ async function boot() {
   };
   setupAppEvents({
     onBack: () => ui?.handleBack() ?? false,
-    onPause: () => { game.save(); plan(); },
-    onResume: () => { void cancelReminders(); },
+    onPause: () => { game.save(); plan(); pauseAudio(true); },
+    onResume: () => { void cancelReminders(); pauseAudio(false); },
   });
   window.addEventListener('keydown', (e) => { if (e.key === 'Escape') ui?.handleBack(); });
   (window as any).__game = game; (window as any).__scene = scene; // 方便在控制台里调试

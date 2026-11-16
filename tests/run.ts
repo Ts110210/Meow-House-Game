@@ -1,5 +1,5 @@
 // 规则和存档的自动检查。运行：npm test
-import { CONFIG, DAY, HOUR, MIN } from '../src/config';
+import { CONFIG, DAY, DESTS, HOUR, MIN, SOUVENIRS } from '../src/config';
 import * as sim from '../src/sim';
 import { buildExport, migrate, parseImport, repair, SAVE_VERSION } from '../src/save';
 
@@ -26,10 +26,77 @@ console.log('时间补算');
   const hoursToZero = CONFIG.stats.start.food / CONFIG.stats.decayPerHour.food;
   sim.advance(s, (hoursToZero - 0.1) * HOUR); check('饱食归零前不会虚弱', p.weakSince === null);
   sim.advance(s, 0.2 * HOUR); check('饱食归零后进入虚弱', p.weakSince !== null && !p.dead);
-  sim.advance(s, CONFIG.weak.timeToDeath[0] - HOUR); check('幼年虚弱不到 3 天不会死', !p.dead);
-  const ev = sim.advance(s, 2 * HOUR); check('幼年虚弱满 3 天死亡，并且有事件', p.dead && ev.some((e) => e.type === 'died'));
-  const stats = [p.food, p.mood, p.clean]; sim.advance(s, 30 * DAY);
-  check('死后状态不再变化', p.food === stats[0] && p.mood === stats[1] && p.clean === stats[2]);
+  sim.advance(s, CONFIG.weak.timeToDeath[0] - HOUR); check('幼年虚弱不到 3 天不会离家出走', !sim.isLost(p));
+  const ev = sim.advance(s, 2 * HOUR); check('幼年虚弱满 3 天离家出走（不会死），并且有事件', sim.isLost(p) && !p.dead && ev.some((e) => e.type === 'ranAway'));
+  const stats = [p.food, p.mood, p.clean, p.age]; sim.advance(s, 30 * DAY);
+  check('出走期间状态和年龄都不变', p.food === stats[0] && p.mood === stats[1] && p.clean === stats[2] && p.age === stats[3]);
+  check('出走的宠物不能喂、不能派出门', !sim.feed(s, p.id, 'kibble').ok && sim.homePets(s).length === 0);
+}
+
+console.log('离家出走和狸花猫');
+{
+  const lost = () => { const s = sim.newState(T0); const p = s.pets[0]; p.lostSince = T0; p.food = 0; return { s, p }; };
+  { const { s, p } = lost(); check('没有猫条时请不动狸花猫', !sim.sendSearch(s, p.id).ok && p.searchUntil === null); }
+  const realRandom = Math.random;
+  try {
+    { const { s, p } = lost(); s.inv.treat = 2;
+      check('给一根猫条，狸花猫出门找', sim.sendSearch(s, p.id).ok && s.inv.treat === 1 && p.searchUntil === T0 + CONFIG.runaway.searchTime);
+      check('同一时间只能找一只', !sim.sendSearch(s, p.id).ok && s.inv.treat === 1);
+      check('提醒里有狸花猫回来的时间', sim.planReminders(s).some((r) => r.inMs === CONFIG.runaway.searchTime));
+      Math.random = () => 0.5;
+      check('不到 2 小时不会有结果', sim.advance(s, CONFIG.runaway.searchTime - MIN).every((e) => e.type !== 'found' && e.type !== 'notFound') && sim.isLost(p));
+      const ev = sim.advance(s, 2 * MIN);
+      const inRange = (v: number) => v >= CONFIG.runaway.returnStatMin && v <= CONFIG.runaway.returnStatMax + 1e-9;
+      check('2 小时后被带回来，三项状态都在 1–30 之间', ev.some((e) => e.type === 'found') && !sim.isLost(p) && inRange(p.food + 0.5) && inRange(p.mood + 0.5) && inRange(p.clean + 0.5), `${p.food} ${p.mood} ${p.clean}`);
+      check('带回来之后可以正常喂', sim.feed(s, p.id, 'kibble').ok); }
+    { const { s, p } = lost(); s.inv.treat = 2; sim.sendSearch(s, p.id); Math.random = () => 0.1;
+      const ev = sim.advance(s, CONFIG.runaway.searchTime + MIN);
+      check('两成的时候没找到：还在外面，猫条已经用掉', ev.some((e) => e.type === 'notFound') && sim.isLost(p) && p.searchUntil === null && s.inv.treat === 1);
+      check('没找到可以再给一根接着找', sim.sendSearch(s, p.id).ok); }
+    { let fails = 0; const N = 4000; let seed = 12345; Math.random = () => (seed = (seed * 1664525 + 1013904223) % 4294967296) / 4294967296;
+      let lo = 100, hi = 0;
+      for (let i = 0; i < N; i++) { const { s, p } = lost(); s.inv.treat = 1; sim.sendSearch(s, p.id); sim.advance(s, CONFIG.runaway.searchTime); if (sim.isLost(p)) fails++; else { lo = Math.min(lo, p.food, p.mood, p.clean); hi = Math.max(hi, p.food, p.mood, p.clean); } }
+      check('试 4000 次：失败率约 20%，带回的状态都在 1–30', Math.abs(fails / N - CONFIG.runaway.failChance) < 0.03 && lo >= 1 && hi <= 30, `${fails / N} ${lo} ${hi}`); }
+  } finally { Math.random = realRandom; }
+}
+
+console.log('旅行收藏');
+{
+  const realRandom = Math.random; Math.random = () => 0.01; // 一定带回纪念品，并且先出稀有
+  try {
+    const s = sim.newState(T0); const p = s.pets[0]; const got: (string | null)[] = [];
+    for (let i = 0; i < 4; i++) { s.inv.kibble = 1; p.food = 80; p.mood = 80; p.clean = 80; sim.dispatch(s, { petIds: [p.id], bento: 'kibble', tool: null, goods: [] }); const dest = s.trips[0].destId; sim.advance(s, s.trips[0].returnAt - s.clock + MIN); got.push(s.postcards[s.postcards.length - 1].souvenir); if (i === 0) (s as any)._first = dest; }
+    const owned = Object.keys(s.souvenirs);
+    check('纪念品不会重复拿到', owned.length === got.filter(Boolean).length && Object.values(s.souvenirs).every((n) => n === 1));
+    check('每张明信片都记着是哪个地方', s.postcards.every((c) => !!c.destId));
+  } finally { Math.random = realRandom; }
+  check('10 个地方，每地 2 件纪念品（一普通一稀有）', (() => { return DESTS.length === 10 && DESTS.every((d: any) => d.souvenirs.length === 2 && SOUVENIRS[d.souvenirs[0]] && !SOUVENIRS[d.souvenirs[0]].rare && SOUVENIRS[d.souvenirs[1]]?.rare && SOUVENIRS[d.souvenirs[1]].desc); })());
+  check('相册上限 = 地方数 × 2.5 = 25', sim.albumLimit() === 25);
+  const s = sim.newState(T0);
+  for (let i = 0; i < 25; i++) s.postcards.push({ id: 'c' + i, destId: 'penang', petIds: [], at: T0 + i, souvenir: null, income: 0, sold: [], unsold: [] });
+  check('默认挂最新的 4 张', sim.shownPostcards(s).map((c) => c.id).join() === 'c24,c23,c22,c21');
+  sim.toggleDisplayPostcard(s, 'c24'); sim.toggleDisplayPostcard(s, 'c0');
+  check('可以自己换：取下一张、挂上一张', sim.shownPostcards(s).map((c) => c.id).join() === 'c23,c22,c21,c0');
+  check('挂满 4 张后不能再加', !sim.toggleDisplayPostcard(s, 'c5').ok);
+  s.inv.kibble = 1; const p = s.pets[0]; sim.dispatch(s, { petIds: [p.id], bento: 'kibble', tool: null, goods: [] }); sim.advance(s, s.trips[0].returnAt - s.clock + MIN);
+  check('相册满了：换掉最旧的一张，挂在墙上的那张不会被换掉', s.postcards.length === 25 && s.postcards.some((c) => c.id === 'c0') && !s.postcards.some((c) => c.id === 'c1'));
+  for (let i = 0; i < 12; i++) s.souvenirs[Object.keys(SOUVENIRS)[i]] = 1;
+  check('收藏柜默认摆 9 件，其余收着', sim.shownSouvenirs(s).length === 9);
+  const hidden = Object.keys(s.souvenirs).find((id) => !sim.shownSouvenirs(s).includes(id))!;
+  check('摆满 9 件后不能再加', !sim.toggleDisplaySouvenir(s, hidden).ok);
+  sim.toggleDisplaySouvenir(s, sim.shownSouvenirs(s)[0]);
+  check('收起一件再摆另一件', sim.toggleDisplaySouvenir(s, hidden).ok && sim.shownSouvenirs(s).includes(hidden) && sim.shownSouvenirs(s).length === 9);
+}
+
+console.log('昼夜和四季');
+{
+  const at = (mo: number, h: number) => { const s = sim.newState(new Date(2026, mo, 10, h).getTime()); return s; };
+  check('白天、傍晚、夜里按时间走', sim.dayTime(at(0, 10)) === 'day' && sim.dayTime(at(0, 18)) === 'dusk' && sim.dayTime(at(0, 23)) === 'night' && sim.dayTime(at(0, 3)) === 'night');
+  check('四季按月份走', sim.season(at(3, 10)) === 'spring' && sim.season(at(6, 10)) === 'summer' && sim.season(at(9, 10)) === 'autumn' && sim.season(at(0, 10)) === 'winter');
+  const s = at(6, 10); s.dev.time = 'night'; s.dev.season = 'winter';
+  check('开发者开关没开开发者模式时不生效', sim.dayTime(s) === 'day' && sim.season(s) === 'summer');
+  s.dev.enabled = true;
+  check('开发者模式下一键切到夜里、冬天', sim.dayTime(s) === 'night' && sim.season(s) === 'winter');
 }
 {
   const s = sim.newState(T0); const p = s.pets[0]; p.food = 0; sim.advance(s, MIN);
@@ -93,7 +160,7 @@ console.log('存档');
   const r = migrate(v1, T0);
   check('v1 旧存档能升级到当前版本', r.ok && r.state.v === SAVE_VERSION && r.from === 1);
   if (r.ok) {
-    check('升级后原来的进度都在', r.state.fish === 77 && r.state.pets[0].name === '老猫' && r.state.pets[0].age === 5 * DAY && r.state.souvenirs.shell === 2 && r.state.inv.kibble === 3 && r.state.owned.ball === true && r.state.pond[1] === T0);
+    check('升级后原来的进度都在', r.state.fish === 77 && r.state.pets[0].name === '老猫' && r.state.pets[0].age === 5 * DAY && r.state.souvenirs.shellchime === 1 && r.state.display.souvenirs.length === 0 && r.state.pets[0].lostSince === null && r.state.inv.kibble === 3 && r.state.owned.ball === true && r.state.pond[1] === T0);
     check('升级后新字段有默认值', r.state.settings.notify === true && r.state.createdAt === T0 - DAY);
     sim.advance(r.state, DAY); check('升级后的存档可以继续玩', r.state.pets[0].food < 40);
   }
@@ -105,7 +172,7 @@ console.log('存档');
 }
 {
   const broken: any = { v: SAVE_VERSION, clock: 'oops', fish: -50, slots: 99, pets: [{ id: 'a', food: 999, mood: NaN, tripId: 'ghost' }, { name: '没编号' }, { id: 'b', dead: true, tripId: 't1' }],
-    trips: [{ id: 't1', petIds: ['b', 'zzz'], destId: 'nowhere' }], postcards: [{ id: 'c1', destId: 'park' }, { id: 'c2', destId: 'nope' }], pendingReturns: ['c1', 'c9'], pond: [1, 'x'], inv: { kibble: -2, can: 2.7 } };
+    trips: [{ id: 't1', petIds: ['b', 'zzz'], destId: 'nowhere' }], postcards: [{ id: 'c1', destId: 'penang' }, { id: 'c2', destId: 'nope' }], pendingReturns: ['c1', 'c9'], pond: [1, 'x'], inv: { kibble: -2, can: 2.7 } };
   const s = repair(broken, T0);
   check('坏数据会被修好', s.clock === T0 && s.fish === 0 && s.slots <= CONFIG.maxPets && s.pets.length === 2 && s.pets[0].food === 100 && s.pets[0].mood === 50 && s.pets[0].tripId === null);
   check('对不上的行程、明信片会被清掉', s.trips.length === 0 && s.postcards.length === 1 && s.pendingReturns.length === 1 && s.pond.length === CONFIG.pond.slots && s.pond[1] === null && s.inv.kibble === undefined && s.inv.can === 2);

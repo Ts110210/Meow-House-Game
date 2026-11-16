@@ -1,12 +1,50 @@
 // 代码画的占位图：房间背景（每个区域一张）和每件可互动的物品（每件一张）。
 // 画风往彩铅手绘靠：正侧面、没有透视、暖棕色细线、低饱和配色。
 // 在 assets.config.ts 里配了图片（或在开发者面板上传）之后，对应的占位图就不再使用。
-import { CONFIG, PALETTE as P, type ZoneId } from '../config';
+import { CONFIG, PALETTE as P, type DayTime, type Season, type ZoneId } from '../config';
 import { makeCanvas, Sketch, type Pt } from './sketch';
 
 const W = CONFIG.room.zoneWidth, H = CONFIG.room.height, FY = CONFIG.room.floorY;
 const lighten = (hex: string, t: number) => { const n = parseInt(hex.slice(1), 16); const f = (v: number) => Math.round(v + (255 - v) * t); return `rgb(${f(n >> 16)},${f((n >> 8) & 255)},${f(n & 255)})`; };
 const darken = (hex: string, t: number) => { const n = parseInt(hex.slice(1), 16); const f = (v: number) => Math.round(v * (1 - t)); return `rgb(${f(n >> 16)},${f((n >> 8) & 255)},${f(n & 255)})`; };
+
+// ---------- 昼夜和季节：窗外、阳台、院子的颜色跟着变 ----------
+
+export interface Env { time: DayTime; season: Season }
+let ENV: Env = { time: 'day', season: 'summer' };
+const SKY: Record<DayTime, string> = { day: '#D5E3EA', dusk: '#F2C9A4', night: '#55628A' };
+const SEASON = {
+  spring: { leaf: '#EFB7C4', leaf2: '#F6D3DB', grass: '#B8D3A0', hill: '#C6DDB2', hill2: '#A8C894', ground: '#B7CF9C' },
+  summer: { leaf: '#8DB07E', leaf2: '#A8C596', grass: '#9DBF87', hill: '#B4CDA6', hill2: '#A8B89A', ground: '#A5C28C' },
+  autumn: { leaf: '#E0914F', leaf2: '#D9A94A', grass: '#CDBE84', hill: '#DCC28E', hill2: '#CFA56B', ground: '#C9B77C' },
+  winter: { leaf: '#F4F6F8', leaf2: '#E3EAF0', grass: '#EEF2F4', hill: '#E6ECF0', hill2: '#D3DDE5', ground: '#EDF1F3' },
+};
+const sea = () => SEASON[ENV.season];
+
+/** 天上的东西：太阳或月亮、云或星星 */
+function skyThings(s: Sketch, x: number, y: number, w: number) {
+  if (ENV.time === 'night') {
+    s.ellipse(x + w * 0.76, y + 44, 20, 20, { fill: '#F6ECC6', width: 1.1 }); s.ellipse(x + w * 0.76 + 8, y + 38, 16, 16, { fill: SKY.night, stroke: false, hatch: 0 });
+    for (let i = 0; i < 9; i++) s.ellipse(x + 16 + s.r() * (w - 32), y + 10 + s.r() * 110, 1.8, 1.8, { fill: '#FFFFFF', stroke: false, hatch: 0 });
+  } else {
+    s.ellipse(x + w * 0.76, y + (ENV.time === 'dusk' ? 100 : 44), 24, 24, { fill: ENV.time === 'dusk' ? '#F0A46A' : '#F4E3A6', width: 1.1 });
+    s.ellipse(x + w * 0.24, y + 40, 38, 11, { fill: P.white, width: 1 }); s.ellipse(x + w * 0.32, y + 30, 28, 11, { fill: P.white, width: 1 });
+  }
+}
+
+/** 一棵树：春天开花，夏天绿，秋天黄，冬天光秃秃挂着雪 */
+function tree(s: Sketch, x: number, y: number, size: number) {
+  const c = sea();
+  s.poly([[x - size * 0.07, y], [x + size * 0.07, y], [x + size * 0.04, y - size * 0.62], [x - size * 0.04, y - size * 0.62]], { fill: P.woodDark });
+  if (ENV.season === 'winter') {
+    for (const [dx, dy, len, a] of [[0, -0.6, 0.34, -1.2], [0, -0.6, 0.3, -1.9], [0, -0.48, 0.26, -0.7], [0, -0.44, 0.24, -2.4]] as number[][]) {
+      const bx = x + dx * size, by = y + dy * size; const ex = bx + Math.cos(a) * len * size, ey = by + Math.sin(a) * len * size;
+      s.line(bx, by, ex, ey, P.woodDark, 3); s.ellipse(ex, ey - 3, 12, 6, { fill: c.leaf, width: 1 });
+    }
+    return;
+  }
+  for (const [dx, dy, r] of [[-0.2, -0.7, 0.26], [0.2, -0.72, 0.27], [0, -0.92, 0.3], [-0.08, -0.6, 0.22], [0.14, -0.56, 0.2]]) s.ellipse(x + dx * size, y + dy * size, r * size, r * size * 0.86, { fill: s.r() < 0.5 ? c.leaf : c.leaf2, width: 1.3 });
+}
 
 function base(s: Sketch) {
   s.rect(0, 0, W, FY, { fill: P.wall, stroke: false, hatch: 0.55 });
@@ -77,7 +115,8 @@ const ZONE_ART: Record<ZoneId, (s: Sketch) => void> = {
     s.line(66, 0, 66, 150, P.ink, 1.3); s.poly([[44, 190], [88, 190], [78, 150], [54, 150]], { fill: P.mustard });
   },
   kitchen(s) {
-    windowPane(s, 46, 174, 150, 124, P.glass, P.mustard);
+    windowPane(s, 46, 174, 150, 124, lighten(SKY[ENV.time], ENV.time === 'night' ? 0 : 0.25), P.mustard);
+    if (ENV.time === 'night') s.ellipse(160, 206, 11, 11, { fill: '#F6ECC6', width: 1 }); else s.ellipse(150, 268, 34, 22, { fill: sea().hill2, width: 1 });
     plant(s, 120, 304, 30, P.coral, 5);
     // 置物架和瓶瓶罐罐
     shelf(s, 238, 224, 168);
@@ -123,8 +162,9 @@ const ZONE_ART: Record<ZoneId, (s: Sketch) => void> = {
     s.ellipse(216, 660, 120, 18, { fill: lighten(P.sage, 0.1) });
   },
   bedroom(s) {
-    windowPane(s, 250, 174, 140, 130, '#B9C6D6', P.coral);
-    s.ellipse(350, 214, 17, 17, { fill: '#F6ECC6', width: 1.1 }); for (const [x, y] of [[282, 204], [300, 254], [330, 274], [372, 260]]) s.ellipse(x, y, 2, 2, { fill: '#FFFFFF', stroke: false, hatch: 0 });
+    windowPane(s, 250, 174, 140, 130, lighten(SKY[ENV.time], ENV.time === 'night' ? 0 : 0.25), P.coral);
+    if (ENV.time === 'night') { s.ellipse(350, 214, 17, 17, { fill: '#F6ECC6', width: 1.1 }); for (const [x, y] of [[282, 204], [300, 254], [330, 274], [372, 260]]) s.ellipse(x, y, 2, 2, { fill: '#FFFFFF', stroke: false, hatch: 0 }); }
+    else { s.ellipse(350, 214, 15, 15, { fill: ENV.time === 'dusk' ? '#F0A46A' : '#F4E3A6', width: 1.1 }); s.ellipse(300, 284, 40, 18, { fill: sea().hill2, width: 1 }); }
     frame(s, 64, 200, 110, 82, P.sage, 'hill'); frame(s, 80, 300, 70, 56, P.mist, 'fish');
     // 床头柜和台灯
     s.rect(18, 480, 62, 66, { fill: P.wood, r: 4 }); s.line(22, 512, 76, 512, P.ink, 1.2, 0.6); s.ellipse(49, 498, 4, 4, { fill: P.mustard, width: 1 });
@@ -138,20 +178,52 @@ const ZONE_ART: Record<ZoneId, (s: Sketch) => void> = {
     s.ellipse(320, 650, 92, 15, { fill: lighten(P.mustard, 0.2) });
     frame(s, 44, 170, 80, 64, P.mustard, 'sun');
   },
-  pond(s) {
-    // 阳台外面的天空、远山、栏杆
-    s.rect(26, 160, W - 52, 386, { fill: P.sky, hatch: 0.6 });
-    s.ellipse(330, 206, 26, 26, { fill: '#F4E3A6', width: 1.1 });
-    s.ellipse(120, 196, 40, 12, { fill: P.white, width: 1 }); s.ellipse(150, 186, 30, 12, { fill: P.white, width: 1 });
-    s.poly([[26, 430], [110, 340], [190, 400], [270, 330], [406, 430]] as Pt[], { fill: lighten(P.sage, 0.15) });
-    s.poly([[26, 446], [140, 392], [260, 430], [406, 398], [406, 446]] as Pt[], { fill: P.sage });
-    for (let x = 44; x < W - 30; x += 36) s.rect(x, 446, 8, 100, { fill: P.white, width: 1.2 });
-    s.rect(26, 436, W - 52, 12, { fill: P.white, width: 1.4 });
-    plant(s, 60, 546, 46, P.coral, 6); plant(s, 380, 546, 40, P.mustard, 6);
+  // 阳台：没有墙，直接看到外面。栏杆、花盆、一把小椅子。
+  balcony(s) {
+    const c = sea();
+    s.rect(6, 0, W - 12, 546, { fill: SKY[ENV.time], stroke: false, hatch: 0.5 });
+    skyThings(s, 6, 60, W - 12);
+    s.poly([[6, 440], [90, 350], [170, 404], [260, 336], [W - 6, 430], [W - 6, 546], [6, 546]] as Pt[], { fill: c.hill });
+    s.poly([[6, 456], [130, 404], [250, 438], [W - 6, 408], [W - 6, 546], [6, 546]] as Pt[], { fill: c.hill2 });
+    tree(s, 340, 470, 150);
+    // 屋檐和柱子
+    s.rect(0, 0, W, 34, { fill: P.wood, hatch: 0.6 }); s.rect(0, 34, 16, 512, { fill: P.wood }); s.rect(W - 16, 34, 16, 512, { fill: P.wood });
+    // 栏杆
+    for (let x = 34; x < W - 20; x += 34) s.rect(x, 430, 8, 116, { fill: P.white, width: 1.2 });
+    s.rect(16, 418, W - 32, 14, { fill: P.white, width: 1.4 });
+    // 花盆和小椅子
+    plant(s, 62, 546, 44, P.coral, 6); plant(s, 118, 546, 30, P.mustard, 5);
+    s.rect(290, 470, 80, 12, { fill: P.mist, r: 4 }); s.rect(296, 482, 8, 64, { fill: P.woodDark, width: 1.2 }); s.rect(356, 482, 8, 64, { fill: P.woodDark, width: 1.2 }); s.rect(356, 420, 8, 56, { fill: P.woodDark, width: 1.2 }); s.rect(350, 418, 20, 40, { fill: P.mist, r: 4 });
+    if (ENV.season === 'winter') { s.ellipse(216, 420, 190, 6, { fill: '#FFFFFF', stroke: false, hatch: 0 }); }
+  },
+  // 院子：完全在室外。天空、远山、一棵大树、篱笆、草地；鱼塘是单独的物品。
+  garden(s) {
+    const c = sea();
+    s.rect(0, 0, W, 560, { fill: SKY[ENV.time], stroke: false, hatch: 0.5 });
+    skyThings(s, 0, 70, W);
+    s.poly([[0, 450], [110, 356], [200, 416], [300, 340], [W, 440], [W, 560], [0, 560]] as Pt[], { fill: c.hill });
+    s.poly([[0, 470], [150, 420], [280, 452], [W, 424], [W, 560], [0, 560]] as Pt[], { fill: c.hill2 });
+    // 篱笆
+    for (let x = 14; x < W; x += 40) s.poly([[x, 560], [x, 492], [x + 9, 480], [x + 18, 492], [x + 18, 560]], { fill: P.white, width: 1.2 });
+    s.rect(0, 510, W, 8, { fill: P.white, width: 1.1 }); s.rect(0, 538, W, 8, { fill: P.white, width: 1.1 });
+    tree(s, 92, 552, 300);
+    // 草地（盖住木地板）
+    s.rect(0, FY, W, H - FY, { fill: c.ground, stroke: false, hatch: 0.6 }); s.line(0, FY, W, FY, P.ink, 1.4, 0.5);
+    for (let i = 0; i < 22; i++) { const x = s.r() * W, y = FY + 10 + s.r() * (H - FY - 16); s.curve([[x, y], [x + 3, y - 9]], ENV.season === 'winter' ? '#C9D3DA' : darken(P.sage, 0.15), 1.4, 0.7); }
+    // 季节的小东西
+    if (ENV.season === 'spring') for (let i = 0; i < 10; i++) s.ellipse(20 + s.r() * (W - 40), FY + 14 + s.r() * 120, 5, 5, { fill: i % 2 ? P.coral : '#F6D3DB', width: 1 });
+    if (ENV.season === 'autumn') for (let i = 0; i < 12; i++) s.leaf(20 + s.r() * (W - 40), FY + 14 + s.r() * 130, 12, s.r() * 6, i % 2 ? '#E0914F' : P.mustard);
+    if (ENV.season === 'summer') { s.ellipse(350, 600, 9, 9, { fill: P.mustard, width: 1 }); s.ellipse(380, 640, 7, 7, { fill: P.coral, width: 1 }); }
+    // 通往屋里的踏脚石
+    s.ellipse(40, 640, 30, 9, { fill: '#D9D4CB', width: 1.1 }); s.ellipse(100, 664, 26, 8, { fill: '#D9D4CB', width: 1.1 });
   },
 };
 
-export function drawZone(id: ZoneId, index: number): HTMLCanvasElement {
+/** 每个区域的地面颜色（院子是草地，其他是木地板）。画面底部往下延伸时用。 */
+export const groundColor = (id: ZoneId, env: Env) => (id === 'garden' ? SEASON[env.season].ground : P.floor);
+
+export function drawZone(id: ZoneId, index: number, env: Env = ENV): HTMLCanvasElement {
+  ENV = env;
   const [cv, ctx] = makeCanvas(W, H, 1.5);
   const s = new Sketch(ctx, 101 + index * 17);
   base(s); ZONE_ART[id](s);

@@ -19,7 +19,7 @@ export interface SimOptions {
 export interface DayRow { day: number; food: number; mood: number; clean: number; minFood: number; minMood: number; fish: number; stage: string; note: string }
 export interface SimResult {
   label: string; rows: DayRow[];
-  /** 第一次虚弱、第一次死亡发生在第几小时（没有就是 null） */
+  /** 第一次虚弱、第一次离家出走发生在第几小时（没有就是 null）。deaths = 离家出走的次数 */
   firstWeakHour: number | null; firstDeathHour: number | null; deaths: number; rescues: number;
   /** 一天里有多大比例的时间处在「饿」「闷」「脏」 */
   hungryPct: number; sadPct: number; dirtyPct: number;
@@ -27,7 +27,7 @@ export interface SimResult {
   postcards: number; souvenirs: number; stageDays: (number | null)[];
 }
 
-const alive = (s: GameState) => s.pets.filter((p) => !p.dead);
+const alive = (s: GameState) => s.pets.filter((p) => !p.dead && p.lostSince === null);
 
 /** 一次照顾：签到、收鱼塘、喂饱、摸一摸、玩一会儿、脏了就洗、能出门就出门 */
 function care(s: GameState, o: SimOptions, tally: SimResult, firstToday: boolean) {
@@ -90,7 +90,7 @@ export function simulate(o: SimOptions, label: string): SimResult {
       for (const e of sim.advance(s, HOUR)) {
         const hour = d * 24 + h + 1; const name = s.pets.find((p) => 'petId' in e && p.id === e.petId)?.name ?? '';
         if (e.type === 'weak') { if (r.firstWeakHour === null) r.firstWeakHour = hour; notes.push(`${name}虚弱`); }
-        if (e.type === 'died') { if (r.firstDeathHour === null) r.firstDeathHour = hour; r.deaths++; notes.push(`${name}死亡`); }
+        if (e.type === 'ranAway') { if (r.firstDeathHour === null) r.firstDeathHour = hour; r.deaths++; notes.push(`${name}离家出走`); }
         if (e.type === 'stage' && r.stageDays[e.stage] === null) { r.stageDays[e.stage] = +(hour / 24).toFixed(1); notes.push(`${name}长成${CONFIG.growth.stageNames[e.stage]}`); }
       }
       for (const c of s.postcards.slice(cardsBefore)) { r.earned.trade += c.income; }
@@ -101,7 +101,7 @@ export function simulate(o: SimOptions, label: string): SimResult {
     const a = alive(s);
     r.rows.push({ day: d + 1, food: Math.round(snap[0]), mood: Math.round(snap[1]), clean: Math.round(snap[2]), minFood: Math.round(a.length ? minFood : 0), minMood: Math.round(a.length ? minMood : 0), fish: s.fish,
       stage: a.length ? [...new Set(a.map((p) => sim.stageName(p)))].join('/') : '—', note: [...new Set(notes)].join('，') });
-    if (!a.length) { r.rows[r.rows.length - 1].note += (notes.length ? '，' : '') + '全部离开，模拟结束'; break; }
+    if (!a.length) { r.rows[r.rows.length - 1].note += (notes.length ? '，' : '') + '全部离家出走，模拟结束'; break; }
   }
   r.fishEnd = s.fish; r.fishPerDay = Math.round(((s.fish - r.fishStart) / r.rows.length) * 10) / 10;
   r.hungryPct = samples ? Math.round((hungry / samples) * 100) : 0; r.sadPct = samples ? Math.round((sad / samples) * 100) : 0; r.dirtyPct = samples ? Math.round((dirty / samples) * 100) : 0;

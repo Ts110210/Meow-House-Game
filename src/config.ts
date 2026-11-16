@@ -17,11 +17,16 @@ export const PALETTE = {
 
 export const ZONES = [
   { id: 'door', name: '门口' }, { id: 'kitchen', name: '厨房' }, { id: 'living', name: '客厅' },
-  { id: 'bath', name: '浴室' }, { id: 'bedroom', name: '卧室' }, { id: 'shelf', name: '收藏柜' }, { id: 'pond', name: '鱼塘' },
+  { id: 'bath', name: '浴室' }, { id: 'bedroom', name: '卧室' }, { id: 'shelf', name: '收藏柜' },
+  { id: 'balcony', name: '阳台' }, { id: 'garden', name: '院子' },
 ] as const;
 export type ZoneId = (typeof ZONES)[number]['id'];
 
-export type DestType = 'park' | 'sea' | 'forest' | 'rain' | 'snow' | 'mountain';
+export type DestType = 'city' | 'sea' | 'forest' | 'rain' | 'mountain';
+export type DayTime = 'day' | 'dusk' | 'night';
+export type Season = 'spring' | 'summer' | 'autumn' | 'winter';
+export const TIME_NAMES: Record<DayTime, string> = { day: '白天', dusk: '傍晚', night: '夜晚' };
+export const SEASON_NAMES: Record<Season, string> = { spring: '春', summer: '夏', autumn: '秋', winter: '冬' };
 
 export const CONFIG = {
   version: 'v0.1 预览版',
@@ -83,12 +88,23 @@ export const CONFIG = {
     stageScale: [0.8, 0.9, 1],
   },
 
-  // ---------- 虚弱与死亡 ----------
+  // ---------- 虚弱与离家出走 ----------
   weak: {
-    /** 饱食归零后，各阶段能撑多久 */
+    /** 饱食归零后，各阶段能撑多久；撑不住就离家出走 */
     timeToDeath: [3 * DAY, 5 * DAY, 7 * DAY],
     /** 虚弱时被喂食救回，心情扣多少 */
     rescueMoodPenalty: 40,
+  },
+
+  // ---------- 离家出走：请狸花猫找回来 ----------
+  runaway: {
+    /** 狸花猫出去找一趟要多久 */
+    searchTime: 2 * HOUR,
+    /** 找不到的概率 */
+    failChance: 0.2,
+    /** 找回来时，三个状态各自是这个范围里的随机数 */
+    returnStatMin: 1,
+    returnStatMax: 30,
   },
 
   // ---------- 出门 ----------
@@ -104,6 +120,13 @@ export const CONFIG = {
     /** 心情低于这个值，带回纪念品的概率减半 */
     moodFewerBelow: 50,
     souvenirBaseChance: 0.5,
+    /** 带回纪念品时，是稀有那一件的概率 */
+    souvenirRareChance: 0.25,
+    /** 相册最多放几张 = 目的地数量 × 这个数（现在 10 个地方就是 25 张） */
+    albumPerDest: 2.5,
+    /** 收藏柜上最多摆几件、相册墙上最多挂几张 */
+    displaySouvenirs: 9,
+    displayPostcards: 4,
     souvenirToolMatchBonus: 0.25,
     souvenirCompanionBonus: 0.1,
     /** 选目的地时的权重 */
@@ -174,12 +197,15 @@ export const FOODS: FoodDef[] = [
 ];
 
 export const TOOLS: ToolDef[] = [
-  { id: 'umbrella', name: '雨伞', icon: '☂️', price: 30, type: 'rain', desc: '更容易去下雨的地方' },
+  { id: 'camera', name: '小相机', icon: '📷', price: 30, type: 'city', desc: '更容易去城市' },
   { id: 'float', name: '泳圈', icon: '🛟', price: 35, type: 'sea', desc: '更容易去海边' },
-  { id: 'tent', name: '小帐篷', icon: '⛺', price: 40, type: 'forest', desc: '更容易去森林' },
+  { id: 'umbrella', name: '雨伞', icon: '☂️', price: 35, type: 'rain', desc: '更容易去多雨的高原和雨林' },
   { id: 'boots', name: '登山靴', icon: '🥾', price: 45, type: 'mountain', desc: '更容易去山里' },
-  { id: 'scarf', name: '围巾', icon: '🧣', price: 45, type: 'snow', desc: '更容易去下雪的地方' },
+  { id: 'tent', name: '小帐篷', icon: '⛺', price: 45, type: 'forest', desc: '更容易去丛林里的古迹' },
 ];
+
+/** 请狸花猫帮忙找回离家出走的宠物时要给它的东西 */
+export const TREAT = { id: 'treat', name: '猫条', icon: '🍢', price: 40, desc: '给狸花猫，请它把离家出走的宠物找回来' };
 
 export const GOODS: GoodsDef[] = [
   { id: 'cookie', name: '小饼干', icon: '🍪', price: 10, sellMin: 14, sellMax: 22, sellChance: 0.8 },
@@ -200,36 +226,46 @@ export const GEAR: GearDef[] = [
 // 目的地与纪念品
 // ============================================================
 
-export interface DestDef { id: string; name: string; type: DestType; tier: 1 | 2 | 3; souvenirs: string[] }
+export interface DestDef { id: string; name: string; country: string; type: DestType; tier: 1 | 2 | 3; /** [普通, 稀有] */ souvenirs: [string, string] }
 
+/** 目的地：先做东南亚的 10 个。tier = 要多大的便当才走得到。更远的地区以后配合交通工具再加。 */
 export const DESTS: DestDef[] = [
-  { id: 'park', name: '街角公园', type: 'park', tier: 1, souvenirs: ['leaf', 'acorn'] },
-  { id: 'bridge', name: '河边小桥', type: 'rain', tier: 1, souvenirs: ['pebble', 'paperboat'] },
-  { id: 'seatown', name: '海边小镇', type: 'sea', tier: 2, souvenirs: ['shell', 'starfish'] },
-  { id: 'cabin', name: '森林小屋', type: 'forest', tier: 2, souvenirs: ['mushroom', 'pinecone'] },
-  { id: 'alley', name: '雨巷', type: 'rain', tier: 2, souvenirs: ['lantern', 'teacup'] },
-  { id: 'lake', name: '高山湖', type: 'mountain', tier: 3, souvenirs: ['crystal', 'edelweiss'] },
-  { id: 'lighthouse', name: '灯塔岬角', type: 'sea', tier: 3, souvenirs: ['bottle', 'compass'] },
-  { id: 'onsen', name: '雪山温泉', type: 'snow', tier: 3, souvenirs: ['snowglobe', 'woodbadge'] },
+  { id: 'singapore', name: '新加坡', country: '新加坡', type: 'city', tier: 1, souvenirs: ['merlion', 'kaya'] },
+  { id: 'penang', name: '槟城', country: '马来西亚', type: 'city', tier: 1, souvenirs: ['whitecoffee', 'kuihmould'] },
+  { id: 'langkawi', name: '兰卡威', country: '马来西亚', type: 'sea', tier: 1, souvenirs: ['shellchime', 'eaglefeather'] },
+  { id: 'bangkok', name: '曼谷', country: '泰国', type: 'city', tier: 2, souvenirs: ['thaitea', 'elephant'] },
+  { id: 'chiangmai', name: '清迈', country: '泰国', type: 'mountain', tier: 2, souvenirs: ['paperumbrella', 'krathong'] },
+  { id: 'bali', name: '巴厘岛', country: '印度尼西亚', type: 'sea', tier: 2, souvenirs: ['frangipani', 'mask'] },
+  { id: 'cameron', name: '金马仑高原', country: '马来西亚', type: 'rain', tier: 2, souvenirs: ['blacktea', 'strawberryjam'] },
+  { id: 'angkor', name: '吴哥窟', country: '柬埔寨', type: 'forest', tier: 3, souvenirs: ['rubbing', 'lotusincense'] },
+  { id: 'halong', name: '下龙湾', country: '越南', type: 'sea', tier: 3, souvenirs: ['nonla', 'pearl'] },
+  { id: 'borneo', name: '婆罗洲雨林', country: '马来西亚', type: 'rain', tier: 3, souvenirs: ['pitcherplant', 'hornbill'] },
 ];
 
-export const SOUVENIRS: Record<string, { name: string; icon: string }> = {
-  leaf: { name: '红叶书签', icon: '🍁' },
-  acorn: { name: '橡果', icon: '🌰' },
-  pebble: { name: '圆石头', icon: '🪨' },
-  paperboat: { name: '纸船', icon: '⛵' },
-  shell: { name: '贝壳', icon: '🐚' },
-  starfish: { name: '海星', icon: '⭐' },
-  mushroom: { name: '小蘑菇', icon: '🍄' },
-  pinecone: { name: '松果', icon: '🌲' },
-  lantern: { name: '纸灯笼', icon: '🏮' },
-  teacup: { name: '茶杯', icon: '🍵' },
-  crystal: { name: '水晶', icon: '💎' },
-  edelweiss: { name: '雪绒花', icon: '🌼' },
-  bottle: { name: '漂流瓶', icon: '🍾' },
-  compass: { name: '旧指南针', icon: '🧭' },
-  snowglobe: { name: '雪花球', icon: '🔮' },
-  woodbadge: { name: '温泉木牌', icon: '🪧' },
+export interface SouvenirDef { name: string; icon: string; rare: boolean; desc: string }
+
+/** 纪念品：每个地方两件，一件普通一件稀有，不会重复获得。icon 现在是占位的表情符号。 */
+export const SOUVENIRS: Record<string, SouvenirDef> = {
+  merlion: { name: '鱼尾狮摆件', icon: '🦁', rare: false, desc: '巴掌大的鱼尾狮，据说对着它许愿会有好天气。' },
+  kaya: { name: '咖椰酱', icon: '🍯', rare: true, desc: '椰奶和斑斓叶熬的酱，抹在烤面包上是新加坡的早晨。' },
+  whitecoffee: { name: '白咖啡', icon: '☕', rare: false, desc: '槟城老街咖啡店的招牌，香而不苦。' },
+  kuihmould: { name: '娘惹糕模具', icon: '🥮', rare: true, desc: '刻着花纹的木头模子，压出来的糕点每一块都一样好看。' },
+  shellchime: { name: '贝壳风铃', icon: '🐚', rare: false, desc: '海风一吹就叮叮响，像把兰卡威的海带回了家。' },
+  eaglefeather: { name: '巨鹰羽毛书签', icon: '🪶', rare: true, desc: '兰卡威是鹰的岛。这片羽毛是它在沙滩上捡到的。' },
+  thaitea: { name: '泰式奶茶罐', icon: '🧋', rare: false, desc: '橙红色的茶叶罐，泡出来又甜又浓。' },
+  elephant: { name: '小象木雕', icon: '🐘', rare: true, desc: '手心大的柚木小象，鼻子向上翘，寓意好运。' },
+  paperumbrella: { name: '手工纸伞', icon: '🏮', rare: false, desc: '清迈博桑村的油纸伞，伞面是手画的花。' },
+  krathong: { name: '水灯', icon: '🪷', rare: true, desc: '水灯节放进河里的莲花灯。它舍不得放，带回来了。' },
+  frangipani: { name: '鸡蛋花发夹', icon: '🌼', rare: false, desc: '巴厘岛到处都是鸡蛋花，别在耳朵边刚刚好。' },
+  mask: { name: '木雕面具', icon: '🎭', rare: true, desc: '巴龙舞用的面具，眼睛瞪得圆圆的，其实是守护神。' },
+  blacktea: { name: '高原红茶', icon: '🍵', rare: false, desc: '云雾里的茶园采下来的茶，带一点花香。' },
+  strawberryjam: { name: '草莓果酱', icon: '🍓', rare: true, desc: '金马仑高原凉快，草莓长得好。这一罐是当天现熬的。' },
+  rubbing: { name: '砂岩拓片', icon: '🗿', rare: false, desc: '从吴哥的浮雕上拓下来的花纹，一千年前的手艺。' },
+  lotusincense: { name: '莲花香', icon: '🪔', rare: true, desc: '寺庙门口的老奶奶送的，点起来满屋都是清香。' },
+  nonla: { name: '斗笠', icon: '👒', rare: false, desc: '越南的尖顶斗笠，遮太阳也挡雨。它戴着有点大。' },
+  pearl: { name: '下龙湾珍珠', icon: '🦪', rare: true, desc: '海湾里养出来的珍珠，对着光看有淡淡的粉色。' },
+  pitcherplant: { name: '猪笼草画片', icon: '🪴', rare: false, desc: '雨林里会吃虫子的植物。真的不能带，只好带一张画。' },
+  hornbill: { name: '犀鸟木雕', icon: '🦜', rare: true, desc: '婆罗洲的神鸟，大大的嘴上顶着一个头盔。' },
 };
 
 /** 默认宠物可选的毛色 */
@@ -238,6 +274,11 @@ export const FUR_COLORS: Record<string, { name: string; body: string; shade: str
   grey: { name: '灰色', body: '#A9B0B8', shade: '#868E98', belly: '#EEF0F2', line: '#6B6F78' },
   cream: { name: '奶白', body: '#F6E7CF', shade: '#E3CBA6', belly: '#FFF8EC', line: '#B08A5A' },
   black: { name: '黑色', body: '#5A5560', shade: '#3F3B45', belly: '#8B8590', line: '#2E2A33' },
+};
+
+/** 不能领养的角色用的毛色：狸花猫（帮忙找回离家出走的宠物） */
+export const NPC_COLORS: Record<string, { name: string; body: string; shade: string; belly: string; line: string }> = {
+  tabby: { name: '狸花猫', body: '#A89A82', shade: '#6F6351', belly: '#EDE6D8', line: '#4E4436' },
 };
 
 // ============================================================

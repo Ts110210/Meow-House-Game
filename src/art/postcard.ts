@@ -58,15 +58,13 @@ function drawBackground(ctx: CanvasRenderingContext2D, dest: DestDef) {
       for (let i = 0; i < 60; i++) { const x = (i * 97) % W, y = (i * 53) % 280; ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x - 6, y + 16); ctx.stroke(); }
       break;
     }
-    case 'snow': {
-      ctx.fillStyle = grad(ctx, 0, 280, '#D7E6F3', '#EEF4F9'); ctx.fillRect(0, 0, W, 280);
-      tri(ctx, 170, 290, 340, 210, '#B8C9DA'); tri(ctx, 170, 150, 110, 70, '#FFFFFF');
-      tri(ctx, 430, 290, 300, 170, '#A9BDD1'); tri(ctx, 430, 172, 100, 52, '#FFFFFF');
-      ctx.fillStyle = '#F7FAFC'; ctx.fillRect(0, 280, W, H - 280);
-      ctx.beginPath(); ctx.ellipse(120, 318, 80, 22, 0, 0, Math.PI * 2); ctx.fillStyle = '#A7D3DC'; ctx.fill();
-      ctx.strokeStyle = 'rgba(255,255,255,0.9)'; ctx.lineWidth = 5; ctx.lineCap = 'round';
-      for (const x of [90, 120, 150]) { ctx.beginPath(); ctx.moveTo(x, 300); ctx.quadraticCurveTo(x - 10, 284, x, 268); ctx.stroke(); }
-      ctx.fillStyle = '#fff'; for (let i = 0; i < 40; i++) { ctx.beginPath(); ctx.arc((i * 131) % W, (i * 71) % 270, 2.5, 0, Math.PI * 2); ctx.fill(); }
+    case 'city': {
+      ctx.fillStyle = grad(ctx, 0, 290, '#F6D9B8', '#F9E9D2'); ctx.fillRect(0, 0, W, 290);
+      ctx.beginPath(); ctx.arc(470, 90, 36, 0, Math.PI * 2); ctx.fillStyle = '#FBE9A9'; ctx.fill();
+      const blocks: [number, number, number, string][] = [[30, 70, 150, '#C9B7A6'], [110, 54, 200, '#B9C6CF'], [176, 90, 130, '#D8C3A5'], [280, 60, 220, '#A9BDCB'], [352, 80, 160, '#CDB9A8'], [446, 64, 190, '#B6C4B0'], [520, 70, 140, '#C9B7A6']];
+      for (const [x, w, hh, c] of blocks) { ctx.fillStyle = c; ctx.fillRect(x, 290 - hh, w, hh); ctx.fillStyle = 'rgba(255,248,225,0.8)'; for (let yy = 290 - hh + 14; yy < 276; yy += 26) for (let xx = x + 10; xx < x + w - 12; xx += 20) ctx.fillRect(xx, yy, 9, 12); }
+      ctx.fillStyle = grad(ctx, 284, H, '#D9CDBD', '#C7B9A6'); ctx.fillRect(0, 286, W, H - 286);
+      ctx.fillStyle = '#E08E79'; ctx.fillRect(60, 250, 70, 40); ctx.fillStyle = '#FBF6EC'; ctx.fillRect(56, 244, 78, 10);
       break;
     }
     case 'mountain': {

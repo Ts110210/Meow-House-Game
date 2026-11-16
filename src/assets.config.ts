@@ -50,7 +50,7 @@ export const ASSETS = {
     /** 方式二：每个区域一张图，比例 3:5（432×720 或它的倍数）。 */
     zones: {
       door: 'room/door.png', kitchen: 'room/kitchen.png', living: 'room/living.png', bath: 'room/bath.png',
-      bedroom: 'room/bedroom.png', shelf: 'room/shelf.png', pond: 'room/pond.png',
+      bedroom: 'room/bedroom.png', shelf: 'room/shelf.png', balcony: 'room/balcony.png', garden: 'room/garden.png',
     } as Record<ZoneId, string>,
   },
 
@@ -65,7 +65,7 @@ export const ASSETS = {
     bed: { src: 'objects/bed.png', zone: 'bedroom', x: 240, y: 566, height: 150, label: '小床', partOfBackground: true },
     cabinet: { src: 'objects/cabinet.png', zone: 'shelf', x: 130, y: 564, height: 280, label: '收藏柜', partOfBackground: true },
     album: { src: 'objects/album.png', zone: 'shelf', x: 318, y: 384, height: 170, label: '相册', partOfBackground: true },
-    pond: { src: 'objects/pond.png', zone: 'pond', x: 216, y: 700, height: 96, label: '鱼塘', partOfBackground: true },
+    pond: { src: 'objects/pond.png', zone: 'garden', x: 230, y: 690, height: 104, label: '鱼塘', partOfBackground: true },
   } as Record<string, ObjectDef>,
 
   // ---------- 默认宠物的精灵图（上传规范：4 列，每格 256×256，每行一个动作） ----------
@@ -75,7 +75,7 @@ export const ASSETS = {
 
   // ---------- 明信片背景（3:2，建议 1200×800），宠物由程序贴上去 ----------
   postcards: {
-    park: 'postcards/park.png', bridge: 'postcards/bridge.png', seatown: 'postcards/seatown.png', cabin: 'postcards/cabin.png',
-    alley: 'postcards/alley.png', lake: 'postcards/lake.png', lighthouse: 'postcards/lighthouse.png', onsen: 'postcards/onsen.png',
+    singapore: 'postcards/singapore.png', penang: 'postcards/penang.png', langkawi: 'postcards/langkawi.png', bangkok: 'postcards/bangkok.png', chiangmai: 'postcards/chiangmai.png',
+    bali: 'postcards/bali.png', cameron: 'postcards/cameron.png', angkor: 'postcards/angkor.png', halong: 'postcards/halong.png', borneo: 'postcards/borneo.png',
   } as Record<string, string>,
 };

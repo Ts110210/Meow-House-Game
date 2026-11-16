@@ -5,11 +5,11 @@
 //   2. 在 MIGRATIONS 里加一条「从上一个版本升到这个版本」的函数
 //   3. 在 repair() 里给新字段补默认值
 // 旧存档会在打开时自动一步一步升上来，升级前的原样会另存一份。
-import { CONFIG, DESTS, FOODS } from './config';
+import { CONFIG, DESTS, FOODS, SOUVENIRS } from './config';
 import { kv } from './platform/storage';
 import type { GameState, Pet, Postcard, Trip } from './types';
 
-export const SAVE_VERSION = 3;
+export const SAVE_VERSION = 4;
 const MAIN = 'pet-game-save-v1'; // 键名不跟版本走，这样旧存档一直读得到
 const BACKUP = 'pet-game-save-backup';
 const BEFORE_MIGRATION = 'pet-game-save-before-migration';
@@ -23,6 +23,21 @@ const MIGRATIONS: Record<number, (s: Raw) => Raw> = {
   1: (s) => { s.settings = { notify: true }; s.createdAt = s.pets?.[0]?.adoptedAt ?? s.clock ?? Date.now(); s.v = 2; return s; },
   // v2 → v3：开发者模式多了「后台也按倍速」的开关
   2: (s) => { s.dev = { ...(s.dev ?? {}), background: false }; s.v = 3; return s; },
+  // v3 → v4：目的地换成东南亚的 10 个，纪念品换成每地两件不重复；多了离家出走、展示位、昼夜四季的开关
+  3: (s) => {
+    const DEST: Record<string, string> = { park: 'singapore', bridge: 'penang', seatown: 'langkawi', cabin: 'angkor', alley: 'cameron', lake: 'chiangmai', lighthouse: 'halong', onsen: 'bali' };
+    const SOUV: Record<string, string> = { leaf: 'merlion', acorn: 'kaya', pebble: 'whitecoffee', paperboat: 'kuihmould', shell: 'shellchime', starfish: 'eaglefeather', mushroom: 'rubbing', pinecone: 'lotusincense',
+      lantern: 'blacktea', teacup: 'strawberryjam', crystal: 'paperumbrella', edelweiss: 'krathong', bottle: 'nonla', compass: 'pearl', snowglobe: 'frangipani', woodbadge: 'mask' };
+    for (const c of s.postcards ?? []) { if (DEST[c.destId]) c.destId = DEST[c.destId]; if (c.souvenir && SOUV[c.souvenir]) c.souvenir = SOUV[c.souvenir]; }
+    for (const t of s.trips ?? []) if (DEST[t.destId]) t.destId = DEST[t.destId];
+    const souv: Record<string, number> = {}; for (const k of Object.keys(s.souvenirs ?? {})) souv[SOUV[k] ?? k] = 1;
+    s.souvenirs = souv;
+    // 旧道具「围巾」（去雪地）没有了，换成小相机
+    if (s.inv?.scarf) { s.inv.camera = (s.inv.camera ?? 0) + s.inv.scarf; delete s.inv.scarf; }
+    for (const t of s.trips ?? []) if (t.tool === 'scarf') t.tool = 'camera';
+    s.display = { souvenirs: [], postcards: [] };
+    s.v = 4; return s;
+  },
 };
 
 const num = (v: any, d: number, lo = -Infinity, hi = Infinity) => (typeof v === 'number' && isFinite(v) ? Math.max(lo, Math.min(hi, v)) : d);
@@ -38,10 +53,12 @@ export function repair(raw: Raw, now = Date.now()): GameState {
     age: num(p.age, 0, 0), food: num(p.food, 50, 0, 100), mood: num(p.mood, 50, 0, 100), clean: num(p.clean, 50, 0, 100),
     weakSince: typeof p.weakSince === 'number' && isFinite(p.weakSince) ? p.weakSince : null,
     dead: !!p.dead, ...(p.dead ? { diedAt: num(p.diedAt, clock) } : {}),
+    lostSince: !p.dead && typeof p.lostSince === 'number' && isFinite(p.lostSince) ? p.lostSince : null,
+    searchUntil: !p.dead && typeof p.lostSince === 'number' && typeof p.searchUntil === 'number' && isFinite(p.searchUntil) ? p.searchUntil : null,
     tripId: typeof p.tripId === 'string' ? p.tripId : null,
     repeats: obj(p.repeats), hungryNotified: !!p.hungryNotified, adoptedAt: num(p.adoptedAt, clock),
   }));
-  const alive = (id: string) => pets.some((p) => p.id === id && !p.dead);
+  const alive = (id: string) => pets.some((p) => p.id === id && !p.dead && p.lostSince === null);
   const trips: Trip[] = arr(raw.trips).filter((t) => t && typeof t.id === 'string').map((t) => ({
     id: t.id, petIds: arr(t.petIds).filter((id) => typeof id === 'string' && alive(id)),
     bento: FOODS.some((f) => f.id === t.bento) ? t.bento : FOODS[0].id, tool: typeof t.tool === 'string' ? t.tool : null,
@@ -55,6 +72,8 @@ export function repair(raw: Raw, now = Date.now()): GameState {
     id: c.id, destId: c.destId, petIds: arr(c.petIds).filter((x) => typeof x === 'string'), at: num(c.at, clock),
     souvenir: typeof c.souvenir === 'string' ? c.souvenir : null, income: num(c.income, 0, 0), sold: arr(c.sold), unsold: arr(c.unsold),
   }));
+  const souvenirs: Record<string, number> = {}; for (const [k, n] of Object.entries(obj(raw.souvenirs))) if (n && SOUVENIRS[k]) souvenirs[k] = 1;
+  const display = obj(raw.display);
   const counts = (v: any) => { const out: Record<string, number> = {}; for (const [k, n] of Object.entries(obj(v))) if (typeof n === 'number' && n > 0) out[k] = Math.floor(n); return out; };
   const owned: Record<string, boolean> = {}; for (const [k, v] of Object.entries(obj(raw.owned))) if (v) owned[k] = true;
   const pond = arr(raw.pond).slice(0, CONFIG.pond.slots).map((v) => (typeof v === 'number' && isFinite(v) ? v : null));
@@ -64,9 +83,11 @@ export function repair(raw: Raw, now = Date.now()): GameState {
   return {
     v: SAVE_VERSION, clock, lastReal: num(raw.lastReal, now), createdAt: num(raw.createdAt, clock),
     fish: Math.floor(num(raw.fish, 0, 0)), slots: Math.floor(num(raw.slots, 1, Math.max(1, Math.min(aliveCount, CONFIG.maxPets)), CONFIG.maxPets)),
-    pets, trips, postcards, souvenirs: counts(raw.souvenirs), inv: counts(raw.inv), owned, pond,
-    lastCheckin: str(raw.lastCheckin, ''), pendingReturns: arr(raw.pendingReturns).filter((id) => postcards.some((c) => c.id === id)),
-    dev: { enabled: !!dev.enabled, background: !!dev.background, speed: num(dev.speed, 1, 1, 100000), growth: num(dev.growth, 1, 0, 100000), decay: { food: num(decay.food, 1, 0, 1000), mood: num(decay.mood, 1, 0, 1000), clean: num(decay.clean, 1, 0, 1000) } },
+    pets, trips, postcards, souvenirs, inv: counts(raw.inv), owned, pond,
+    lastCheckin: str(raw.lastCheckin, ''),
+    display: { souvenirs: arr(display.souvenirs).filter((id) => souvenirs[id]).slice(0, CONFIG.travel.displaySouvenirs), postcards: arr(display.postcards).filter((id) => postcards.some((c) => c.id === id)).slice(0, CONFIG.travel.displayPostcards) },
+    pendingReturns: arr(raw.pendingReturns).filter((id) => postcards.some((c) => c.id === id)),
+    dev: { enabled: !!dev.enabled, background: !!dev.background, time: ['day', 'dusk', 'night'].includes(dev.time) ? dev.time : 'auto', season: ['spring', 'summer', 'autumn', 'winter'].includes(dev.season) ? dev.season : 'auto', speed: num(dev.speed, 1, 1, 100000), growth: num(dev.growth, 1, 0, 100000), decay: { food: num(decay.food, 1, 0, 1000), mood: num(decay.mood, 1, 0, 1000), clean: num(decay.clean, 1, 0, 1000) } },
     settings: { notify: settings.notify !== false },
   };
 }

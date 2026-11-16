@@ -14,8 +14,13 @@ export interface Pet {
   clean: number;
   /** 进入虚弱的时刻；null = 没有虚弱 */
   weakSince: number | null;
+  /** 旧版本里饿死的宠物（现在不会再死，只会离家出走）。留着是为了旧存档里的纪念 */
   dead: boolean;
   diedAt?: number;
+  /** 离家出走的时刻；null = 在家或正常出门 */
+  lostSince: number | null;
+  /** 狸花猫正在找它：什么时候有结果；null = 没在找 */
+  searchUntil: number | null;
   tripId: string | null;
   repeats: Partial<Record<RepeatKey, { n: number; last: number }>>;
   hungryNotified: boolean;
@@ -49,6 +54,9 @@ export interface DevSettings {
   speed: number;
   /** 离开游戏（退到桌面、关掉再开）的那段时间也按倍速算。默认关：只在游戏开着时加速 */
   background: boolean;
+  /** 强制的昼夜和季节；'auto' = 跟着游戏里的时间走 */
+  time: 'auto' | 'day' | 'dusk' | 'night';
+  season: 'auto' | 'spring' | 'summer' | 'autumn' | 'winter';
   growth: number;
   decay: Record<StatKey, number>;
 }
@@ -73,6 +81,8 @@ export interface GameState {
   owned: Record<string, boolean>;
   pond: (number | null)[];
   lastCheckin: string;
+  /** 主人自己挑的展示内容：收藏柜上摆哪几件、相册墙上挂哪几张。空 = 自动用最新的 */
+  display: { souvenirs: string[]; postcards: string[] };
   /** 还没给主人看过的回家明信片 */
   pendingReturns: string[];
   dev: DevSettings;
@@ -81,7 +91,9 @@ export interface GameState {
 export type GameEvent =
   | { type: 'return'; postcardId: string }
   | { type: 'weak'; petId: string }
-  | { type: 'died'; petId: string }
+  | { type: 'ranAway'; petId: string }
+  | { type: 'found'; petId: string }
+  | { type: 'notFound'; petId: string }
   | { type: 'stage'; petId: string; stage: number }
   | { type: 'hungry'; petId: string };
 

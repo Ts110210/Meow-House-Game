@@ -1,7 +1,7 @@
 // 默认宠物的占位精灵图：用代码画出来，格式和「上传规范」完全一样
 // （每格 256×256，每行一个动作，每行 4 帧，面朝右）。
 // 换成正式素材时，只要给出同样格式的 PNG 即可。
-import { FUR_COLORS, SPRITE } from '../config';
+import { FUR_COLORS, NPC_COLORS, SPRITE } from '../config';
 import { pencilOver } from './sketch';
 
 type Pal = (typeof FUR_COLORS)[string];
@@ -158,7 +158,7 @@ const POSES: Record<string, Pose[]> = {
 };
 
 export function drawDefaultSheet(color: string): HTMLCanvasElement {
-  const pal = FUR_COLORS[color] ?? FUR_COLORS.orange;
+  const pal = FUR_COLORS[color] ?? NPC_COLORS[color] ?? FUR_COLORS.orange;
   const cv = document.createElement('canvas');
   cv.width = C * SPRITE.framesPerRow; cv.height = C * SPRITE.rows.length;
   const ctx = cv.getContext('2d')!;
