@@ -50,7 +50,7 @@ const STAT_NAME = { food: '饱食', mood: '心情', clean: '干净' };
 interface Sheet { title: string; render: () => Kid | Kid[]; onClose?: () => void; /** 返回 false = 先别关（比如还有没整理完的东西） */ beforeClose?: () => boolean }
 
 export class UI {
-  private hudFish!: HTMLElement; private hudCheck!: HTMLElement; private hudDev!: HTMLElement;
+  private hudFish!: HTMLElement; private hudCheck!: HTMLElement; private hudDev!: HTMLElement; private hudSeason!: HTMLElement;
   private strip!: HTMLElement; private zonesEl!: HTMLElement; private toasts!: HTMLElement;
   private scrim: HTMLElement | null = null; private body: HTMLElement | null = null;
   private sheet: Sheet | null = null;
@@ -158,7 +158,8 @@ export class UI {
     this.strip = h('div', { class: 'petstrip' });
     this.zonesEl = h('div', { class: 'zones' }, ZONES.map((z, i) => h('button', { class: 'zone', onclick: () => this.scene.scrollToZone(i) }, z.name)));
     this.toasts = h('div', { class: 'toasts' });
-    this.root.append(top, h('div', { class: 'hud-bottom' }, this.strip, this.zonesEl), this.toasts);
+    this.hudSeason = h('div', { class: 'hud-season' });
+    this.root.append(top, this.hudSeason, h('div', { class: 'hud-bottom' }, this.strip, this.zonesEl), this.toasts);
   }
 
   setZone(i: number) {
@@ -201,8 +202,16 @@ export class UI {
     }
     this.updateHudLive();
   }
+  /** 「春天 · 第 3 天，还有 4 天入夏」。开发者面板强制了季节时，照强制的显示 */
+  private seasonLine(): string {
+    const s = this.game.state; const now = sim.season(s); const info = sim.seasonInfo(s);
+    if (now !== info.season) return `${SEASON_NAMES[now]}天（开发者面板指定）`;
+    return `${SEASON_NAMES[info.season]}天 · 第 ${info.day} 天，还有 ${info.daysLeft} 天入${SEASON_NAMES[info.next]}`;
+  }
   private updateHudLive() {
     const s = this.game.state; const low = CONFIG.stats.lowThreshold;
+    this.hudSeason.style.display = s.settings.showSeason ? '' : 'none';
+    if (s.settings.showSeason) { const t = this.seasonLine(); if (this.hudSeason.textContent !== t) this.hudSeason.textContent = t; }
     this.hudCheck.classList.toggle('hot', sim.canCheckin(s));
     for (const chip of this.strip.children as any as HTMLElement[]) {
       const p = this.game.pet(chip.dataset.pet!); const dot = chip.querySelector('.dot') as HTMLElement; if (!p) continue;
@@ -712,6 +721,10 @@ export class UI {
           this.game.changed();
         } }, `提醒（饿了、回家了）：${s.settings.notify ? '开' : '关'}`)),
         isNative ? null : h('p', { class: 'soft center' }, '离开游戏后的提醒只在安卓 App 里有效，网页版只在开着的时候提示。'),
+        h('h3', null, '季节'),
+        h('div', { class: 'seg' }, ([['cycle', `游戏里的四季（每季 ${CONFIG.season.days} 天）`], ['real', '跟现实的月份']] as ['cycle' | 'real', string][]).map(([v, label]) => h('button', { class: 'chip' + (s.settings.seasonMode === v ? ' on' : ''), onclick: () => { s.settings.seasonMode = v; this.game.changed(); } }, label))),
+        h('p', { class: 'soft' }, `现在：${this.seasonLine()}`),
+        h('p', null, h('button', { class: 'btn block', onclick: () => { s.settings.showSeason = !s.settings.showSeason; this.game.changed(); } }, `在主界面显示季节：${s.settings.showSeason ? '开' : '关'}`)),
         s.dev.enabled ? h('p', null, h('button', { class: 'btn block', onclick: () => this.openDev() }, '开发者面板')) : null,
         h('p', { style: 'margin-top:20px' }, h('button', { class: 'btn block danger', onclick: async () => {
           if (!this.resetArmed) { this.resetArmed = true; this.refresh(true); return; }

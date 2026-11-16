@@ -267,6 +267,13 @@ console.log('昼夜和四季');
   { const a = at(6, 10); sim.advance(a, L + HOUR); check('时间补算过了一季，季节跟着换', sim.season(a) === 'summer'); }
   { const old: any = JSON.parse(JSON.stringify(at(6, 10))); old.v = 4; delete old.seasonStart; old.clock += 100 * DAY; const r = migrate(old);
     check('旧存档升级后从春天开始算，之后照常轮换', r.ok && sim.season(r.state) === 'spring' && r.state.seasonStart === old.clock && (r.state.clock += L, sim.season(r.state) === 'summer')); }
+  { const a = at(6, 10); a.clock += 2 * DAY + HOUR; const i = sim.seasonInfo(a);
+    check('季节提示：第几天、还有几天、下一季', i.season === 'spring' && i.day === 3 && i.daysLeft === CONFIG.season.days - 2 && i.next === 'summer', JSON.stringify(i)); }
+  { const real = (mo: number, d = 10) => { const a = at(mo, 10); a.settings.seasonMode = 'real'; a.clock = new Date(2026, mo, d, 10).getTime(); return a; };
+    check('设置成跟现实月份：3–5 春、6–8 夏、9–11 秋、12–2 冬', sim.season(real(3)) === 'spring' && sim.season(real(6)) === 'summer' && sim.season(real(9)) === 'autumn' && sim.season(real(0)) === 'winter' && sim.season(real(11)) === 'winter');
+    const j = sim.seasonInfo(real(0, 10)), k = sim.seasonInfo(real(4, 31));
+    check('现实月份模式的天数：1 月 10 日是冬天第 41 天，5 月 31 日是春天最后一天', j.day === 41 && j.next === 'spring' && k.day === 92 && k.daysLeft === 1 && k.next === 'summer', JSON.stringify([j, k]));
+    const r = repair(JSON.parse(JSON.stringify(real(6))), T0); check('季节的设置存档再读档还在；旧存档默认是游戏里的循环、不显示', r.settings.seasonMode === 'real' && repair({ ...JSON.parse(JSON.stringify(at(6, 10))), settings: { notify: true } }, T0).settings.seasonMode === 'cycle' && r.settings.showSeason === false); }
   const s = at(6, 10); s.dev.time = 'night'; s.dev.season = 'winter';
   check('开发者开关没开开发者模式时不生效', sim.dayTime(s) === 'day' && sim.season(s) === 'spring');
   s.dev.enabled = true;

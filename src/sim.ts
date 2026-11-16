@@ -18,7 +18,7 @@ export function newPet(name: string, spriteId: string, clock: number, trait: Tra
 
 export function newState(now: number): GameState {
   const s: GameState = {
-    v: 5, createdAt: now, seasonStart: now, settings: { notify: true }, clock: now, lastReal: now, fish: CONFIG.startFish, slots: 1,
+    v: 6, createdAt: now, seasonStart: now, settings: { notify: true, showSeason: false, seasonMode: 'cycle' }, clock: now, lastReal: now, fish: CONFIG.startFish, slots: 1,
     pets: [], trips: [], postcards: [], souvenirs: {}, inv: { ...CONFIG.startItems }, owned: {},
     pond: Array(CONFIG.pond.slots).fill(null), lastCheckin: '', pendingReturns: [], friends: {}, variants: {}, milestones: [], decor: [], visitors: [], visitorQuota: 0, visitorDay: '', lastVisitorAt: 0, errand: null, display: { souvenirs: [], postcards: [] },
     dev: { enabled: false, background: false, time: 'auto', season: 'auto', speed: 1, growth: 1, decay: { food: 1, mood: 1, clean: 1 } },
@@ -47,9 +47,25 @@ export function dayTime(s: GameState): DayTime {
 }
 export function season(s: GameState): Season {
   if (s.dev.enabled && s.dev.season !== 'auto') return s.dev.season;
-  // 游戏里自己的循环：从 seasonStart 那一刻的春天开始，每季 CONFIG.season.days 天，4 季一轮（和现实的月份无关）
-  const n = Math.floor(Math.max(0, s.clock - s.seasonStart) / (Math.max(0.01, CONFIG.season.days) * DAY));
-  return SEASON_IDS[n % SEASON_IDS.length];
+  return seasonInfo(s).season;
+}
+const REAL_SEASON = (m: number): Season => (m >= 2 && m <= 4 ? 'spring' : m >= 5 && m <= 7 ? 'summer' : m >= 8 && m <= 10 ? 'autumn' : 'winter');
+/** 自动的季节（不看开发者面板的强制开关）：现在是哪一季、这一季的第几天、还有几天换季、下一季是什么。
+ *  cycle = 游戏里自己的循环：从 seasonStart 那一刻的春天开始，每季 CONFIG.season.days 天，4 季一轮；
+ *  real = 跟现实的月份走（3–5 月春，6–8 月夏，9–11 月秋，12–2 月冬）。在设置里选。 */
+export function seasonInfo(s: GameState): { season: Season; day: number; daysLeft: number; next: Season } {
+  const nextOf = (se: Season) => SEASON_IDS[(SEASON_IDS.indexOf(se) + 1) % SEASON_IDS.length];
+  if (s.settings.seasonMode === 'real') {
+    const d = new Date(s.clock); const season_ = REAL_SEASON(d.getMonth());
+    // 这一季从哪个月的 1 号开始（冬天从 12 月开始，可能是去年的 12 月）
+    const startMonth = season_ === 'winter' ? 11 : season_ === 'spring' ? 2 : season_ === 'summer' ? 5 : 8;
+    const start = new Date(d.getFullYear() - (season_ === 'winter' && d.getMonth() < 2 ? 1 : 0), startMonth, 1).getTime();
+    const end = new Date(new Date(start).getFullYear(), startMonth + 3, 1).getTime();
+    return { season: season_, day: Math.floor((s.clock - start) / DAY) + 1, daysLeft: Math.max(1, Math.ceil((end - s.clock) / DAY)), next: nextOf(season_) };
+  }
+  const len = Math.max(0.01, CONFIG.season.days) * DAY; const t = Math.max(0, s.clock - s.seasonStart);
+  const season_ = SEASON_IDS[Math.floor(t / len) % SEASON_IDS.length]; const into = t % len;
+  return { season: season_, day: Math.floor(into / DAY) + 1, daysLeft: Math.max(1, Math.ceil((len - into) / DAY)), next: nextOf(season_) };
 }
 export const stageOf = (p: Pet) => Math.min(2, Math.floor(p.age / CONFIG.growth.stageDuration));
 /** 新手保护：家里的第一只宠物，幼年期饱食掉得慢 */

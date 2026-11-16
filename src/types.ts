@@ -101,7 +101,8 @@ export interface GameState {
   createdAt: number;
   /** 季节循环的起点：这一刻是春天的第一天。之后每 CONFIG.season.days 天换一季 */
   seasonStart: number;
-  settings: { notify: boolean };
+  /** notify = 提醒；showSeason = 主界面显示现在是什么季节第几天；seasonMode = 季节跟游戏里的循环走（cycle）还是跟现实的月份走（real） */
+  settings: { notify: boolean; showSeason: boolean; seasonMode: 'cycle' | 'real' };
   /** 游戏里的「现在」。平时等于真实时间，开了倍速会跑得更快。 */
   clock: number;
   /** 上次存档时的真实时间，用来补算离线期间的变化 */

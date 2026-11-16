@@ -167,3 +167,8 @@ textarea.export { width: 100%; font: 12px/1.5 ui-monospace, Menlo, Consolas, mon
 
 .decor-tray { flex: 1 1 100%; display: flex; gap: 6px; overflow-x: auto; padding: 4px 0 2px; -webkit-overflow-scrolling: touch; }
 .decor-tray .chip { flex: 0 0 auto; }
+
+/* 主界面上的季节提示（设置里可以开关，默认关） */
+.hud-season { position: absolute; left: 12px; top: calc(56px + var(--safe-area-inset-top, 0px)); padding: 3px 10px; border-radius: 12px; background: rgba(255,250,240,.86); font-size: 12px; font-weight: 600; color: var(--ink-soft); pointer-events: none; white-space: nowrap; }
+#ui.editing .hud-season { display: none !important; }
+@media (orientation: landscape) and (max-height: 500px) { .hud-season { top: calc(46px + var(--safe-area-inset-top, 0px)); } }

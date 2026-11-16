@@ -9,7 +9,7 @@ import { CONFIG, DESTS, FOODS, SOUVENIRS, TRAIT_IDS, VISITORS, ZONES, DECOR } fr
 import { kv } from './platform/storage';
 import type { GameState, Pet, Postcard, Trip } from './types';
 
-export const SAVE_VERSION = 5;
+export const SAVE_VERSION = 6;
 const MAIN = 'pet-game-save-v1'; // 键名不跟版本走，这样旧存档一直读得到
 const BACKUP = 'pet-game-save-backup';
 const BEFORE_MIGRATION = 'pet-game-save-before-migration';
@@ -40,6 +40,9 @@ const MIGRATIONS: Record<number, (s: Raw) => Raw> = {
   },
   // v4 → v5：季节不再跟现实的月份走，改成游戏里自己的循环。旧存档从升级这一刻的春天开始算
   4: (s) => { s.seasonStart = typeof s.clock === 'number' && isFinite(s.clock) ? s.clock : Date.now(); s.v = 5; return s; },
+  // v5 → v6：设置里多了季节的显示开关和模式；家具皮肤、房间风格、猫爬架的位置；背景里的灯和沙发变成了单独的家具。
+  // 新字段的默认值都在 repair() 里补，这里只改版本号
+  5: (s) => { s.v = 6; return s; },
 };
 
 const num = (v: any, d: number, lo = -Infinity, hi = Infinity) => (typeof v === 'number' && isFinite(v) ? Math.max(lo, Math.min(hi, v)) : d);
@@ -107,7 +110,7 @@ export function repair(raw: Raw, now = Date.now()): GameState {
     display: { souvenirs: arr(display.souvenirs).filter((id) => souvenirs[id]).slice(0, CONFIG.travel.displaySouvenirs), postcards: arr(display.postcards).filter((id) => postcards.some((c) => c.id === id)).slice(0, CONFIG.travel.displayPostcards) },
     pendingReturns: arr(raw.pendingReturns).filter((id) => postcards.some((c) => c.id === id)),
     dev: { enabled: !!dev.enabled, background: !!dev.background, time: ['day', 'dusk', 'night'].includes(dev.time) ? dev.time : 'auto', season: ['spring', 'summer', 'autumn', 'winter'].includes(dev.season) ? dev.season : 'auto', speed: num(dev.speed, 1, 1, 100000), growth: num(dev.growth, 1, 0, 100000), decay: { food: num(decay.food, 1, 0, 1000), mood: num(decay.mood, 1, 0, 1000), clean: num(decay.clean, 1, 0, 1000) } },
-    settings: { notify: settings.notify !== false },
+    settings: { notify: settings.notify !== false, showSeason: settings.showSeason === true, seasonMode: settings.seasonMode === 'real' ? 'real' : 'cycle' },
   };
 }
 
