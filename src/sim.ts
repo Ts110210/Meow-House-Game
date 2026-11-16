@@ -1,6 +1,6 @@
 // 游戏规则。这个文件不碰画面，只改存档数据，方便单独测试。
 import { writeDiary } from './diary';
-import { CONFIG, DAY, DESTS, FOODS, FRY, FUR_COLORS, GEAR, GOODS, HOUR, MIN, SOUVENIRS, TOOLS, TREAT, type DayTime, type Season, type StatKey, decodeLook, TRAIT_IDS, type Trait, VISITORS, type VisitorWho } from './config';
+import { CONFIG, DAY, DESTS, FOODS, FRY, FUR_COLORS, GEAR, GOODS, HOUR, MIN, SOUVENIRS, TOOLS, TREAT, type DayTime, type Season, type StatKey, decodeLook, TRAIT_IDS, type Trait, VISITORS, type VisitorWho, SPECIAL_DECOR } from './config';
 import type { GameEvent, GameState, Pet, Postcard, RepeatKey, Result, Trip, Visitor } from './types';
 
 const T = CONFIG.traits;
@@ -20,7 +20,7 @@ export function newState(now: number): GameState {
   const s: GameState = {
     v: 4, createdAt: now, settings: { notify: true }, clock: now, lastReal: now, fish: CONFIG.startFish, slots: 1,
     pets: [], trips: [], postcards: [], souvenirs: {}, inv: { ...CONFIG.startItems }, owned: {},
-    pond: Array(CONFIG.pond.slots).fill(null), lastCheckin: '', pendingReturns: [], friends: {}, visitors: [], visitorQuota: 0, visitorDay: '', lastVisitorAt: 0, errand: null, display: { souvenirs: [], postcards: [] },
+    pond: Array(CONFIG.pond.slots).fill(null), lastCheckin: '', pendingReturns: [], friends: {}, variants: {}, milestones: [], decor: [], visitors: [], visitorQuota: 0, visitorDay: '', lastVisitorAt: 0, errand: null, display: { souvenirs: [], postcards: [] },
     dev: { enabled: false, background: false, time: 'auto', season: 'auto', speed: 1, growth: 1, decay: { food: 1, mood: 1, clean: 1 } },
   };
   s.pets.push(newPet(CONFIG.startPet.name, `default:${CONFIG.startPet.color}`, now));
@@ -250,6 +250,33 @@ export function rename(s: GameState, petId: string, name: string): Result {
 
 // ---------- 出门 ----------
 
+// ---------- 图鉴 ----------
+
+export const variantKey = (season_: Season, time: DayTime) => `${season_}-${time}`;
+function recordVariant(s: GameState, card: Postcard) {
+  if (!card.season || !card.time) return;
+  const list = (s.variants[card.destId] ??= []); const k = variantKey(card.season, card.time);
+  if (!list.includes(k)) list.push(k);
+}
+export const variantsOf = (s: GameState, destId: string) => s.variants[destId] ?? [];
+export const variantTotal = (s: GameState) => DESTS.reduce((n, d) => n + variantsOf(s, d.id).length, 0);
+export const VARIANTS_PER_DEST = 12;
+export const souvenirTotal = (s: GameState) => Object.keys(s.souvenirs).filter((id) => SOUVENIRS[id]).length;
+/** 里程碑现在的进度：have = 已经收集到多少；ready = 可以领了；claimed = 领过了 */
+export function milestoneStatus(s: GameState) {
+  return CONFIG.milestones.map((m) => { const have = m.kind === 'variants' ? variantTotal(s) : souvenirTotal(s); return { ...m, have, claimed: s.milestones.includes(m.id), ready: have >= m.need && !s.milestones.includes(m.id) }; });
+}
+export function claimMilestone(s: GameState, id: string): Result {
+  const m = milestoneStatus(s).find((x) => x.id === id);
+  if (!m) return { ok: false, msg: '没有这个里程碑' };
+  if (m.claimed) return { ok: false, msg: '已经领过了' };
+  if (!m.ready) return { ok: false, msg: `还差 ${m.need - m.have}` };
+  s.milestones.push(id); s.fish += m.fish;
+  let msg = `小鱼干 +${m.fish}`;
+  if (m.decor && SPECIAL_DECOR[m.decor]) { s.decor.push({ id: newId('decor'), kind: m.decor, zone: null, x: 0, y: 0 }); msg += `，还有特殊装饰「${SPECIAL_DECOR[m.decor].name}」`; }
+  return { ok: true, msg };
+}
+
 // ---------- 访客 ----------
 
 const weighted = <K extends string>(w: Record<K, number>): K => { let r = Math.random() * (Object.values(w) as number[]).reduce((a, b) => a + b, 0); for (const k of Object.keys(w) as K[]) { r -= w[k]; if (r <= 0) return k; } return Object.keys(w)[0] as K; };
@@ -367,7 +394,7 @@ function sendLetter(s: GameState, trip: Trip, events: GameEvent[]) {
   const season_ = season(s), time = dayTime(s);
   const card: Postcard = { id: newId('card'), kind: 'letter', destId: trip.destId, petIds: trip.petIds, at: s.clock, souvenir: null, tool: trip.tool, seed: Math.floor(Math.random() * 1e9),
     season: season_, time, diary: writeDiary({ destId: trip.destId, season: season_, time, tool: trip.tool, names: petNames(s, trip.petIds), letter: true }), income: 0, sold: [], unsold: [] };
-  s.postcards.push(card); s.pendingReturns.push(card.id);
+  s.postcards.push(card); s.pendingReturns.push(card.id); recordVariant(s, card);
   events.push({ type: 'letter', postcardId: card.id });
 }
 
@@ -414,7 +441,7 @@ function resolveTrip(s: GameState, trip: Trip, events: GameEvent[]) {
     season: season_, time, diary: writeDiary({ destId: dest.id, season: season_, time, tool: trip.tool, names: petNames(s, trip.petIds), letter: false,
       avoid: [...s.postcards].reverse().find((c) => c.kind === 'letter' && c.destId === dest.id && c.petIds.join() === trip.petIds.join())?.diary }), income, sold, unsold };
   // 相册满了也先收下：多出来的由主人自己决定删哪张（见 albumOver / discardOverflow），不会自动删
-  s.postcards.push(card);
+  s.postcards.push(card); recordVariant(s, card);
   s.pendingReturns.push(card.id);
   events.push({ type: 'return', postcardId: card.id });
 }

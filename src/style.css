@@ -160,3 +160,7 @@ textarea.export { width: 100%; font: 12px/1.5 ui-monospace, Menlo, Consolas, mon
 
 .txt .fbar { height: 6px; border-radius: 3px; background: rgba(91,70,52,.12); margin-top: 6px; overflow: hidden; }
 .txt .fbar i { display: block; height: 100%; background: var(--coral); border-radius: 3px; }
+
+.vgrid { display: grid; grid-template-columns: 28px repeat(3, 1fr); gap: 6px; align-items: center; text-align: center; font-size: 12px; }
+.vgrid i { display: block; height: 30px; line-height: 30px; border-radius: 8px; background: rgba(91,70,52,.08); font-style: normal; color: #5b4634; font-weight: 700; }
+.card.center { text-align: center; padding: 12px; }

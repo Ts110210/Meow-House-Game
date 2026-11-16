@@ -5,7 +5,7 @@
 //   2. 在 MIGRATIONS 里加一条「从上一个版本升到这个版本」的函数
 //   3. 在 repair() 里给新字段补默认值
 // 旧存档会在打开时自动一步一步升上来，升级前的原样会另存一份。
-import { CONFIG, DESTS, FOODS, SOUVENIRS, TRAIT_IDS, VISITORS } from './config';
+import { CONFIG, DESTS, FOODS, SOUVENIRS, TRAIT_IDS, VISITORS, ZONES } from './config';
 import { kv } from './platform/storage';
 import type { GameState, Pet, Postcard, Trip } from './types';
 
@@ -91,6 +91,13 @@ export function repair(raw: Raw, now = Date.now()): GameState {
     pets, trips, postcards, souvenirs, inv: counts(raw.inv), owned, pond,
     lastCheckin: str(raw.lastCheckin, ''),
     friends: Object.fromEntries(Object.entries(obj(raw.friends)).filter(([k, v]) => typeof v === 'number' && k.split('|').length === 2 && k.split('|').every((id) => pets.some((p) => p.id === id))).map(([k, v]) => [k, Math.max(0, Math.min(CONFIG.friendship.best, v as number))])),
+    // 图鉴：存档里有就用；再把相册里现有的明信片补记一遍（升级上来的旧存档）
+    variants: (() => { const out: Record<string, string[]> = {}; const ok = (k: unknown) => typeof k === 'string' && /^(spring|summer|autumn|winter)-(day|dusk|night)$/.test(k);
+      for (const d of DESTS) { const list = arr(obj(raw.variants)[d.id]).filter(ok); if (list.length) out[d.id] = [...new Set(list)] as string[]; }
+      for (const c of postcards) if (c.season && c.time) { const k = `${c.season}-${c.time}`; const list = (out[c.destId] ??= []); if (!list.includes(k)) list.push(k); }
+      return out; })(),
+    milestones: arr(raw.milestones).filter((id) => CONFIG.milestones.some((m) => m.id === id)),
+    decor: arr(raw.decor).filter((d) => d && typeof d.id === 'string' && typeof d.kind === 'string').map((d) => ({ id: d.id, kind: d.kind, zone: typeof d.zone === 'string' && ZONES.some((z) => z.id === d.zone) ? d.zone : null, x: num(d.x, 0), y: num(d.y, 0) })),
     visitors: arr(raw.visitors).filter((v) => v && typeof v.id === 'string' && v.who in VISITORS && ['gift', 'trade', 'errand'].includes(v.kind) && (v.kind !== 'errand' || DESTS.some((d) => d.id === v.destId)))
       .map((v) => ({ id: v.id, who: v.who, kind: v.kind, arrivedAt: num(v.arrivedAt, clock), leaveAt: num(v.leaveAt, clock), ...(typeof v.fish === 'number' ? { fish: v.fish } : {}), ...(typeof v.item === 'string' ? { item: v.item } : {}), ...(typeof v.wants === 'string' ? { wants: v.wants } : {}), ...(typeof v.gives === 'string' ? { gives: v.gives } : {}), ...(typeof v.destId === 'string' ? { destId: v.destId } : {}) })),
     visitorQuota: num(raw.visitorQuota, 0, 0, 2), visitorDay: str(raw.visitorDay, ''), lastVisitorAt: num(raw.lastVisitorAt, 0),

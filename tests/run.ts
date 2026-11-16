@@ -188,6 +188,27 @@ console.log('访客');
     const r = repair(JSON.parse(JSON.stringify(s)), T0); check('访客和手上的信存档再读档还在', r.visitors.length === 1 && r.visitors[0].kind === 'trade' && r.errand?.destId === s.errand!.destId); }
 }
 
+console.log('图鉴和里程碑');
+{
+  const s = blank(new Date(2026, 3, 10, 10).getTime()); const p = s.pets[0]; s.dev.enabled = true;
+  const go = (season: any, time: any) => { s.dev.season = season; s.dev.time = time; p.food = p.mood = p.clean = 90; s.inv.kibble = 1; sim.dispatch(s, { petIds: [p.id], bento: 'kibble', tool: null, goods: [] }); const d = s.trips[0].destId; sim.advance(s, s.trips[0].returnAt - s.clock + MIN); return d; };
+  const d1 = go('spring', 'day');
+  check('出一趟门，记下这个地方的一种变体（路上和回家是同一种，只算一次）', sim.variantsOf(s, d1).length === 1 && sim.variantsOf(s, d1)[0] === 'spring-day' && sim.variantTotal(s) === 1);
+  for (const se of ['spring', 'summer', 'autumn', 'winter']) for (const t of ['day', 'dusk', 'night']) for (let i = 0; i < 6; i++) go(se, t);
+  const tier1 = DESTS.filter((d) => d.tier === 1);
+  check('每个地方最多 12 种，不会重复记', tier1.every((d) => sim.variantsOf(s, d.id).length <= 12 && new Set(sim.variantsOf(s, d.id)).size === sim.variantsOf(s, d.id).length) && sim.variantTotal(s) > 20, String(sim.variantTotal(s)));
+  const before = sim.variantTotal(s); for (const c of [...s.postcards]) sim.deletePostcard(s, c.id);
+  check('删掉明信片，图鉴记录还在', s.postcards.length === 0 && sim.variantTotal(s) === before);
+  const m10 = sim.milestoneStatus(s).find((m) => m.id === 'v10')!; const f = s.fish;
+  check('达到里程碑可以领一次奖励', m10.ready && sim.claimMilestone(s, 'v10').ok && s.fish === f + m10.fish && !sim.claimMilestone(s, 'v10').ok);
+  check('没达到的领不了', !sim.claimMilestone(s, 'v120').ok && !sim.claimMilestone(s, 's20').ok);
+  for (const id of Object.keys(SOUVENIRS)) s.souvenirs[id] = 1;
+  check('纪念品集齐 20 件：奖励里有特殊装饰，先收着', sim.souvenirTotal(s) === 20 && sim.claimMilestone(s, 's20').ok && s.decor.some((d) => d.kind === 'trophy' && d.zone === null));
+  const r = repair(JSON.parse(JSON.stringify(s)), T0); check('图鉴、里程碑、装饰存档再读档还在', sim.variantTotal(r) === before && r.milestones.includes('v10') && r.decor.length === 1);
+  const old = JSON.parse(JSON.stringify(blank())); delete old.variants; old.postcards = [{ id: 'c1', destId: 'bali', petIds: [], at: T0, souvenir: null, season: 'winter', time: 'night', income: 0, sold: [], unsold: [] }];
+  check('旧存档：相册里已有的明信片会补记进图鉴', repair(old, T0).variants.bali?.[0] === 'winter-night');
+}
+
 console.log('新手保护');
 {
   const s = blank(); const p = s.pets[0]; p.food = 80; s.slots = 2; sim.adopt(s, '二号', 'default:grey'); const q = s.pets[1]; q.food = 80;

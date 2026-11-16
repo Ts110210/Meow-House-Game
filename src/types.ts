@@ -39,6 +39,9 @@ export interface Visitor {
   fish?: number; item?: string; wants?: string; gives?: string; destId?: string;
 }
 
+/** 一件装饰。x、y 是区域里的位置（和家具一样的坐标） */
+export interface Decor { id: string; kind: string; zone: string | null; x: number; y: number }
+
 export interface Trip {
   id: string;
   petIds: string[];
@@ -112,6 +115,12 @@ export interface GameState {
   pond: (number | null)[];
   lastCheckin: string;
   /** 主人自己挑的展示内容：收藏柜上摆哪几件、相册墙上挂哪几张。空 = 自动用最新的 */
+  /** 图鉴：每个地点收集过哪些变体（「季节-时段」）。明信片删了，这里的记录也还在 */
+  variants: Record<string, string[]>;
+  /** 已经领过的里程碑 */
+  milestones: string[];
+  /** 家里的装饰。zone = null 表示收起来了 */
+  decor: Decor[];
   /** 现在在门口的访客 */
   visitors: Visitor[];
   /** 访客今天还会来几个（每天第一次打开时定下来）、是哪一天定的、上一个是什么时候来的 */

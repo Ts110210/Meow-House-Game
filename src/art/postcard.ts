@@ -1,6 +1,6 @@
 // 明信片 = 地点背景 + 程序把宠物的一帧贴上去（结伴时贴两只）。
 // 现在的背景是代码画的占位图；正式素材到位后，把 drawBackground 换成读图片即可。
-import { DESTS, type DestDef } from '../config';
+import { DESTS, type DestDef, CONFIG, type DayTime, type Season } from '../config';
 import { drawFrame, type SpriteSet } from '../sprites';
 import { pencilOver } from './sketch';
 
@@ -137,7 +137,23 @@ function drawProp(ctx: CanvasRenderingContext2D, tool: string, layer: 'back' | '
   ctx.restore();
 }
 
-export interface CardInfo { id: string; destId: string; seed?: number; tool?: string | null }
+export interface CardInfo { id: string; destId: string; seed?: number; tool?: string | null; season?: Season; time?: DayTime }
+
+/** 按季节和时段给整张明信片调色：春偏粉、夏明亮、秋暖橙、冬冷蓝；傍晚偏暖偏暗，夜晚压暗加星星。数值在 CONFIG.cardTint。 */
+function tintCard(ctx: CanvasRenderingContext2D, card: CardInfo) {
+  const T = CONFIG.cardTint; const se = card.season ? T.season[card.season] : null; const ti = card.time ? T.time[card.time] : null;
+  ctx.save();
+  if (se) { ctx.globalCompositeOperation = 'soft-light'; ctx.globalAlpha = se.alpha; ctx.fillStyle = se.color; ctx.fillRect(0, 0, CARD_W, CARD_H); ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = se.alpha * 0.22; ctx.fillRect(0, 0, CARD_W, CARD_H); }
+  if (ti) {
+    if (ti.warm) { ctx.globalCompositeOperation = 'soft-light'; ctx.globalAlpha = ti.warm; ctx.fillStyle = T.warmColor; ctx.fillRect(0, 0, CARD_W, CARD_H); }
+    if (ti.dark) { ctx.globalCompositeOperation = 'multiply'; ctx.globalAlpha = ti.dark; ctx.fillStyle = ti.darkColor; ctx.fillRect(0, 0, CARD_W, CARD_H); }
+    if (ti.stars) {
+      ctx.globalCompositeOperation = 'source-over'; const r = rng((card.seed ?? hash(card.id)) ^ 0x5bd1e995);
+      for (let i = 0; i < ti.stars; i++) { ctx.globalAlpha = 0.5 + r() * 0.5; ctx.fillStyle = '#fff8dc'; ctx.beginPath(); ctx.arc(r() * CARD_W, r() * CARD_H * 0.42, 0.8 + r() * 1.6, 0, Math.PI * 2); ctx.fill(); }
+    }
+  }
+  ctx.restore();
+}
 
 /** 这张明信片里宠物怎么摆：站在哪个落脚点、什么姿势、脸朝哪。由明信片自己的随机数决定，所以每次画出来都一样。 */
 export function layoutCard(card: CardInfo, count: number) {
@@ -185,6 +201,7 @@ export function renderPostcard(card: CardInfo, sets: (SpriteSet | undefined)[], 
     drawFrame(ctx, set, pose, frame, x, y, size, flip);
     if (tool) drawProp(ctx, tool, 'front', x, y, size, flip, upright);
   });
+  tintCard(ctx, card);
   if (showSpots) for (const s of CARD_SPOTS[dest.type] ?? []) {
     const sz = CARD_H * s.size; ctx.strokeStyle = s.water ? '#2F7FD0' : '#D03A3A'; ctx.lineWidth = 2; ctx.setLineDash([6, 4]);
     ctx.strokeRect(s.x - sz / 2, s.y - sz * 0.9, sz, sz); ctx.setLineDash([]);

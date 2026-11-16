@@ -1,5 +1,5 @@
 // 界面：顶部和底部的按钮，以及所有从下方弹出的面板。
-import { ZONES, CONFIG, DAY, DESTS, TREAT, TIME_NAMES, SEASON_NAMES, FOODS, FRY, FUR_COLORS, VISITORS, TRAITS, TRAIT_IDS, type Trait, PATTERN_NAMES, DEFAULT_LOOK, encodeLook, decodeLook, type Look, type CoatPattern, GEAR, GOODS, HOUR, MIN, SOUVENIRS, SPRITE, TOOLS, type ActionName } from './config';
+import { ZONES, CONFIG, DAY, DESTS, TREAT, TIME_NAMES, SEASON_NAMES, FOODS, FRY, FUR_COLORS, VISITORS, SEASON_IDS, TIME_IDS, SPECIAL_DECOR, TRAITS, TRAIT_IDS, type Trait, PATTERN_NAMES, DEFAULT_LOOK, encodeLook, decodeLook, type Look, type CoatPattern, GEAR, GOODS, HOUR, MIN, SOUVENIRS, SPRITE, TOOLS, type ActionName } from './config';
 import { renderPostcard } from './art/postcard';
 import { drawDefaultSheet } from './art/defaultPet';
 import type { Game } from './game';
@@ -510,6 +510,7 @@ export class UI {
   private cardDetail(card: Postcard, brief = false): Kid[] {
     const dest = DESTS.find((d) => d.id === card.destId)!; const names = card.petIds.map((id) => this.game.pet(id)?.name ?? '？').join(' 和 ');
     const out: Kid[] = [h('div', { class: 'postcard' }, this.cardCopy(card), h('span', null, `${dest.name} · ${names} · ${fmtDate(card.at)}` + (card.kind === 'letter' ? ' · 路上寄来' : '')))];
+    if (card.season && card.time) out.push(h('p', { class: 'soft center', style: 'margin:6px 0 0' }, `${SEASON_NAMES[card.season]} · ${TIME_NAMES[card.time]}`));
     if (card.diary) out.push(h('p', { class: 'diary' }, card.diary, h('span', null, `—— ${names}`)));
     const pinned = sim.shownPostcards(this.game.state).some((c) => c.id === card.id);
     out.push(h('p', null, h('button', { class: 'btn block' + (pinned ? ' on' : ''), onclick: () => { const r = this.game.act((st) => sim.toggleDisplayPostcard(st, card.id)); if (!r.ok) this.say(r); sfx(r.ok ? 'click' : 'error'); } }, pinned ? '挂在相册墙上（点一下取下）' : `挂到相册墙上（最多 ${CONFIG.travel.displayPostcards} 张）`)));
@@ -603,6 +604,32 @@ export class UI {
     return out;
   }
 
+  // ---------- 图鉴 ----------
+
+  openCodex() {
+    this.open({ title: '图鉴', render: () => {
+      const s = this.game.state; const ms = sim.milestoneStatus(s);
+      const out: Kid[] = [h('div', { class: 'grid2' },
+        h('div', { class: 'card center' }, h('b', { style: 'font-size:22px' }, `${sim.variantTotal(s)} / ${DESTS.length * sim.VARIANTS_PER_DEST}`), h('div', { class: 'soft' }, '明信片变体')),
+        h('div', { class: 'card center' }, h('b', { style: 'font-size:22px' }, `${sim.souvenirTotal(s)} / ${Object.keys(SOUVENIRS).length}`), h('div', { class: 'soft' }, '纪念品')))];
+      out.push(h('p', { class: 'soft' }, '同一个地方，四季和白天、傍晚、夜晚拍出来的明信片颜色都不一样，一共 12 种。删掉明信片不会丢图鉴记录。'));
+      out.push(h('h3', null, '里程碑'));
+      out.push(h('div', { class: 'card' }, ms.map((m) => h('div', { class: 'item' + (m.claimed ? ' dim' : '') }, h('span', { class: 'ico' }, m.decor ? SPECIAL_DECOR[m.decor].icon : '🐟'),
+        h('div', { class: 'txt' }, h('b', null, `${m.kind === 'variants' ? '明信片变体' : '纪念品'} ${Math.min(m.have, m.need)} / ${m.need}`), h('span', { class: 'soft' }, `小鱼干 +${m.fish}` + (m.decor ? `，特殊装饰「${SPECIAL_DECOR[m.decor].name}」` : '')),
+          h('div', { class: 'fbar' }, h('i', { style: `width:${Math.min(1, m.have / m.need) * 100}%` }))),
+        h('button', { class: 'btn small' + (m.ready ? ' primary' : ''), disabled: !m.ready, onclick: () => { const r = this.game.act((st) => sim.claimMilestone(st, m.id)); this.say(r); sfx(r.ok ? 'checkin' : 'error'); } }, m.claimed ? '已领' : m.ready ? '领取' : '未达成')))));
+      for (const d of DESTS) {
+        const got = sim.variantsOf(s, d.id);
+        out.push(h('h3', null, `${d.name} · ${got.length} / ${sim.VARIANTS_PER_DEST}`));
+        out.push(h('div', { class: 'card' },
+          h('div', { class: 'vgrid' }, h('span'), TIME_IDS.map((t) => h('span', { class: 'soft' }, TIME_NAMES[t])),
+            SEASON_IDS.flatMap((se) => [h('span', { class: 'soft' }, SEASON_NAMES[se]), ...TIME_IDS.map((t) => { const on = got.includes(sim.variantKey(se, t)); return h('i', { class: on ? 'on' : '', style: on ? `background:${CONFIG.cardTint.season[se].color};filter:brightness(${t === 'night' ? 0.55 : t === 'dusk' ? 0.85 : 1})` : '' }, on ? '✓' : ''); })])),
+          h('div', { class: 'row', style: 'margin-top:10px' }, d.souvenirs.map((id) => { const have = !!s.souvenirs[id]; return h('span', { class: 'tagchip' + (SOUVENIRS[id].rare ? ' rare' : ''), style: have ? '' : 'opacity:.45' }, have ? `${SOUVENIRS[id].icon} ${SOUVENIRS[id].name}` : '？ 还没带回来'); }))));
+      }
+      return out;
+    } });
+  }
+
   openCabinet() {
     this.open({ title: '收藏柜', render: () => {
       const s = this.game.state; const shown = sim.shownSouvenirs(s); const max = CONFIG.travel.displaySouvenirs;
@@ -663,7 +690,7 @@ export class UI {
       const s = this.game.state;
       return [h('div', { class: 'grid2' },
         h('button', { class: 'btn', onclick: () => this.openFamily() }, '家庭成员'), h('button', { class: 'btn', onclick: () => this.openAlbum() }, '纪念相册'),
-        h('button', { class: 'btn', onclick: () => this.openCabinet() }, '收藏柜'), h('button', { class: 'btn', onclick: () => this.openBack() }, '背屏预览'),
+        h('button', { class: 'btn', onclick: () => this.openCabinet() }, '收藏柜'), h('button', { class: 'btn' + (sim.milestoneStatus(s).some((m) => m.ready) ? ' primary' : ''), onclick: () => this.openCodex() }, '图鉴'), h('button', { class: 'btn', onclick: () => this.openBack() }, '背屏预览'),
         h('button', { class: 'btn', onclick: () => this.openDoor() }, '派宠物出门'), h('button', { class: 'btn', onclick: () => this.openPond() }, '鱼塘')),
         h('h3', null, '声音'),
         h('label', { class: 'volume' }, '音乐', h('input', { type: 'range', min: '0', max: '100', step: '5', value: String(Math.round(audioSettings.music * 100)), oninput: (e: Event) => setVolume('music', Number((e.target as HTMLInputElement).value) / 100) })),

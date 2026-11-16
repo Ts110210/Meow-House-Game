@@ -92,6 +92,36 @@ export const CONFIG = {
     bestSouvenirBonus: 0.1,
   },
 
+  // ---------- 明信片的色调（季节 × 时段 = 12 种变体，用代码调色，不用新图） ----------
+  cardTint: {
+    /** 季节：盖一层这个颜色（柔光），alpha 越大越明显 */
+    season: {
+      spring: { color: '#ff9fb8', alpha: 0.34 },
+      summer: { color: '#fff1a8', alpha: 0.30 },
+      autumn: { color: '#ff8a2a', alpha: 0.36 },
+      winter: { color: '#7fb0ff', alpha: 0.36 },
+    },
+    /** 时段：warm = 暖色柔光；dark = 压暗（正片叠底）；stars = 画多少颗星星 */
+    time: {
+      day: { warm: 0, dark: 0, darkColor: '#000000', stars: 0 },
+      dusk: { warm: 0.42, dark: 0.16, darkColor: '#7a3b2a', stars: 0 },
+      night: { warm: 0, dark: 0.58, darkColor: '#1b2a5c', stars: 26 },
+    },
+    warmColor: '#ff7a3c',
+  },
+
+  // ---------- 图鉴里程碑 ----------
+  /** need：要收集到多少；fish：奖励的小鱼干；decor：奖励的特殊装饰（不在商店卖） */
+  milestones: [
+    { id: 'v10', kind: 'variants', need: 10, fish: 50 },
+    { id: 'v30', kind: 'variants', need: 30, fish: 120, decor: 'globe' },
+    { id: 'v60', kind: 'variants', need: 60, fish: 250 },
+    { id: 'v120', kind: 'variants', need: 120, fish: 600, decor: 'goldframe' },
+    { id: 's5', kind: 'souvenirs', need: 5, fish: 80 },
+    { id: 's10', kind: 'souvenirs', need: 10, fish: 200 },
+    { id: 's20', kind: 'souvenirs', need: 20, fish: 500, decor: 'trophy' },
+  ] as { id: string; kind: 'variants' | 'souvenirs'; need: number; fish: number; decor?: string }[],
+
   // ---------- 访客 ----------
   visitors: {
     /** 每天来 0、1、2 个访客的可能性（加起来是 1） */
@@ -428,4 +458,13 @@ export const VISITORS: Record<VisitorWho, { name: string; look: string; hello: s
   tabby: { name: '狸花猫', look: 'look:stripes|#A89A82|#EDE6D8|#4A4550|#8DAA4E|0', hello: '路过，顺便来看看你们。' },
   neighbor: { name: '邻居家的猫', look: 'look:point|#F3E6D0|#8A6A58|#4A4550|#5E9BD6|1', hello: '我就住隔壁，过来串个门。' },
   courier: { name: '快递猫', look: 'look:cow|#FBF8F2|#3F6FA8|#4A4550|#3B2A22|0', hello: '有你家的东西，签收一下。' },
+};
+
+export const SEASON_IDS: Season[] = ['spring', 'summer', 'autumn', 'winter'];
+export const TIME_IDS: DayTime[] = ['day', 'dusk', 'night'];
+/** 里程碑奖励的特殊装饰（商店里买不到）。摆放见「房间装饰」 */
+export const SPECIAL_DECOR: Record<string, { name: string; icon: string }> = {
+  globe: { name: '小地球仪', icon: '🌏' },
+  goldframe: { name: '金边相框', icon: '🖼️' },
+  trophy: { name: '收藏家奖杯', icon: '🏆' },
 };
