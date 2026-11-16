@@ -5,7 +5,7 @@
 //   2. 在 MIGRATIONS 里加一条「从上一个版本升到这个版本」的函数
 //   3. 在 repair() 里给新字段补默认值
 // 旧存档会在打开时自动一步一步升上来，升级前的原样会另存一份。
-import { NEIGHBORS, FIND_KINDS, SEASON_FINDS, CONFIG, DESTS, FOODS, SOUVENIRS, TRAIT_IDS, VISITORS, ZONES, DECOR, SKINS, DEFAULT_SKIN, ROOM_THEMES, DEFAULT_ROOM, skinSize } from './config';
+import { MOMENTS, SEASON_IDS, NEIGHBORS, FIND_KINDS, SEASON_FINDS, CONFIG, DESTS, FOODS, SOUVENIRS, TRAIT_IDS, VISITORS, ZONES, DECOR, SKINS, DEFAULT_SKIN, ROOM_THEMES, DEFAULT_ROOM, skinSize } from './config';
 import { kv } from './platform/storage';
 import type { GameState, Pet, Postcard, Trip } from './types';
 
@@ -122,6 +122,9 @@ export function repair(raw: Raw, now = Date.now()): GameState {
     favor: Object.fromEntries(Object.entries(obj(raw.favor)).filter(([k]) => VISITORS[k as keyof typeof VISITORS]).map(([k, v]) => [k, num(v, 0, 0, 9999)])),
     favorClaimed: arr(raw.favorClaimed).filter((x) => typeof x === 'string'),
     finds: arr(raw.finds).filter((f) => f && typeof f.id === 'string' && (FIND_KINDS[f.kind] || SEASON_FINDS[f.kind])).slice(0, 12).map((f) => ({ id: f.id, kind: f.kind, from: typeof f.from === 'string' && NEIGHBORS[f.from] ? f.from : undefined, at: num(f.at, clock), x: num(f.x, 0.5, 0, 1), text: typeof f.text === 'string' ? f.text.slice(0, 80) : undefined })),
+    seasonal: (() => { const q = obj(raw.seasonal); return { key: str(q.key, ''), got: Object.fromEntries(Object.entries(obj(q.got)).filter(([k, v]) => SEASON_FINDS[k] && typeof v === 'number').map(([k, v]) => [k, Math.max(0, Math.floor(v as number))])), done: !!q.done, last: num(q.last, 0), day: str(q.day, ''), quota: num(q.quota, 0, 0, 20) }; })(),
+    seasonalClaimed: [...new Set(arr(raw.seasonalClaimed).filter((x) => (SEASON_IDS as string[]).includes(x)))],
+    moments: arr(raw.moments).filter((m) => m && typeof m.id === 'string' && MOMENTS[m.kind]).slice(0, CONFIG.moments.max).map((m) => ({ id: m.id, kind: m.kind, at: num(m.at, clock), petIds: arr(m.petIds).filter((x) => typeof x === 'string').slice(0, 5), names: arr(m.names).filter((x) => typeof x === 'string').slice(0, 5), sprites: arr(m.sprites).filter((x) => typeof x === 'string').slice(0, 5), season: (SEASON_IDS as string[]).includes(m.season) ? m.season : 'spring', time: ['day', 'dusk', 'night'].includes(m.time) ? m.time : 'day', extra: typeof m.extra === 'string' ? m.extra.slice(0, 40) : undefined })),
     keepsakes: Object.fromEntries(Object.entries(obj(raw.keepsakes)).filter(([k, v]) => typeof v === 'number' && v > 0 && k.length < 60).map(([k, v]) => [k, Math.floor(v as number)])),
     cattree: [0, 1, 2].map((i) => { const id = arr(raw.cattree)[i]; return typeof id === 'string' && pets.some((p) => p.id === id && !p.dead) ? id : null; }),
     pendingReturns: arr(raw.pendingReturns).filter((id) => postcards.some((c) => c.id === id)),

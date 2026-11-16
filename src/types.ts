@@ -37,6 +37,9 @@ export interface Pet {
 }
 
 /** 访客想做的事：gift 送礼（fish 或 item）；trade 想用 wants 这种食物换 gives（纪念品编号，或 fish 小鱼干）；errand 托送信到 destId */
+/** 一张抓拍：kind = 哪一种瞬间（config 的 MOMENTS）；petIds、names = 拍到了谁（名字存下来，宠物改名或不在了也认得）；season、time = 当时的季节和时段 */
+export interface Moment { id: string; kind: string; at: number; petIds: string[]; names: string[]; sprites: string[]; season: string; time: string; extra?: string }
+
 /** 院子里的一样小东西。x = 在院子里的左右位置（0–1） */
 export interface Find { id: string; kind: string; from?: string; at: number; x: number; text?: string }
 
@@ -154,6 +157,12 @@ export interface GameState {
   favor: Record<string, number>; favorClaimed: string[];
   /** 院子里等着捡的小东西（邻居留下的、季节活动的） */
   finds: Find[];
+  /** 季节活动：key = 这是哪一轮的哪一季（换季就清零）；got = 这一季每种小东西捡了几个；done = 这一季已经完成；last、day、quota = 冒出小东西的节奏 */
+  seasonal: { key: string; got: Record<string, number>; done: boolean; last: number; day: string; quota: number };
+  /** 领过哪几个季节的限定装饰（每种只送一次，之后再完成只给小鱼干） */
+  seasonalClaimed: string[];
+  /** 瞬间相册：游戏自己抓拍的时刻 */
+  moments: Moment[];
   /** 捡到的纪念：种类:来自谁 → 几个 */
   keepsakes: Record<string, number>;
   /** 猫爬架的三层（顶层、中层、底层）各指定给哪只宠物；null = 谁都可以上去 */

@@ -178,3 +178,6 @@ textarea.export { width: 100%; font: 12px/1.5 ui-monospace, Menlo, Consolas, mon
 .decor-tray .tray-label { flex: none; font-size: 12px; font-weight: 600; }
 .decor-tray .chip.armed { background: var(--coral); color: #fff; }
 .decor-tray .chip:disabled { opacity: .45; }
+
+/* 瞬间相册：竖着的照片 */
+.postgrid.moments canvas { aspect-ratio: 3 / 4; }

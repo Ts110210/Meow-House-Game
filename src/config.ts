@@ -115,14 +115,14 @@ export const CONFIG = {
   // ---------- 图鉴里程碑 ----------
   /** need：要收集到多少；fish：奖励的小鱼干；decor：奖励的特殊装饰（不在商店卖） */
   milestones: [
-    { id: 'v10', kind: 'variants', need: 10, fish: 50 },
+    { id: 'v10', kind: 'variants', need: 10, fish: 50, skin: ['album', 'mint'] },
     { id: 'v30', kind: 'variants', need: 30, fish: 120, decor: 'globe' },
-    { id: 'v60', kind: 'variants', need: 60, fish: 250 },
+    { id: 'v60', kind: 'variants', need: 60, fish: 250, skin: ['sofa', 'navy'] },
     { id: 'v120', kind: 'variants', need: 120, fish: 600, decor: 'goldframe' },
-    { id: 's5', kind: 'souvenirs', need: 5, fish: 80 },
-    { id: 's10', kind: 'souvenirs', need: 10, fish: 200 },
+    { id: 's5', kind: 'souvenirs', need: 5, fish: 80, skin: ['cabinet', 'cream'] },
+    { id: 's10', kind: 'souvenirs', need: 10, fish: 200, skin: ['cattree', 'berry'] },
     { id: 's20', kind: 'souvenirs', need: 20, fish: 500, decor: 'trophy' },
-  ] as { id: string; kind: 'variants' | 'souvenirs'; need: number; fish: number; decor?: string }[],
+  ] as { id: string; kind: 'variants' | 'souvenirs'; need: number; fish: number; decor?: string; /** 送一款家具皮肤 [家具, 皮肤]，不用再买 */ skin?: [string, string] }[],
 
   // ---------- 房间装饰 ----------
   decor: {
@@ -159,6 +159,18 @@ export const CONFIG = {
       neighbor: [{ need: 3, fish: 40, skin: ['bed', 'cream'] }, { need: 7, fish: 80, decor: 'lantern' }],
       courier: [{ need: 3, fish: 40, skin: ['door', 'navy'] }, { need: 7, fish: 80, decor: 'parcel' }],
     } as Record<string, { need: number; fish: number; skin?: [string, string]; decor?: string }[]>,
+  },
+
+  // ---------- 季节活动 ----------
+  seasonEvent: {
+    /** 每天最多冒出几样小东西；两样之间至少隔多久（离开游戏的时候也会攒着，但院子里最多同时放 neighbors.maxFinds 样） */
+    perDay: 4, gap: 40 * MIN,
+  },
+
+  // ---------- 瞬间相册 ----------
+  moments: {
+    /** 同一种瞬间隔多久才会再抓拍一次；相册里最多留几张（满了去掉最旧的） */
+    cooldown: 3 * DAY, max: 60,
   },
 
   // ---------- 邻居猫 ----------
@@ -582,6 +594,22 @@ export const SEASON_EVENTS: Record<Season, SeasonEventDef> = {
 };
 export const SEASON_FINDS: Record<string, { name: string; icon: string; color: string; season: Season }> = Object.fromEntries(
   (Object.entries(SEASON_EVENTS) as [Season, SeasonEventDef][]).flatMap(([se, ev]) => ev.items.map((it) => [it.id, { name: it.name, icon: it.icon, color: it.color, season: se }])));
+
+/** 瞬间相册：游戏自己抓拍的有趣时刻。title = 相册里显示的标题（{pets} 换成宠物的名字）；zone = 画这张照片用哪个区域当背景 */
+export const MOMENTS: Record<string, { title: string; zone: ZoneId; icon: string }> = {
+  bedFull: { title: '{pets}挤在一张床上睡着了', zone: 'bedroom', icon: '🛏️' },
+  treeFull: { title: '猫爬架住满了：{pets}', zone: 'living', icon: '🗼' },
+  fishing: { title: '{pets}在鱼塘边伸爪子捞鱼', zone: 'garden', icon: '🎣' },
+  stargaze: { title: '{pets}爬上屋顶看星星', zone: 'roof', icon: '✨' },
+  groom: { title: '{pets}凑在一起舔毛', zone: 'living', icon: '💗' },
+  box: { title: '{pets}钻进了纸箱', zone: 'door', icon: '📦' },
+  rainWatch: { title: '下雨天，{pets}趴在窗台上看雨', zone: 'kitchen', icon: '🌧️' },
+  heater: { title: '{pets}围着暖炉取暖', zone: 'bedroom', icon: '🔥' },
+  sulk: { title: '{pets}闹脾气了，背对着不理人', zone: 'living', icon: '😾' },
+  neighbor: { title: '{pets}和来串门的邻居玩在了一起', zone: 'living', icon: '🐾' },
+  butterfly: { title: '{pets}在院子里扑蝴蝶', zone: 'garden', icon: '🦋' },
+  tunnel: { title: '{pets}从隧道里探出了脑袋', zone: 'balcony', icon: '🕳️' },
+};
 
 /** 邻居留在院子里的小东西 */
 export const FIND_KINDS: Record<string, { name: string; icon: string }> = {

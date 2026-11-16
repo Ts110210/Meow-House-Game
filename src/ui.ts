@@ -1,5 +1,5 @@
 // 界面：顶部和底部的按钮，以及所有从下方弹出的面板。
-import { NEIGHBORS, FIND_KINDS, SEASON_EVENTS, SEASON_FINDS, SKINS, SKIN_PRICE, ROOM_THEMES, ZONES, CONFIG, DAY, DESTS, TREAT, TIME_NAMES, SEASON_NAMES, FOODS, FRY, FUR_COLORS, DECOR, VISITORS, SEASON_IDS, TIME_IDS, SPECIAL_DECOR, TRAITS, TRAIT_IDS, type Trait, PATTERN_NAMES, DEFAULT_LOOK, encodeLook, decodeLook, type Look, type CoatPattern, GEAR, GOODS, HOUR, MIN, SOUVENIRS, SPRITE, TOOLS, type ActionName } from './config';
+import { MOMENTS, NEIGHBORS, FIND_KINDS, SEASON_EVENTS, SEASON_FINDS, SKINS, SKIN_PRICE, ROOM_THEMES, ZONES, CONFIG, DAY, DESTS, TREAT, TIME_NAMES, SEASON_NAMES, FOODS, FRY, FUR_COLORS, DECOR, VISITORS, SEASON_IDS, TIME_IDS, SPECIAL_DECOR, TRAITS, TRAIT_IDS, type Trait, PATTERN_NAMES, DEFAULT_LOOK, encodeLook, decodeLook, type Look, type CoatPattern, GEAR, GOODS, HOUR, MIN, SOUVENIRS, SPRITE, TOOLS, type ActionName } from './config';
 import { renderPostcard } from './art/postcard';
 import { drawDefaultSheet } from './art/defaultPet';
 import type { Game } from './game';
@@ -9,6 +9,7 @@ import * as sim from './sim';
 import { audioSettings, meow, setVolume, sfx } from './audio';
 import { drawBackScreen, takeBackTaps } from './backscreen';
 import { ASSETS } from './assets.config';
+import { renderMoment } from './art/moment';
 import { exportLayout, isChanged, resetBackground, resetObjects, saveLayout } from './layout';
 import { composeSheet, splitStrip, type Assembled, type StripPart } from './assemble';
 import { canvasToBlob, saveBlob, saveMessage } from './platform/download';
@@ -17,7 +18,7 @@ import { isNative, notifyPermission, notifyStatus, testNotification } from './pl
 import { kv } from './platform/storage';
 import { hoursToText, simulateAll, type SimResult } from './simulate';
 import { buildSet, previewSet, drawFrame, fileToDataUrl, frameIndex, hasRow, imageToAvatar, loadImage, normalizeSheet, type SpriteSet } from './sprites';
-import type { Pet, Postcard, Result } from './types';
+import type { Moment, Pet, Postcard, Result } from './types';
 
 type Kid = Node | string | number | null | undefined | false;
 function h(tag: string, attrs: Record<string, any> | null = null, ...kids: (Kid | Kid[])[]): HTMLElement {
@@ -308,6 +309,55 @@ export class UI {
   }
 
   // ---------- 访客 ----------
+
+  // ---------- 瞬间相册 ----------
+
+  private momentCache = new Map<string, HTMLCanvasElement>();
+  momentCaught(id: string) { const m = this.game.state.moments.find((x) => x.id === id); if (m) { this.toast(`📷 抓拍到了：${sim.momentTitle(m)}（在相册的「瞬间」里）`); sfx('ok'); } }
+  private momentCanvas(m: Moment): HTMLCanvasElement {
+    const s = this.game.state; const key = `${m.id}|${JSON.stringify(s.skins)}|${s.room}|${this.game.avatarRev}`;
+    let cv = this.momentCache.get(key);
+    if (!cv) {
+      const guest = m.extra && NEIGHBORS[m.extra] ? this.game.sprites.get(NEIGHBORS[m.extra].look) : undefined;
+      cv = renderMoment(m, m.sprites.map((id) => this.game.sprites.get(id)), { guest, skin: (k) => sim.skinOf(s, k), room: sim.roomOf(s) });
+      if (this.momentCache.size > 80) this.momentCache.clear(); this.momentCache.set(key, cv);
+    }
+    return cv;
+  }
+  private momentCopy(m: Moment) { const src = this.momentCanvas(m); const cv = h('canvas', { width: src.width, height: src.height }) as HTMLCanvasElement; cv.getContext('2d')!.drawImage(src, 0, 0); return cv; }
+  openMoments() {
+    this.open({ title: '瞬间', render: () => {
+      const s = this.game.state;
+      const out: Kid[] = [h('p', { class: 'soft' }, `宠物们在家做了有意思的事，游戏会自己抓拍下来。同一种瞬间隔几天才会再拍一张，最多留 ${CONFIG.moments.max} 张。`)];
+      if (!s.moments.length) out.push(h('p', { class: 'soft center', style: 'padding:24px 0' }, '还没有抓拍到。多开着游戏看看它们在做什么吧。'));
+      else out.push(h('div', { class: 'postgrid moments', style: 'margin-top:12px' }, s.moments.map((m) => h('button', { class: 'postcard', onclick: () => this.open({ title: `${MOMENTS[m.kind]?.icon ?? '📷'} ${fmtDate(m.at)}`, render: () => [
+        h('div', { class: 'center' }, (() => { const cv = this.momentCopy(m); cv.style.cssText = 'width:100%;max-width:360px;border-radius:10px;box-shadow:0 2px 10px rgba(90,70,54,.18)'; return cv; })()),
+        h('p', { class: 'center' }, sim.momentTitle(m)), h('p', { class: 'soft center' }, `${SEASON_NAMES[m.season as keyof typeof SEASON_NAMES] ?? ''}天的${TIME_NAMES[m.time as keyof typeof TIME_NAMES] ?? ''}`),
+        h('div', { class: 'grid2' }, h('button', { class: 'btn', onclick: async () => { const blob = await canvasToBlob(this.momentCanvas(m)); if (!blob) { this.toast('生成图片失败'); return; } const msg = saveMessage(await saveBlob(`moment-${m.kind}-${fmtDate(m.at)}.png`, blob), '请长按图片保存'); if (msg) this.toast(msg); } }, '保存到手机'),
+          h('button', { class: 'btn', onclick: () => { this.game.act((st) => sim.deleteMoment(st, m.id)); this.openMoments(); } }, '删掉')),
+        h('p', null, h('button', { class: 'btn block', onclick: () => this.openMoments() }, '返回'))] }) },
+        this.momentCopy(m), h('span', null, sim.momentTitle(m))))));
+      out.push(h('p', null, h('button', { class: 'btn block', onclick: () => this.openAlbum() }, '看明信片')));
+      return out;
+    } });
+  }
+
+  // ---------- 季节活动 ----------
+
+  openSeasonEvent() {
+    this.open({ title: '季节活动', render: () => {
+      const s = this.game.state; const ev = sim.seasonEventStatus(s); const info = sim.seasonInfo(s); const reward = DECOR[ev.reward];
+      const lying = s.finds.filter((f) => SEASON_FINDS[f.kind]).length;
+      return [h('div', { class: 'card center' }, h('b', { style: 'font-size:18px' }, ev.name), h('div', { class: 'soft' }, `${SEASON_NAMES[ev.season]}天还有 ${info.daysLeft} 天`)),
+        h('p', { class: 'soft' }, `这一季，院子里每隔一阵会冒出三种小东西。每种捡够 ${ev.need} 个就算完成，换季后重新开始。`),
+        h('div', { class: 'card' }, ev.items.map((it) => h('div', { class: 'item' }, h('span', { class: 'ico' }, it.icon), h('div', { class: 'txt' }, h('b', null, it.name), h('div', { class: 'fbar' }, h('i', { style: `width:${(it.have / ev.need) * 100}%` }))), h('span', { class: 'soft' }, `${it.have} / ${ev.need}`)))),
+        h('div', { class: 'card' }, h('div', { class: 'item' }, h('span', { class: 'ico' }, ev.rewardNew ? reward?.icon ?? '🎁' : '🐟'), h('div', { class: 'txt' }, h('b', null, ev.done ? '这一季已经完成' : '完成的奖励'),
+          h('span', { class: 'soft' }, `小鱼干 +${ev.fish}` + (ev.rewardNew ? `，这一季限定的装饰「${reward?.name ?? ''}」` : `（「${reward?.name ?? ''}」以前已经拿到了）`))))),
+        ev.done ? null : h('p', { class: 'soft' }, lying ? `院子里现在有 ${lying} 样等着捡。` : '院子里现在没有，过一会儿再来看看。'),
+        ev.done || !lying ? null : h('p', null, h('button', { class: 'btn primary block', onclick: () => { this.close(); this.scene.scrollToZone(ZONES.findIndex((z) => z.id === 'garden')); } }, '去院子')),
+        h('p', { class: 'soft' }, `已经收集过的季节装饰：${s.seasonalClaimed.length} / 4`)];
+    } });
+  }
 
   // ---------- 邻居 ----------
 
@@ -653,6 +703,7 @@ export class UI {
     const destsIn = DESTS.filter((d) => s.postcards.some((c) => c.destId === d.id));
     const cards = s.postcards.filter((c) => f === 'all' || c.petIds.includes(f.slice(4)) || c.destId === f.slice(5)).slice().reverse();
     const out: Kid[] = [h('p', { class: 'soft' }, `${s.postcards.length} / ${sim.albumLimit()} 张。点开一张可以保存到手机，或者删掉。相册满了不会自动删，新带回来的会请你自己挑。`), h('div', { class: 'row' }, chip('all', '全部'), petsIn.map((p) => chip('pet:' + p.id, p.name)), destsIn.map((d) => chip('dest:' + d.id, d.name)))];
+    out.push(h('p', null, h('button', { class: 'btn block', onclick: () => this.openMoments() }, `📷 瞬间：游戏自己抓拍的照片（${s.moments.length}）`)));
     out.push(cards.length ? h('div', { class: 'postgrid', style: 'margin-top:12px' }, cards.map((c) => {
       const dest = DESTS.find((d) => d.id === c.destId)!;
       return h('button', { class: 'postcard', onclick: () => this.open({ title: dest.name, onClose: () => { this.deleteArmed = null; }, render: () => [...this.cardDetail(c), h('p', null, h('button', { class: 'btn block', onclick: () => this.open({ title: '纪念相册', render: () => this.renderAlbum() }) }, '回到相册'))] }) },
@@ -677,7 +728,7 @@ export class UI {
       out.push(h('p', { class: 'soft' }, '同一个地方，四季和白天、傍晚、夜晚拍出来的明信片颜色都不一样，一共 12 种。删掉明信片不会丢图鉴记录。'));
       out.push(h('h3', null, '里程碑'));
       out.push(h('div', { class: 'card' }, ms.map((m) => h('div', { class: 'item' + (m.claimed ? ' dim' : '') }, h('span', { class: 'ico' }, m.decor ? SPECIAL_DECOR[m.decor].icon : '🐟'),
-        h('div', { class: 'txt' }, h('b', null, `${m.kind === 'variants' ? '明信片变体' : '纪念品'} ${Math.min(m.have, m.need)} / ${m.need}`), h('span', { class: 'soft' }, `小鱼干 +${m.fish}` + (m.decor ? `，特殊装饰「${SPECIAL_DECOR[m.decor].name}」` : '')),
+        h('div', { class: 'txt' }, h('b', null, `${m.kind === 'variants' ? '明信片变体' : '纪念品'} ${Math.min(m.have, m.need)} / ${m.need}`), h('span', { class: 'soft' }, `小鱼干 +${m.fish}` + (m.decor ? `，特殊装饰「${SPECIAL_DECOR[m.decor].name}」` : '') + (m.skin ? `，一款家具皮肤（${SKINS.find((k) => k.id === m.skin![1])?.name ?? ''}）` : '')),
           h('div', { class: 'fbar' }, h('i', { style: `width:${Math.min(1, m.have / m.need) * 100}%` }))),
         h('button', { class: 'btn small' + (m.ready ? ' primary' : ''), disabled: !m.ready, onclick: () => { const r = this.game.act((st) => sim.claimMilestone(st, m.id)); this.say(r); sfx(r.ok ? 'checkin' : 'error'); } }, m.claimed ? '已领' : m.ready ? '领取' : '未达成')))));
       for (const d of DESTS) {
@@ -764,6 +815,7 @@ export class UI {
         h('button', { class: 'btn', onclick: () => this.openFamily() }, '家庭成员'), h('button', { class: 'btn', onclick: () => this.openAlbum() }, '纪念相册'),
         h('button', { class: 'btn', onclick: () => this.openCabinet() }, '收藏柜'), h('button', { class: 'btn' + (sim.milestoneStatus(s).some((m) => m.ready) ? ' primary' : ''), onclick: () => this.openCodex() }, '图鉴'), h('button', { class: 'btn', onclick: () => this.openBack() }, '背屏预览'),
         h('button', { class: 'btn', onclick: () => this.startDecor() }, '布置房间'), h('button', { class: 'btn', onclick: () => this.openNeighbors() }, '邻居'),
+        h('button', { class: 'btn', onclick: () => this.openSeasonEvent() }, '季节活动'), h('button', { class: 'btn', onclick: () => this.openMoments() }, `瞬间${s.moments.length ? `（${s.moments.length}）` : ''}`),
         h('button', { class: 'btn', onclick: () => this.openDoor() }, '派宠物出门'), h('button', { class: 'btn', onclick: () => this.openPond() }, '鱼塘')),
         h('h3', null, '声音'),
         h('label', { class: 'volume' }, '音乐', h('input', { type: 'range', min: '0', max: '100', step: '5', value: String(Math.round(audioSettings.music * 100)), oninput: (e: Event) => setVolume('music', Number((e.target as HTMLInputElement).value) / 100) })),

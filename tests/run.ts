@@ -310,7 +310,7 @@ console.log('邻居猫和常客');
   const r1 = sim.collectFind(s, 'f1'), r2 = sim.collectFind(s, 'f2'), r3 = sim.collectFind(s, 'f3');
   check('捡院子里的东西：小鱼换小鱼干，小花和纸条记进收集', r1.ok && s.fish >= CONFIG.neighbors.giftFish[0] && r2.ok && sim.keepsakeCount(s, 'flower', id) === 1 && r3.ok && r3.msg!.includes('你好') && sim.keepsakeCount(s, 'note', id) === 1 && s.finds.length === 0 && !sim.collectFind(s, 'f1').ok);
   s.finds = [{ id: 'old', kind: 'flower', from: id, at: s.clock, x: 0.1 }]; sim.advance(s, CONFIG.neighbors.findExpire + HOUR);
-  check('太久没捡的东西会不见', s.finds.length === 0);
+  check('太久没捡的东西会不见', !s.finds.some((f) => f.id === 'old'));
   let gifts = 0; for (let i = 0; i < 300; i++) { const t = blank(); t.hood.bonds.mochi = 100; sim.openDoorToNeighbors(t, 'mochi'); sim.sendNeighborHome(t); gifts += t.finds.length; }
   check('朋友走的时候经常留下小东西（约七成）', gifts > 160 && gifts < 260, String(gifts));
   const r = repair(JSON.parse(JSON.stringify(s)), T0);
@@ -324,6 +324,44 @@ console.log('邻居猫和常客');
   for (let i = 0; i < 4; i++) give();
   check('好感到 7：送商店买不到的装饰；每份回礼只送一次', v.decor.some((d) => d.kind === 'bell') && v.decor.filter((d) => d.kind === 'bell').length === 1 && (give(), v.decor.filter((d) => d.kind === 'bell').length === 1) && sim.favorStatus(v, 'tabby').next === null && sim.favorStatus(v, 'courier').next === 3);
   check('回礼和季节奖励的装饰都有名字、图片路径，商店里不卖', ['bell', 'lantern', 'parcel', ...Object.values(SEASON_EVENTS).map((e) => e.reward)].every((k) => DECOR[k]?.special && !!ASSETS.decor[k]) && Object.keys(SEASON_FINDS).length === 12);
+}
+
+console.log('季节活动、皮肤的其他来源、瞬间相册');
+{
+  const s = sim.newState(new Date(2026, 6, 10, 10).getTime()); s.fish = 0; const E = SEASON_EVENTS.spring;
+  check('春天的活动：三种小东西各要捡几个', sim.seasonEventStatus(s).season === 'spring' && sim.seasonEventStatus(s).items.length === 3 && !sim.seasonEventStatus(s).done);
+  sim.advance(s, CONFIG.seasonEvent.gap + MIN);
+  check('过一阵院子里会冒出这一季的小东西', s.finds.length >= 1 && s.finds.length <= 2 && s.finds.every((f) => E.items.some((it) => it.id === f.kind)));
+  sim.advance(s, 3 * DAY);
+  check('离开很久也只会攒到院子放满为止', s.finds.length <= CONFIG.neighbors.maxFinds && s.finds.length >= 1);
+  s.finds = [];
+  const give = (kind: string) => { s.finds.push({ id: 'x' + Math.random(), kind, at: s.clock, x: 0.1 }); return sim.collectFind(s, s.finds[s.finds.length - 1].id); };
+  give(E.items[0].id); give(E.items[0].id); give(E.items[1].id); give(E.items[1].id); give(E.items[2].id);
+  check('捡了记进度，没集齐不发奖', sim.seasonEventStatus(s).items.every((it, i) => it.have === (i < 2 ? 2 : 1)) && !sim.seasonEventStatus(s).done && s.fish === 0);
+  const fin = give(E.items[2].id);
+  check('集齐了：小鱼干加这一季限定的装饰', fin.ok && sim.seasonEventStatus(s).done && s.fish === E.fish && s.decor.some((d) => d.kind === E.reward) && s.seasonalClaimed.includes('spring'));
+  const n0 = s.finds.length; sim.advance(s, CONFIG.seasonEvent.gap * 3);
+  check('这一季完成之后不再冒新的', s.finds.length === n0);
+  s.clock = s.seasonStart + CONFIG.season.days * DAY + HOUR;
+  check('换季后是新的活动，进度清零', sim.seasonEventStatus(s).season === 'summer' && !sim.seasonEventStatus(s).done && sim.seasonEventStatus(s).items.every((it) => it.have === 0));
+  s.clock = s.seasonStart + CONFIG.season.days * DAY * 4 + HOUR; s.finds = []; const f0 = s.fish;
+  for (const it of E.items) { give(it.id); give(it.id); }
+  check('下一轮春天可以再完成一次，但限定装饰只送一次', sim.seasonEventStatus(s).done && s.fish === f0 + E.fish && s.decor.filter((d) => d.kind === E.reward).length === 1);
+  const r = repair(JSON.parse(JSON.stringify(s)), T0); check('季节活动的进度存档再读档还在', r.seasonal.done && r.seasonalClaimed.includes('spring') && repair({ ...JSON.parse(JSON.stringify(blank())), seasonal: undefined, moments: undefined }, T0).seasonal.key === '');
+
+  const m = blank(); m.fish = 0; (m as any).variants = Object.fromEntries(DESTS.map((d) => [d.id, ['a', 'b']]));
+  const got = sim.claimMilestone(m, 'v10');
+  check('图鉴里程碑会送皮肤（不用买）', got.ok && sim.ownsSkin(m, 'album', 'mint') && got.msg!.includes('皮肤') && CONFIG.milestones.filter((x) => x.skin).length >= 4 && CONFIG.milestones.every((x) => !x.skin || skinSize(x.skin[0]) !== null));
+  check('常客回礼里的皮肤也都是存在的家具和款式', Object.values(CONFIG.visitors.favor).flat().every((x) => !x.skin || (skinSize(x.skin[0]) !== null && SKINS.some((k) => k.id === x.skin![1]))));
+
+  const a = blank(); const p = a.pets[0];
+  const shot = sim.recordMoment(a, 'fishing', [p.id]);
+  check('抓拍一个瞬间：记下是谁、什么时候、当时的季节和时段', !!shot && a.moments.length === 1 && sim.momentTitle(shot!).includes(p.name) && shot!.season === sim.season(a));
+  check('同一种瞬间短时间内不重复拍；不认识的种类和不存在的宠物不拍', sim.recordMoment(a, 'fishing', [p.id]) === null && sim.recordMoment(a, 'nope', [p.id]) === null && sim.recordMoment(a, 'box', ['ghost']) === null && (sim.advance(a, CONFIG.moments.cooldown + HOUR), !!sim.recordMoment(a, 'fishing', [p.id])));
+  for (let i = 0; i < CONFIG.moments.max + 5; i++) { a.clock += CONFIG.moments.cooldown + HOUR; sim.recordMoment(a, 'box', [p.id]); }
+  check('相册满了去掉最旧的；可以删', a.moments.length === CONFIG.moments.max && sim.deleteMoment(a, a.moments[0].id).ok && a.moments.length === CONFIG.moments.max - 1);
+  p.name = '改名了'; check('宠物改名后，旧照片上还是当时的名字', !sim.momentTitle(a.moments[a.moments.length - 1]).includes('改名了'));
+  check('瞬间存档再读档还在', repair(JSON.parse(JSON.stringify(a)), T0).moments.length === a.moments.length);
 }
 
 console.log('新场景和新家具');

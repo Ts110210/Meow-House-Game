@@ -1,7 +1,7 @@
 // 游戏规则。这个文件不碰画面，只改存档数据，方便单独测试。
 import { writeDiary } from './diary';
-import { CONFIG, DAY, NEIGHBORS, FIND_KINDS, SEASON_FINDS, SEASON_EVENTS, SEASON_IDS, SKINS, DEFAULT_SKIN, SKIN_PRICE, skinSize, ROOM_THEMES, DEFAULT_ROOM, DESTS, FOODS, FRY, FUR_COLORS, GEAR, GOODS, HOUR, MIN, SOUVENIRS, TOOLS, TREAT, type DayTime, type Season, type StatKey, decodeLook, TRAIT_IDS, type Trait, VISITORS, type VisitorWho, SPECIAL_DECOR, DECOR, ZONES } from './config';
-import type { Find, GameEvent, GameState, Pet, Postcard, RepeatKey, Result, Trip, Visitor, Weather } from './types';
+import { CONFIG, DAY, MOMENTS, NEIGHBORS, FIND_KINDS, SEASON_FINDS, SEASON_EVENTS, SEASON_IDS, SKINS, DEFAULT_SKIN, SKIN_PRICE, skinSize, ROOM_THEMES, DEFAULT_ROOM, DESTS, FOODS, FRY, FUR_COLORS, GEAR, GOODS, HOUR, MIN, SOUVENIRS, TOOLS, TREAT, type DayTime, type Season, type StatKey, decodeLook, TRAIT_IDS, type Trait, VISITORS, type VisitorWho, SPECIAL_DECOR, DECOR, ZONES } from './config';
+import type { Find, Moment, GameEvent, GameState, Pet, Postcard, RepeatKey, Result, Trip, Visitor, Weather } from './types';
 
 const T = CONFIG.traits;
 const clamp = (v: number, lo = 0, hi = 100) => Math.max(lo, Math.min(hi, v));
@@ -20,7 +20,7 @@ export function newState(now: number): GameState {
   const s: GameState = {
     v: 6, createdAt: now, seasonStart: now, settings: { notify: true, showSeason: false, seasonMode: 'cycle' }, clock: now, lastReal: now, fish: CONFIG.startFish, slots: 1,
     pets: [], trips: [], postcards: [], souvenirs: {}, inv: { ...CONFIG.startItems }, owned: {},
-    pond: Array(CONFIG.pond.slots).fill(null), lastCheckin: '', pendingReturns: [], friends: {}, variants: {}, milestones: [], decor: [], visitors: [], visitorQuota: 0, visitorDay: '', lastVisitorAt: 0, errand: null, display: { souvenirs: [], postcards: [] }, cattree: [null, null, null], hood: { now: null, bonds: {}, day: '', quota: 0, last: 0, stories: [] }, favor: {}, favorClaimed: [], finds: [], keepsakes: {}, skins: {}, skinsOwned: {}, room: DEFAULT_ROOM, roomsOwned: [],
+    pond: Array(CONFIG.pond.slots).fill(null), lastCheckin: '', pendingReturns: [], friends: {}, variants: {}, milestones: [], decor: [], visitors: [], visitorQuota: 0, visitorDay: '', lastVisitorAt: 0, errand: null, display: { souvenirs: [], postcards: [] }, cattree: [null, null, null], hood: { now: null, bonds: {}, day: '', quota: 0, last: 0, stories: [] }, seasonal: { key: '', got: {}, done: false, last: 0, day: '', quota: 0 }, seasonalClaimed: [], moments: [], favor: {}, favorClaimed: [], finds: [], keepsakes: {}, skins: {}, skinsOwned: {}, room: DEFAULT_ROOM, roomsOwned: [],
     dev: { enabled: false, background: false, time: 'auto', season: 'auto', weather: 'auto', speed: 1, growth: 1, decay: { food: 1, mood: 1, clean: 1 } },
   };
   s.pets.push(newPet(CONFIG.startPet.name, `default:${CONFIG.startPet.color}`, now));
@@ -126,6 +126,7 @@ export function advance(s: GameState, dt: number): GameEvent[] {
     if (s.hood.now && s.clock >= s.hood.now.leaveAt) neighborLeaves(s, events);
     for (const p of s.pets) if (p.outing && s.clock >= p.outing.until) outingBack(s, p, events);
     if (s.finds.length) s.finds = s.finds.filter((f) => s.clock - f.at < CONFIG.neighbors.findExpire);
+    spawnSeasonFind(s);
     for (const trip of s.trips) if (!trip.letterSent && s.clock >= trip.letterAt) sendLetter(s, trip, events);
     for (const trip of [...s.trips]) if (s.clock >= trip.returnAt) resolveTrip(s, trip, events);
     for (const p of s.pets) if (p.searchUntil !== null && s.clock >= p.searchUntil) resolveSearch(s, p, events);
@@ -300,6 +301,7 @@ export function claimMilestone(s: GameState, id: string): Result {
   if (!m.ready) return { ok: false, msg: `还差 ${m.need - m.have}` };
   s.milestones.push(id); s.fish += m.fish;
   let msg = `小鱼干 +${m.fish}`;
+  if (m.skin && grantSkin(s, m.skin[0], m.skin[1])) msg += `，还有${skinLabel(m.skin[0], m.skin[1])}（在「布置房间」里换上）`;
   if (m.decor && SPECIAL_DECOR[m.decor]) { s.decor.push({ id: newId('decor'), kind: m.decor, zone: null, x: 0, y: 0 }); msg += `，还有特殊装饰「${SPECIAL_DECOR[m.decor].name}」`; }
   return { ok: true, msg };
 }
@@ -444,6 +446,7 @@ export function collectFind(s: GameState, id: string): Result {
   const from = f.from && NEIGHBORS[f.from] ? NEIGHBORS[f.from].name : '';
   if (f.kind === 'fish') { const n = between(CONFIG.neighbors.giftFish); s.fish += n; return { ok: true, msg: `${from}留下的小鱼：小鱼干 +${n}` }; }
   const key = `${f.kind}:${f.from ?? ''}`; s.keepsakes[key] = (s.keepsakes[key] ?? 0) + 1;
+  if (SEASON_FINDS[f.kind]) return seasonCollect(s, f.kind);
   const name = FIND_KINDS[f.kind]?.name ?? SEASON_FINDS[f.kind]?.name ?? '小东西';
   return { ok: true, msg: f.kind === 'note' ? `${from}的脚印纸条：「${f.text ?? '……'}」` : from ? `${from}留下的${name.replace(/^一[朵条张片只个]/, '')}，收好了` : `捡到了${name}` };
 }
@@ -467,6 +470,54 @@ function outingBack(s: GameState, p: Pet, events: GameEvent[]) {
   s.hood.stories = [{ petId: p.id, neighborId: o.neighborId, text, at: s.clock }, ...s.hood.stories].slice(0, 12);
   events.push({ type: 'outingBack', petId: p.id, neighborId: o.neighborId, text });
 }
+
+// ---------- 季节活动 ----------
+
+/** 现在是哪一轮的哪一季（换季、换一轮都会变） */
+export function seasonKey(s: GameState): string {
+  const se = seasonInfo(s).season;
+  return s.settings.seasonMode === 'real' ? `${new Date(s.clock).getFullYear()}:${se}` : `${Math.floor(Math.max(0, s.clock - s.seasonStart) / (Math.max(0.01, CONFIG.season.days) * DAY * SEASON_IDS.length))}:${se}`;
+}
+function seasonalNow(s: GameState) { const key = seasonKey(s); if (s.seasonal.key !== key) s.seasonal = { ...s.seasonal, key, got: {}, done: false }; return s.seasonal; }
+/** 这一季的活动进度 */
+export function seasonEventStatus(s: GameState) {
+  const se = seasonInfo(s).season, ev = SEASON_EVENTS[se], st = seasonalNow(s);
+  return { season: se, name: ev.name, need: ev.need, done: st.done, reward: ev.reward, rewardNew: !s.seasonalClaimed.includes(se), fish: ev.fish, items: ev.items.map((it) => ({ ...it, have: Math.min(ev.need, st.got[it.id] ?? 0) })) };
+}
+/** 院子里每隔一阵冒出一样这一季的小东西（优先冒还没捡够的那种）。这一季已经完成、今天的名额用完、院子里放满了，就不冒 */
+function spawnSeasonFind(s: GameState) {
+  const E = CONFIG.seasonEvent; const st = seasonalNow(s);
+  if (st.done || s.clock - st.last < E.gap || s.finds.length >= CONFIG.neighbors.maxFinds) return;
+  const day = dayKey(s.clock); if (st.day !== day) { st.day = day; st.quota = E.perDay; }
+  if (st.quota <= 0) return;
+  const ev = SEASON_EVENTS[seasonInfo(s).season]; const want = ev.items.filter((it) => (st.got[it.id] ?? 0) + s.finds.filter((f) => f.kind === it.id).length < ev.need);
+  const it = (want.length ? want : ev.items)[Math.floor(Math.random() * (want.length ? want.length : ev.items.length))];
+  st.quota--; st.last = s.clock;
+  s.finds.push({ id: newId('find'), kind: it.id, at: s.clock, x: 0.04 + Math.random() * 0.2 });
+}
+function seasonCollect(s: GameState, kind: string): Result {
+  const def = SEASON_FINDS[kind]; const cur = seasonInfo(s).season; const ev = SEASON_EVENTS[cur]; const st = seasonalNow(s);
+  if (def.season !== cur || st.done) return { ok: true, msg: `捡到了${def.name}` };
+  st.got[kind] = (st.got[kind] ?? 0) + 1;
+  if (!ev.items.every((it) => (st.got[it.id] ?? 0) >= ev.need)) return { ok: true, msg: `捡到了${def.name}（${Math.min(ev.need, st.got[kind])} / ${ev.need}）` };
+  st.done = true; s.fish += ev.fish; let msg = `捡到了${def.name}。「${ev.name}」完成了：小鱼干 +${ev.fish}`;
+  if (!s.seasonalClaimed.includes(cur) && DECOR[ev.reward]) { s.seasonalClaimed.push(cur); s.decor.push({ id: newId('decor'), kind: ev.reward, zone: null, x: 0, y: 0 }); msg += `，还有这一季限定的装饰「${DECOR[ev.reward].name}」（在「布置房间」里摆出来）`; }
+  return { ok: true, msg };
+}
+
+// ---------- 瞬间相册 ----------
+
+/** 抓拍一个瞬间。同一种瞬间隔 CONFIG.moments.cooldown 才会再拍一次。拍到了返回这张，没拍返回 null */
+export function recordMoment(s: GameState, kind: string, petIds: string[], extra?: string): Moment | null {
+  if (!MOMENTS[kind]) return null;
+  const pets = petIds.map((id) => s.pets.find((p) => p.id === id)).filter((p): p is Pet => !!p && !p.dead); if (!pets.length) return null;
+  const last = s.moments.find((m) => m.kind === kind); if (last && s.clock - last.at < CONFIG.moments.cooldown) return null;
+  const m: Moment = { id: newId('moment'), kind, at: s.clock, petIds: pets.map((p) => p.id), names: pets.map((p) => p.name), sprites: pets.map((p) => p.spriteId), season: season(s), time: dayTime(s), extra };
+  s.moments = [m, ...s.moments].slice(0, CONFIG.moments.max);
+  return m;
+}
+export const momentTitle = (m: Moment) => (MOMENTS[m.kind]?.title ?? '{pets}').replace('{pets}', m.names.join('、'));
+export function deleteMoment(s: GameState, id: string): Result { const n = s.moments.length; s.moments = s.moments.filter((m) => m.id !== id); return n !== s.moments.length ? { ok: true, msg: '删掉了' } : { ok: false, msg: '找不到这张' }; }
 
 // ---------- 猫草 ----------
 

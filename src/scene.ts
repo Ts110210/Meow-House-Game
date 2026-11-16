@@ -101,7 +101,7 @@ interface Actor {
   want: { kind: string; since: number } | null;
 }
 
-export interface SceneHooks { onPet(id: string): void; onObject(kind: ObjectKind, id?: string): void; onZone(index: number): void; onEdit?(kind: string | null): void; onBgEdit?(done: boolean): void; /** 布置房间时：选中了哪件装饰（null = 没选中），或者摆放被拒绝的原因 */ onDecor?(id: string | null, msg?: string): void }
+export interface SceneHooks { /** 抓拍到了一个瞬间 */ onMoment?(id: string): void; onPet(id: string): void; onObject(kind: ObjectKind, id?: string): void; onZone(index: number): void; onEdit?(kind: string | null): void; onBgEdit?(done: boolean): void; /** 布置房间时：选中了哪件装饰（null = 没选中），或者摆放被拒绝的原因 */ onDecor?(id: string | null, msg?: string): void }
 interface EditBox { sp: Sprite; frame: Graphics; handle: Graphics; label: Text }
 
 export class Scene {
@@ -693,6 +693,27 @@ export class Scene {
   }
   private lastFrameReal = 0; private greeted = false;
   private findSprites: Text[] = [];
+  /** 瞬间相册：每两秒看一眼家里有没有值得抓拍的画面（同一种瞬间多久拍一次由规则那边管） */
+  private momentAt = 0;
+  private snap(kind: string, list: Actor[], extra?: string) {
+    if (!list.length) return; const m = sim.recordMoment(this.game.state, kind, list.map((a) => a.id), extra);
+    if (m) { this.game.touch(); this.hooks.onMoment?.(m.id); }
+  }
+  private watchMoments() {
+    if (this.now - this.momentAt < 2000 || this.editMode || this.decorMode) return; this.momentAt = this.now;
+    const A = [...this.actors.values()]; const on = (kind: string) => A.filter((a) => a.perch?.kind === kind && !a.hop);
+    if (on('bed').filter((a) => a.action === 'sleep' && !a.inter).length >= 3) this.snap('bedFull', on('bed'));
+    if (on('cattree').length >= 3) this.snap('treeFull', on('cattree'));
+    this.snap('fishing', A.filter((a) => a.action === 'fish' && a.station === 'pond'));
+    this.snap('butterfly', A.filter((a) => a.action === 'fish' && a.station === 'butterfly'));
+    this.snap('stargaze', A.filter((a) => (a.station === 'roofA' || a.station === 'roofB') && a.action === 'sit'));
+    const groomers = A.filter((a) => a.action === 'groom' && !a.inter);
+    if (groomers.length) this.snap('groom', A.filter((a) => groomers.includes(a) || (a.action === 'happy' && groomers.some((o) => Math.abs(o.x - a.x) < 130))));
+    this.snap('box', on('box')); this.snap('tunnel', on('tunnel'));
+    if (sim.weather(this.game.state) === 'rain') this.snap('rainWatch', [...on('kitchenWindow'), ...on('bedroomWindow')]);
+    const warm = A.filter((a) => a.station === 'heater' && !this.far(a) && !a.pending); if (warm.length >= 2) this.snap('heater', warm);
+    this.snap('sulk', A.filter((a) => a.sulkUntil > this.now));
+  }
   /** 自动逗猫球：有宠物在追的时候一直滚；没人追时每隔一阵自己滚一小会儿，勾它们过来 */
   private rollAutoBall(_dt: number) {
     const sp = this.objSprites.get('autoball'); if (!sp || this.editMode) return;
@@ -747,6 +768,7 @@ export class Scene {
           g.dir = b.x >= g.x ? 1 : -1; b.dir = g.dir === 1 ? -1 : 1; b.inter = null; this.stop(b);
           act(style.meet[0], 6000); this.setAction(b, style.meet[1], 6000);
           if (sim.neighborMeet(s, b.id)) { this.game.touch(); this.floatText(b.id, `和${NEIGHBORS[g.id].name}玩 · 心情 +${CONFIG.neighbors.playMood}`); }
+          this.snap('neighbor', [b], g.id);
         } else act('idle', 900);
       } else if (g.step === 'snack') { g.dir = -1; act('eat', 5000); sim.neighborSnack(s); }
       else act(g.step === 'enter' ? 'beg' : style.rest, g.step === 'enter' ? 2200 : 5000 + Math.random() * 4000);
@@ -1248,7 +1270,7 @@ export class Scene {
       }
     });
 
-    this.updateGuest(dt);
+    this.updateGuest(dt); this.watchMoments();
     for (const [kind, front] of this.fronts) front.visible = inUse.has(kind);
     this.rollAutoBall(dt);
 
