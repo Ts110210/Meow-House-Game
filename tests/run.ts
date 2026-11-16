@@ -23,7 +23,7 @@ console.log('时间补算');
 }
 {
   const s = sim.newState(T0); const p = s.pets[0];
-  const hoursToZero = CONFIG.stats.start.food / CONFIG.stats.decayPerHour.food;
+  const hoursToZero = CONFIG.stats.start.food / sim.foodRate(s, p);
   sim.advance(s, (hoursToZero - 0.1) * HOUR); check('饱食归零前不会虚弱', p.weakSince === null);
   sim.advance(s, 0.2 * HOUR); check('饱食归零后进入虚弱', p.weakSince !== null && !p.dead);
   sim.advance(s, CONFIG.weak.timeToDeath[0] - HOUR); check('幼年虚弱不到 3 天不会离家出走', !sim.isLost(p));
@@ -92,6 +92,16 @@ console.log('旅行收藏');
   check('摆满 9 件后不能再加', !sim.toggleDisplaySouvenir(s, hidden).ok);
   sim.toggleDisplaySouvenir(s, sim.shownSouvenirs(s)[0]);
   check('收起一件再摆另一件', sim.toggleDisplaySouvenir(s, hidden).ok && sim.shownSouvenirs(s).includes(hidden) && sim.shownSouvenirs(s).length === 9);
+}
+
+console.log('新手保护');
+{
+  const s = sim.newState(T0); const p = s.pets[0]; p.food = 80; s.slots = 2; sim.adopt(s, '二号', 'default:grey'); const q = s.pets[1]; q.food = 80;
+  sim.advance(s, 10 * HOUR);
+  check('第一只宠物幼年期饱食掉得慢一半', Math.abs((80 - p.food) - 15) < 0.2 && Math.abs((80 - q.food) - 30) < 0.2, `${p.food} ${q.food}`);
+  check('提醒时间也按慢的速度算', sim.planReminders(s).find((r) => r.title.startsWith(p.name))!.inMs > sim.planReminders(s).find((r) => r.title.startsWith('二号'))!.inMs);
+  p.age = CONFIG.growth.stageDuration + 1; p.food = 80; sim.advance(s, 10 * HOUR);
+  check('长到青年以后恢复正常速度', Math.abs((80 - p.food) - 30) < 0.2, String(p.food));
 }
 
 console.log('逗猫棒和毛色');
@@ -226,7 +236,7 @@ console.log('提醒');
   const s = sim.newState(T0); const p = s.pets[0]; s.inv.kibble = 2;
   let plan = sim.planReminders(s);
   const hungry = plan.find((r) => r.title.includes('饿了'))!;
-  check('会在饱食降到提醒线的时候提醒', !!hungry && near(hungry.inMs, ((p.food - CONFIG.stats.notifyFoodBelow) / CONFIG.stats.decayPerHour.food) * HOUR, 1));
+  check('会在饱食降到提醒线的时候提醒', !!hungry && near(hungry.inMs, ((p.food - CONFIG.stats.notifyFoodBelow) / sim.foodRate(s, p)) * HOUR, 1));
   sim.advance(s, hungry.inMs + MIN); check('到了那个时间，饱食确实降到提醒线以下', p.food < CONFIG.stats.notifyFoodBelow && p.food > CONFIG.stats.notifyFoodBelow - 1);
   const s2 = sim.newState(T0); s2.owned.feeder = true;
   check('有喂食机就不发饿了的提醒', sim.planReminders(s2).length === 0);

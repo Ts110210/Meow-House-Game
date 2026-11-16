@@ -46,6 +46,8 @@ export const CONFIG = {
     start: { food: 80, mood: 80, clean: 80 },
     /** 每小时下降多少 */
     decayPerHour: { food: 3, mood: 1.25, clean: 1.75 },
+    /** 新手保护：第一只宠物在幼年期，饱食下降速度乘以这个数 */
+    starterFoodDecay: 0.5,
     /** 低于这个值算「饿」或「脏」 */
     lowThreshold: 30,
     /** 饿的时候，心情下降额外加快的比例（0.75 = 快 75%） */

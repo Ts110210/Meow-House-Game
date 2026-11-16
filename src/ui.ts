@@ -379,6 +379,7 @@ export class UI {
       h('button', { class: 'act', onclick: () => doAct((st) => sim.petPet(st, id), 'happy') }, '摸摸', mult('pet') ?? h('small', null, `心情 +${CONFIG.actions.petMood}`)),
       h('button', { class: 'act', onclick: () => doAct((st) => sim.bath(st, id), 'bath') }, '洗澡', mult('bath') ?? h('small', null, `干净 +${CONFIG.actions.bathClean}`)),
       h('button', { class: 'act', onclick: () => doAct((st) => sim.play(st, id), 'play') }, '玩耍', mult('play') ?? h('small', null, s.owned.wand ? `逗猫棒 · 心情 +${CONFIG.actions.playMoodWand}` : `心情 +${CONFIG.actions.playMoodHand}`))));
+    if (sim.isProtected(s, p)) out.push(h('p', { class: 'soft' }, '新手保护：它还小，是家里的第一只，长大前饿得比较慢。'));
     if (!s.owned.wand) out.push(h('p', { class: 'soft' }, `现在是空手逗它。商店里有逗猫棒，买了以后玩耍变成心情 +${CONFIG.actions.playMoodWand}。`));
     out.push(h('p', null, h('button', { class: 'btn block', onclick: () => { this.plan = { petIds: [id], bento: this.plan.bento, tool: null, goods: [] }; this.openDoor(); } }, '派它出门')));
     return out;

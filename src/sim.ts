@@ -49,6 +49,12 @@ export function season(s: GameState): Season {
   return m >= 2 && m <= 4 ? 'spring' : m >= 5 && m <= 7 ? 'summer' : m >= 8 && m <= 10 ? 'autumn' : 'winter';
 }
 export const stageOf = (p: Pet) => Math.min(2, Math.floor(p.age / CONFIG.growth.stageDuration));
+/** 新手保护：家里的第一只宠物，幼年期饱食掉得慢 */
+export const isProtected = (s: GameState, p: Pet) => s.pets[0]?.id === p.id && stageOf(p) === 0;
+/** 这只宠物每小时掉多少饱食（已经算上新手保护和开发者倍率） */
+export function foodRate(s: GameState, p: Pet) {
+  return CONFIG.stats.decayPerHour.food * s.dev.decay.food * (isProtected(s, p) ? CONFIG.stats.starterFoodDecay : 1);
+}
 export const stageName = (p: Pet) => CONFIG.growth.stageNames[stageOf(p)];
 export const isWeak = (p: Pet) => p.weakSince !== null && !p.dead;
 export const count = (s: GameState, id: string) => s.inv[id] ?? 0;
@@ -100,7 +106,7 @@ function stepPets(s: GameState, step: number, events: GameEvent[]) {
     const moodRate = c.decayPerHour.mood * (1 + (hungry ? c.moodDecayExtraWhenHungry : 0) + (dirty ? c.moodDecayExtraWhenDirty : 0));
 
     const foodFloor = s.owned.feeder ? c.feederFoodFloor : 0;
-    if (p.food > foodFloor) p.food = Math.max(foodFloor, p.food - c.decayPerHour.food * s.dev.decay.food * hours);
+    if (p.food > foodFloor) p.food = Math.max(foodFloor, p.food - foodRate(s, p) * hours);
     // 心情保底：有同伴一起玩，或者家里有玩具可以自己玩
     const moodFloor = Math.max(companions ? c.companionMoodFloor : 0, hasToy(s) ? c.toyMoodFloor : 0);
     if (p.mood > moodFloor) p.mood = Math.max(moodFloor, p.mood - moodRate * s.dev.decay.mood * hours);
@@ -443,9 +449,9 @@ export interface ReminderPlan { title: string; body: string; inMs: number }
 /** 现在离开的话，接下来该在什么时候提醒主人（饱食偏低、快撑不住、回家）。inMs = 多久以后。 */
 export function planReminders(s: GameState): ReminderPlan[] {
   const c = CONFIG.stats; const out: ReminderPlan[] = [];
-  const rate = c.decayPerHour.food * s.dev.decay.food; // 每小时掉多少
   const floor = s.owned.feeder ? c.feederFoodFloor : 0;
   for (const p of homePets(s)) {
+    const rate = foodRate(s, p); // 每小时掉多少
     if (p.weakSince !== null) {
       const left = weakTimeLeft(s, p) - 12 * HOUR; // 撑不住之前 12 小时再提醒一次
       if (left > 0) out.push({ title: `${p.name}很虚弱`, body: '再不喂就来不及了，快回来看看', inMs: left });
