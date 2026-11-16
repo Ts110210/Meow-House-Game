@@ -24,6 +24,8 @@ export interface Pet {
   diedAt?: number;
   /** 离家出走的时刻；null = 在家或正常出门 */
   lostSince: number | null;
+  /** 去邻居家回访了：去的是谁、什么时候回来；null = 没去 */
+  outing?: { neighborId: string; until: number } | null;
   /** 狸花猫正在找它：什么时候有结果；null = 没在找 */
   searchUntil: number | null;
   tripId: string | null;
@@ -33,6 +35,9 @@ export interface Pet {
 }
 
 /** 访客想做的事：gift 送礼（fish 或 item）；trade 想用 wants 这种食物换 gives（纪念品编号，或 fish 小鱼干）；errand 托送信到 destId */
+/** 院子里的一样小东西。x = 在院子里的左右位置（0–1） */
+export interface Find { id: string; kind: string; from?: string; at: number; x: number; text?: string }
+
 export interface Visitor {
   id: string; who: VisitorWho; kind: 'gift' | 'trade' | 'errand';
   arrivedAt: number; leaveAt: number;
@@ -139,6 +144,16 @@ export interface GameState {
   skins: Record<string, string>; skinsOwned: Record<string, string[]>;
   /** 房间风格：现在用哪一套、买过哪些（默认的不用买） */
   room: string; roomsOwned: string[];
+  /** 邻居：now = 正在家里串门的那只（null = 没有）；bonds = 和每只邻居有多熟；day、quota、last = 今天还会来几次、上次什么时候来的 */
+  hood: { now: { id: string; arrivedAt: number; leaveAt: number; met: string[]; ate: boolean } | null; bonds: Record<string, number>; day: string; quota: number; last: number;
+    /** 宠物去邻居家回来讲的小见闻（留最近 12 条） */
+    stories: { petId: string; neighborId: string; text: string; at: number }[] };
+  /** 访客的好感：帮每位访客办成过几件事；领过哪些回礼（访客 + 第几档） */
+  favor: Record<string, number>; favorClaimed: string[];
+  /** 院子里等着捡的小东西（邻居留下的、季节活动的） */
+  finds: Find[];
+  /** 捡到的纪念：种类:来自谁 → 几个 */
+  keepsakes: Record<string, number>;
   /** 猫爬架的三层（顶层、中层、底层）各指定给哪只宠物；null = 谁都可以上去 */
   cattree: (string | null)[];
   /** 还没给主人看过的回家明信片 */
@@ -157,7 +172,10 @@ export type GameEvent =
   | { type: 'found'; petId: string }
   | { type: 'notFound'; petId: string }
   | { type: 'stage'; petId: string; stage: number }
-  | { type: 'hungry'; petId: string };
+  | { type: 'hungry'; petId: string }
+  | { type: 'neighbor'; id: string }
+  | { type: 'neighborLeft'; id: string; find?: string }
+  | { type: 'outingBack'; petId: string; neighborId: string; text: string };
 
 export type Result = { ok: true; msg?: string } | { ok: false; msg: string };
 

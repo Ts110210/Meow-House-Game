@@ -1,5 +1,5 @@
 // 规则和存档的自动检查。运行：npm test
-import { CONFIG, DAY, DECOR, DESTS, FUR_COLORS, GEAR, HOUR, MIN, ROOM_THEMES, SKIN_PRICE, SKIN_SIZE, SKINNABLE, SKINS, SOUVENIRS, decodeLook, encodeLook, skinSize } from '../src/config';
+import { NEIGHBORS, SEASON_EVENTS, SEASON_FINDS, CONFIG, DAY, DECOR, DESTS, FUR_COLORS, GEAR, HOUR, MIN, ROOM_THEMES, SKIN_PRICE, SKIN_SIZE, SKINNABLE, SKINS, SOUVENIRS, decodeLook, encodeLook, skinSize } from '../src/config';
 import { ASSETS } from '../src/assets.config';
 import * as sim from '../src/sim';
 import { diaryPlaceCount, writeDiary } from '../src/diary';
@@ -284,6 +284,46 @@ console.log('家具、皮肤和房间风格');
   check('存档里没买过的皮肤、不存在的款式和房间会被清掉', sim.skinOf(rb, 'bed') === 'wood' && !rb.skins.ghost && !rb.skins.sofa && sim.roomOf(rb) === 'classic' && rb.roomsOwned.length === 1);
   const old = JSON.parse(JSON.stringify(blank())); delete old.skins; delete old.skinsOwned; delete old.room; delete old.roomsOwned; old.v = 5; old.owned = { lamp: true };
   const ro = migrate(old); check('旧存档升级：皮肤和房间都是默认的，以前买的固定落地灯不再出现也不报错', ro.ok && sim.roomOf(ro.state) === 'classic' && Object.keys(ro.state.skins).length === 0 && sim.skinOf(ro.state, 'door') === 'wood');
+}
+
+console.log('邻居猫和常客');
+{
+  const s = blank(); s.fish = 0; const p = s.pets[0]; p.food = 80; p.mood = 50;
+  check('有三只邻居，样子都画得出来', Object.keys(NEIGHBORS).length === 3 && Object.values(NEIGHBORS).every((n) => !!decodeLook(n.look) && n.notes.length >= 3 && n.stories.length >= 3));
+  s.hood.day = sim.dayKey(s.clock); s.hood.quota = 0;
+  check('今天没有名额就不来', sim.openDoorToNeighbors(s).length === 0 && s.hood.now === null);
+  s.hood.quota = 2; const ev = sim.openDoorToNeighbors(s);
+  check('有名额就来一只，名额减一', ev.length === 1 && ev[0].type === 'neighbor' && !!s.hood.now && s.hood.quota === 1 && s.hood.now.leaveAt > s.clock);
+  check('家里已经有一只邻居时不会再来第二只', sim.openDoorToNeighbors(s).length === 0);
+  const id = s.hood.now!.id;
+  check('和宠物玩一次：加心情、变熟；同一次串门里和同一只只算一次', sim.neighborMeet(s, p.id) && p.mood === 50 + CONFIG.neighbors.playMood && sim.bondOf(s, id) === CONFIG.neighbors.bondPerPlay && !sim.neighborMeet(s, p.id));
+  const evs = sim.advance(s, CONFIG.neighbors.stay[1] + MIN);
+  check('待够了就走，走了更熟一点', s.hood.now === null && evs.some((e) => e.type === 'neighborLeft') && sim.bondOf(s, id) === CONFIG.neighbors.bondPerPlay + CONFIG.neighbors.bondPerVisit);
+  check('刚走不会马上又来（要隔一阵）', sim.openDoorToNeighbors(s).length === 0 && (sim.advance(s, CONFIG.neighbors.gap), s.hood.day = sim.dayKey(s.clock), sim.openDoorToNeighbors(s).length === 1));
+  sim.sendNeighborHome(s);
+  check('还不熟不能回访', !sim.visitNeighbor(s, p.id, id).ok && !sim.visitNeighbor(s, p.id, 'nobody').ok);
+  s.hood.bonds[id] = CONFIG.neighbors.friendAt; p.food = 80; const mood0 = p.mood;
+  check('成了朋友可以去它家玩：这段时间不在家，也不能喂', sim.visitNeighbor(s, p.id, id).ok && !!p.outing && sim.homePets(s).length === 0 && !sim.feed(s, p.id, 'kibble').ok && !sim.visitNeighbor(s, p.id, id).ok);
+  const food0 = p.food; const back = sim.advance(s, CONFIG.neighbors.outing + MIN);
+  check('半小时后回来：加心情、更熟、带回一句小见闻，在邻居家不挨饿', !p.outing && p.mood > mood0 && back.some((e) => e.type === 'outingBack' && e.text.includes(p.name)) && s.hood.stories.length === 1 && sim.bondOf(s, id) === CONFIG.neighbors.friendAt + CONFIG.neighbors.outingBond && food0 - p.food < 3);
+  s.finds = [{ id: 'f1', kind: 'fish', from: id, at: s.clock, x: 0.1 }, { id: 'f2', kind: 'flower', from: id, at: s.clock, x: 0.2 }, { id: 'f3', kind: 'note', from: id, at: s.clock, x: 0.3, text: '你好' }];
+  const r1 = sim.collectFind(s, 'f1'), r2 = sim.collectFind(s, 'f2'), r3 = sim.collectFind(s, 'f3');
+  check('捡院子里的东西：小鱼换小鱼干，小花和纸条记进收集', r1.ok && s.fish >= CONFIG.neighbors.giftFish[0] && r2.ok && sim.keepsakeCount(s, 'flower', id) === 1 && r3.ok && r3.msg!.includes('你好') && sim.keepsakeCount(s, 'note', id) === 1 && s.finds.length === 0 && !sim.collectFind(s, 'f1').ok);
+  s.finds = [{ id: 'old', kind: 'flower', from: id, at: s.clock, x: 0.1 }]; sim.advance(s, CONFIG.neighbors.findExpire + HOUR);
+  check('太久没捡的东西会不见', s.finds.length === 0);
+  let gifts = 0; for (let i = 0; i < 300; i++) { const t = blank(); t.hood.bonds.mochi = 100; sim.openDoorToNeighbors(t, 'mochi'); sim.sendNeighborHome(t); gifts += t.finds.length; }
+  check('朋友走的时候经常留下小东西（约七成）', gifts > 160 && gifts < 260, String(gifts));
+  const r = repair(JSON.parse(JSON.stringify(s)), T0);
+  check('邻居的熟悉度、小见闻、收集存档再读档还在；旧存档补默认值', sim.bondOf(r, id) === sim.bondOf(s, id) && r.hood.stories.length === 1 && sim.keepsakeCount(r, 'note', id) === 1 && repair({ ...JSON.parse(JSON.stringify(blank())), hood: undefined, finds: undefined, keepsakes: undefined, favor: undefined }, T0).hood.now === null);
+
+  const v = blank(); v.fish = 0; const give = () => { const x = sim.makeVisitor(v, 'tabby', 'gift'); v.visitors.push(x); return sim.answerVisitor(v, x.id, true); };
+  give(); give(); check('帮访客办成事会加好感，婉拒不加', v.favor.tabby === 2 && (() => { const x = sim.makeVisitor(v, 'tabby', 'gift'); v.visitors.push(x); sim.answerVisitor(v, x.id, false); return v.favor.tabby === 2; })());
+  const third = give();
+  check('好感到 3：成了常客，送小鱼干和一款皮肤（不用买）', third.ok && third.msg!.includes('常客') && sim.ownsSkin(v, 'bowl', 'berry') && sim.skinOf(v, 'bowl') === 'wood' && v.favorClaimed.includes('tabby:0'));
+  const fishBefore = v.fish; sim.setSkin(v, 'bowl', 'berry'); check('送的皮肤换上不扣钱', sim.skinOf(v, 'bowl') === 'berry' && v.fish === fishBefore);
+  for (let i = 0; i < 4; i++) give();
+  check('好感到 7：送商店买不到的装饰；每份回礼只送一次', v.decor.some((d) => d.kind === 'bell') && v.decor.filter((d) => d.kind === 'bell').length === 1 && (give(), v.decor.filter((d) => d.kind === 'bell').length === 1) && sim.favorStatus(v, 'tabby').next === null && sim.favorStatus(v, 'courier').next === 3);
+  check('回礼和季节奖励的装饰都有名字、图片路径，商店里不卖', ['bell', 'lantern', 'parcel', ...Object.values(SEASON_EVENTS).map((e) => e.reward)].every((k) => DECOR[k]?.special && !!ASSETS.decor[k]) && Object.keys(SEASON_FINDS).length === 12);
 }
 
 console.log('猫爬架');

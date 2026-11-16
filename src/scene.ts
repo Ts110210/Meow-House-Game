@@ -7,14 +7,14 @@ import { ASSETS, type ObjectDef } from './assets.config';
 import type { AssetStore } from './assets';
 import { drawObject, drawZone, groundColor, objectAspect, roomPalette, type Env } from './art/room';
 import { renderPostcard } from './art/postcard';
-import { CONFIG, DECOR, PALETTE, SOUVENIRS, SPRITE, VISITORS, ZONES, type ActionName } from './config';
+import { CONFIG, DECOR, PALETTE, SOUVENIRS, SPRITE, VISITORS, ZONES, type ActionName , NEIGHBORS, FIND_KINDS, SEASON_FINDS } from './config';
 import { drawDecor } from './art/decor';
 import type { Game } from './game';
 import { BASE_FY, BASE_ZW, geo, recompute } from './geo';
 import * as sim from './sim';
 import { frameIndex, rowFor } from './sprites';
 
-export type ObjectKind = 'door' | 'bowl' | 'tub' | 'bed' | 'cabinet' | 'album' | 'pond' | 'scratcher' | 'feeder' | 'ball' | 'sofa' | 'counter' | 'nightstand' | 'bedlamp' | 'pendantDoor' | 'pendantShelf' | 'cattree' | 'npc' | 'visitor';
+export type ObjectKind = 'neighbor' | 'find' | 'door' | 'bowl' | 'tub' | 'bed' | 'cabinet' | 'album' | 'pond' | 'scratcher' | 'feeder' | 'ball' | 'sofa' | 'counter' | 'nightstand' | 'bedlamp' | 'pendantDoor' | 'pendantShelf' | 'cattree' | 'npc' | 'visitor';
 
 /** 家具的位置：每件家具能同时容纳几只、各自在哪、脸朝哪边。
  *  有位置才过去，位置满了就不去挤，所以不会重叠，也不会互相打断。
@@ -283,10 +283,10 @@ export class Scene {
 
   private rebuildObjects() {
     const s = this.game.state;
-    const sig = JSON.stringify([this.editMode, this.decorMode, s.decor, s.owned, s.skins, sim.shownSouvenirs(s), sim.shownPostcards(s).map((c) => c.id), s.pets.map((p) => p.spriteId), sim.lostPets(s).length, s.pets.some((p) => p.searchUntil !== null), s.visitors.map((v) => v.id), s.pond.map((p, i) => (p == null ? 0 : sim.pondReady(s, i) ? 2 : 1))]);
+    const sig = JSON.stringify([this.editMode, this.decorMode, s.decor, s.owned, s.skins, s.finds.map((f) => f.id), sim.shownSouvenirs(s), sim.shownPostcards(s).map((c) => c.id), s.pets.map((p) => p.spriteId), sim.lostPets(s).length, s.pets.some((p) => p.searchUntil !== null), s.visitors.map((v) => v.id), s.pond.map((p, i) => (p == null ? 0 : sim.pondReady(s, i) ? 2 : 1))]);
     if (sig === this.objSig) return;
     this.objSig = sig;
-    this.clearObjects(); this.objSprites.clear(); this.editBoxes.clear();
+    this.clearObjects(); this.objSprites.clear(); this.editBoxes.clear(); this.findSprites = [];
     this.tubFront = null; this.npc = null; this.visitorSprites.clear(); this.decorSprites.clear(); this.fishes = [];
 
     // 装饰：墙上的和地上铺的永远在最后面；摆在地上的和家具、宠物一起按脚底的位置排前后
@@ -364,6 +364,16 @@ export class Scene {
       n.eventMode = 'static'; n.cursor = 'pointer'; n.on('pointertap', this.tap(() => this.hooks.onObject('npc')));
       this.addSorted(n, n.y); this.npc = n;
     }
+    // 院子里等着捡的小东西（邻居留下的、季节活动的）：点一下捡起来
+    if (!this.editMode && !this.decorMode) s.finds.forEach((f, i) => {
+      const gi = zoneIndex('garden'); if (gi < 0) return;
+      const icon = FIND_KINDS[f.kind]?.icon ?? SEASON_FINDS[f.kind]?.icon ?? '✨';
+      const n = new Text({ text: icon, style: { fontSize: 44 } }); n.anchor.set(0.5, 1);
+      n.position.set(zx(gi) + zw(gi) * Math.max(0.05, Math.min(0.95, f.x)), Math.min(depthMax(), depthMin() + 14 + (i % 3) * 22));
+      n.eventMode = 'static'; n.cursor = 'pointer'; n.hitArea = new Rectangle(-34, -60, 68, 72);
+      n.on('pointertap', this.tap(() => this.hooks.onObject('find', f.id)));
+      this.addSorted(n, n.y); this.findSprites.push(n);
+    });
     // 访客：站在门口，头顶有个小气泡，点一下看它来干什么
     if (!this.editMode) s.visitors.forEach((v, i) => {
       const set = this.game.sprites.get(VISITORS[v.who].look); if (!set) return;
@@ -669,6 +679,71 @@ export class Scene {
     free.filter((a) => a !== sulker).forEach((a, i) => { this.release(a); a.inter = null; this.go(a, cx + (i - (free.length - 1) / 2) * 96, depthMax() - 10 - (i % 2) * 14); a.fast = true; a.pending = { action: 'beg', dur: 2800 }; });
   }
   private lastFrameReal = 0; private greeted = false;
+  private findSprites: Text[] = [];
+
+  // ---------- 邻居猫：来串门的那只 ----------
+  private guest: { id: string; root: Container; sprite: Sprite; x: number; y: number; tx: number; ty: number; dir: 1 | -1; action: ActionName; t0: number; until: number; step: 'enter' | 'meet' | 'snack' | 'roam' | 'leave'; buddy: string | null; did: number } | null = null;
+  /** 邻居的做派：麻薯爱蹭饭和打盹，大黑爱打闹，花卷见谁都舔 */
+  private static GUEST_STYLE: Record<string, { meet: [ActionName, ActionName]; rest: ActionName }> = {
+    mochi: { meet: ['groom', 'groom'], rest: 'sleep' }, dahei: { meet: ['play', 'play'], rest: 'sit' }, huajuan: { meet: ['groom', 'happy'], rest: 'lick' },
+  };
+  private updateGuest(dt: number) {
+    const s = this.game.state; const now = s.hood.now; let g = this.guest;
+    const exitX = worldW() - 10;
+    if (this.editMode) { if (g) g.root.visible = false; return; }
+    if (now && !g) {
+      const set = this.game.sprites.get(NEIGHBORS[now.id]?.look ?? ''); if (!set) return;
+      const root = new Container(); const sprite = new Sprite(set.tex[0][0]); sprite.anchor.set(0.5, 0.9); root.addChild(sprite);
+      const tag = new Text({ text: NEIGHBORS[now.id].name, style: { fontFamily: 'system-ui, sans-serif', fontSize: 20, fill: 0x5a4636, fontWeight: '700', stroke: { color: 0xfffaf0, width: 5 } } }); tag.anchor.set(0.5, 1); tag.eventMode = 'none'; root.addChild(tag);
+      sprite.eventMode = 'static'; sprite.cursor = 'pointer'; const id = now.id; sprite.on('pointertap', this.tap(() => this.hooks.onObject('neighbor', id)));
+      (root as any).isActor = true; this.objects.addChild(root);
+      // 从院子最右边走进来（刚打开游戏时它已经来了一阵，就直接出现在客厅）
+      const fresh = s.clock - now.arrivedAt < 20_000;
+      g = this.guest = { id: now.id, root, sprite, x: fresh ? exitX : SPOT.living + 60, y: depthMin() + 30, tx: SPOT.living + 60, ty: depthMin() + 40, dir: -1, action: 'walk', t0: this.now, until: 0, step: 'enter', buddy: null, did: 0 };
+      (g as any).tag = tag;
+    }
+    if (!g) return;
+    g.root.visible = true;
+    const set = this.game.sprites.get(NEIGHBORS[g.id]?.look ?? ''); if (!set) return;
+    const style = Scene.GUEST_STYLE[g.id] ?? Scene.GUEST_STYLE.dahei;
+    const goTo = (x: number, y: number) => { g!.tx = clampX(x); g!.ty = Math.min(clampY(y), this.depthLimit(g!.tx)); };
+    // 该走了（串门时间到了，或者存档里已经没有它了）：往院子外面走，走到头就消失
+    if ((!now || now.id !== g.id) && g.step !== 'leave') { g.step = 'leave'; g.tx = exitX + 60; g.ty = depthMin() + 24; g.until = 0; }
+    const far = Math.abs(g.tx - g.x) > 4 || Math.abs(g.ty - g.y) > 4;
+    if (far) {
+      const dx = g.tx - g.x, dy = g.ty - g.y, dist = Math.hypot(dx, dy); if (Math.abs(dx) > 2) g.dir = dx > 0 ? 1 : -1;
+      const step = Math.min(dist, (g.step === 'leave' || g.step === 'enter' ? 170 : 105) * (dt / 1000));
+      g.x += (dx / dist) * step; g.y += (dy / dist) * step; if (g.step !== 'leave') g.y = Math.min(g.y, this.depthLimit(g.x));
+      if (g.action !== 'walk') { g.action = 'walk'; g.t0 = this.now; }
+    } else if (g.step === 'leave') {
+      g.root.destroy({ children: true }); this.guest = null; return;
+    } else if (g.until === 0) {
+      // 走到了：开始做这一步的事
+      const act = (a: ActionName, ms: number) => { g!.action = a; g!.t0 = this.now; g!.until = this.now + ms; };
+      if (g.step === 'meet' && g.buddy) {
+        const b = this.actors.get(g.buddy); const p = b ? this.game.pet(b.id) : null;
+        if (b && p && !b.station && !b.pending && !b.perch && !b.hop && !sim.isWeak(p) && Math.abs(b.x - g.x) < 150) {
+          g.dir = b.x >= g.x ? 1 : -1; b.dir = g.dir === 1 ? -1 : 1; b.inter = null; this.stop(b);
+          act(style.meet[0], 6000); this.setAction(b, style.meet[1], 6000);
+          if (sim.neighborMeet(s, b.id)) { this.game.touch(); this.floatText(b.id, `和${NEIGHBORS[g.id].name}玩 · 心情 +${CONFIG.neighbors.playMood}`); }
+        } else act('idle', 900);
+      } else if (g.step === 'snack') { g.dir = -1; act('eat', 5000); sim.neighborSnack(s); }
+      else act(g.step === 'enter' ? 'beg' : style.rest, g.step === 'enter' ? 2200 : 5000 + Math.random() * 4000);
+    } else if (this.now >= g.until) {
+      // 这一步做完了，想想下一步：先找还没一起玩过的宠物，再去饭碗蹭一口，之后随便待着
+      g.until = 0; g.did++;
+      const free = [...this.actors.values()].filter((a) => { const p = this.game.pet(a.id); return p && !sim.isWeak(p) && !a.station && !a.pending && !a.perch && !a.hop && a.sulkUntil < this.now && !this.isOutdoor(a.x) && !this.busy(a.id) && a.action !== 'sleep'; });
+      const fresh = free.filter((a) => !now?.met.includes(a.id));
+      if (fresh.length && Math.random() < 0.8) { const b = fresh.sort((m, n) => Math.abs(m.x - g!.x) - Math.abs(n.x - g!.x))[0]; g.step = 'meet'; g.buddy = b.id; this.stop(b); this.setAction(b, 'idle', 9000); goTo(b.x + (g.x < b.x ? -78 : 78), b.y + 2); }
+      else if (now && !now.ate && (g.id === 'mochi' || Math.random() < 0.5)) { const bowl = objPos(ASSETS.objects.bowl); g.step = 'snack'; goTo(bowl.x + 138 * bowl.k, bowl.y + 16); }
+      else if (free.length && Math.random() < 0.35) { const b = free[Math.floor(Math.random() * free.length)]; g.step = 'meet'; g.buddy = b.id; this.stop(b); this.setAction(b, 'idle', 9000); goTo(b.x + (g.x < b.x ? -78 : 78), b.y + 2); }
+      else { g.step = 'roam'; const z = 1 + Math.floor(Math.random() * 4); goTo(zx(z) + zw(z) * (0.2 + Math.random() * 0.6), depthMin() + 10 + Math.random() * (depthMax() - depthMin() - 10)); }
+    }
+    const sc = PET_BASE * ASSETS.petScale * 0.95;
+    g.sprite.texture = set.tex[rowFor(set, g.action)][frameIndex(g.action, this.now - g.t0)];
+    g.sprite.scale.set(sc * g.dir, sc); g.root.position.set(g.x, g.y); g.root.zIndex = g.y;
+    (g as any).tag.position.set(0, -256 * sc * 0.8);
+  }
   private go(a: Actor, x: number, y: number = this.homeY(a.lane)) { a.tx = clampX(x); a.ty = Math.min(clampY(y), this.depthLimit(a.tx)); }
   private stop(a: Actor) { a.tx = a.x; a.ty = a.y; }
   private far(a: Actor) { return Math.abs(a.tx - a.x) > 4 || Math.abs(a.ty - a.y) > 4; }
@@ -1122,6 +1197,7 @@ export class Scene {
       }
     });
 
+    this.updateGuest(dt);
     if (this.tubFront) this.tubFront.visible = bathing;
 
     // 玩具球：被带着跑的时候跟在带球那只的脚前面，一蹦一蹦；没人玩就留在原地

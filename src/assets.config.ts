@@ -103,6 +103,8 @@ export const ASSETS = {
   /** 装饰的图片。没有图片就用代码画的占位图。加新装饰时在这里加一行 */
   decor: {
     cushion: 'decor/cushion.png', mat: 'decor/mat.png', poster: 'decor/poster.png', plant: 'decor/plant.png', rug: 'decor/rug.png', painting: 'decor/painting.png',
+    vase: 'decor/vase.png', jar: 'decor/jar.png', wreath: 'decor/wreath.png', snowman: 'decor/snowman.png',
+    bell: 'decor/bell.png', lantern: 'decor/lantern.png', parcel: 'decor/parcel.png',
     lamp: 'decor/lamp.png', sidelamp: 'decor/sidelamp.png', nightlight: 'decor/nightlight.png', bigplant: 'decor/bigplant.png', shelf: 'decor/shelf.png', globe: 'decor/globe.png', goldframe: 'decor/goldframe.png', trophy: 'decor/trophy.png',
   } as Record<string, string>,
   postcards: {

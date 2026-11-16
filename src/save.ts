@@ -5,7 +5,7 @@
 //   2. 在 MIGRATIONS 里加一条「从上一个版本升到这个版本」的函数
 //   3. 在 repair() 里给新字段补默认值
 // 旧存档会在打开时自动一步一步升上来，升级前的原样会另存一份。
-import { CONFIG, DESTS, FOODS, SOUVENIRS, TRAIT_IDS, VISITORS, ZONES, DECOR, SKINS, DEFAULT_SKIN, ROOM_THEMES, DEFAULT_ROOM, skinSize } from './config';
+import { NEIGHBORS, FIND_KINDS, SEASON_FINDS, CONFIG, DESTS, FOODS, SOUVENIRS, TRAIT_IDS, VISITORS, ZONES, DECOR, SKINS, DEFAULT_SKIN, ROOM_THEMES, DEFAULT_ROOM, skinSize } from './config';
 import { kv } from './platform/storage';
 import type { GameState, Pet, Postcard, Trip } from './types';
 
@@ -63,6 +63,7 @@ export function repair(raw: Raw, now = Date.now()): GameState {
     lostSince: !p.dead && typeof p.lostSince === 'number' && isFinite(p.lostSince) ? p.lostSince : null,
     searchUntil: !p.dead && typeof p.lostSince === 'number' && typeof p.searchUntil === 'number' && isFinite(p.searchUntil) ? p.searchUntil : null,
     tripId: typeof p.tripId === 'string' ? p.tripId : null,
+    outing: p.outing && typeof p.outing.neighborId === 'string' && NEIGHBORS[p.outing.neighborId] && !p.dead ? { neighborId: p.outing.neighborId, until: num(p.outing.until, 0) } : null,
     repeats: obj(p.repeats), hungryNotified: !!p.hungryNotified, adoptedAt: num(p.adoptedAt, clock),
   }));
   const alive = (id: string) => pets.some((p) => p.id === id && !p.dead && p.lostSince === null);
@@ -112,6 +113,15 @@ export function repair(raw: Raw, now = Date.now()): GameState {
     skinsOwned: Object.fromEntries(Object.entries(obj(raw.skinsOwned)).filter(([k]) => skinSize(k) !== null).map(([k, v]) => [k, [...new Set(arr(v).filter((x) => x !== DEFAULT_SKIN && SKINS.some((y) => y.id === x)))]]).filter(([, v]) => (v as string[]).length)) as Record<string, string[]>,
     roomsOwned: [...new Set(arr(raw.roomsOwned).filter((x) => x !== DEFAULT_ROOM && ROOM_THEMES.some((r) => r.id === x)))],
     room: typeof raw.room === 'string' && raw.room !== DEFAULT_ROOM && ROOM_THEMES.some((r) => r.id === raw.room) && arr(raw.roomsOwned).includes(raw.room) ? raw.room : DEFAULT_ROOM,
+    hood: (() => { const hd = obj(raw.hood), n = obj(hd.now); return {
+      now: typeof n.id === 'string' && NEIGHBORS[n.id] ? { id: n.id as string, arrivedAt: num(n.arrivedAt, clock), leaveAt: num(n.leaveAt, clock), met: arr(n.met).filter((x) => typeof x === 'string'), ate: !!n.ate } : null,
+      bonds: Object.fromEntries(Object.entries(obj(hd.bonds)).filter(([k]) => NEIGHBORS[k]).map(([k, v]) => [k, num(v, 0, 0, CONFIG.neighbors.best)])),
+      day: str(hd.day, ''), quota: num(hd.quota, 0, 0, 2), last: num(hd.last, 0),
+      stories: arr(hd.stories).filter((x) => x && typeof x.text === 'string' && NEIGHBORS[x.neighborId]).slice(0, 12).map((x) => ({ petId: str(x.petId, ''), neighborId: x.neighborId, text: x.text.slice(0, 120), at: num(x.at, clock) })) }; })(),
+    favor: Object.fromEntries(Object.entries(obj(raw.favor)).filter(([k]) => VISITORS[k as keyof typeof VISITORS]).map(([k, v]) => [k, num(v, 0, 0, 9999)])),
+    favorClaimed: arr(raw.favorClaimed).filter((x) => typeof x === 'string'),
+    finds: arr(raw.finds).filter((f) => f && typeof f.id === 'string' && (FIND_KINDS[f.kind] || SEASON_FINDS[f.kind])).slice(0, 12).map((f) => ({ id: f.id, kind: f.kind, from: typeof f.from === 'string' && NEIGHBORS[f.from] ? f.from : undefined, at: num(f.at, clock), x: num(f.x, 0.5, 0, 1), text: typeof f.text === 'string' ? f.text.slice(0, 80) : undefined })),
+    keepsakes: Object.fromEntries(Object.entries(obj(raw.keepsakes)).filter(([k, v]) => typeof v === 'number' && v > 0 && k.length < 60).map(([k, v]) => [k, Math.floor(v as number)])),
     cattree: [0, 1, 2].map((i) => { const id = arr(raw.cattree)[i]; return typeof id === 'string' && pets.some((p) => p.id === id && !p.dead) ? id : null; }),
     pendingReturns: arr(raw.pendingReturns).filter((id) => postcards.some((c) => c.id === id)),
     dev: { enabled: !!dev.enabled, background: !!dev.background, time: ['day', 'dusk', 'night'].includes(dev.time) ? dev.time : 'auto', season: ['spring', 'summer', 'autumn', 'winter'].includes(dev.season) ? dev.season : 'auto', weather: ['clear', 'rain'].includes(dev.weather) ? dev.weather : 'auto', speed: num(dev.speed, 1, 1, 100000), growth: num(dev.growth, 1, 0, 100000), decay: { food: num(decay.food, 1, 0, 1000), mood: num(decay.mood, 1, 0, 1000), clean: num(decay.clean, 1, 0, 1000) } },

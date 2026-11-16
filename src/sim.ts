@@ -1,7 +1,7 @@
 // 游戏规则。这个文件不碰画面，只改存档数据，方便单独测试。
 import { writeDiary } from './diary';
-import { CONFIG, DAY, SEASON_IDS, SKINS, DEFAULT_SKIN, SKIN_PRICE, skinSize, ROOM_THEMES, DEFAULT_ROOM, DESTS, FOODS, FRY, FUR_COLORS, GEAR, GOODS, HOUR, MIN, SOUVENIRS, TOOLS, TREAT, type DayTime, type Season, type StatKey, decodeLook, TRAIT_IDS, type Trait, VISITORS, type VisitorWho, SPECIAL_DECOR, DECOR, ZONES } from './config';
-import type { GameEvent, GameState, Pet, Postcard, RepeatKey, Result, Trip, Visitor, Weather } from './types';
+import { CONFIG, DAY, NEIGHBORS, FIND_KINDS, SEASON_FINDS, SEASON_EVENTS, SEASON_IDS, SKINS, DEFAULT_SKIN, SKIN_PRICE, skinSize, ROOM_THEMES, DEFAULT_ROOM, DESTS, FOODS, FRY, FUR_COLORS, GEAR, GOODS, HOUR, MIN, SOUVENIRS, TOOLS, TREAT, type DayTime, type Season, type StatKey, decodeLook, TRAIT_IDS, type Trait, VISITORS, type VisitorWho, SPECIAL_DECOR, DECOR, ZONES } from './config';
+import type { Find, GameEvent, GameState, Pet, Postcard, RepeatKey, Result, Trip, Visitor, Weather } from './types';
 
 const T = CONFIG.traits;
 const clamp = (v: number, lo = 0, hi = 100) => Math.max(lo, Math.min(hi, v));
@@ -20,7 +20,7 @@ export function newState(now: number): GameState {
   const s: GameState = {
     v: 6, createdAt: now, seasonStart: now, settings: { notify: true, showSeason: false, seasonMode: 'cycle' }, clock: now, lastReal: now, fish: CONFIG.startFish, slots: 1,
     pets: [], trips: [], postcards: [], souvenirs: {}, inv: { ...CONFIG.startItems }, owned: {},
-    pond: Array(CONFIG.pond.slots).fill(null), lastCheckin: '', pendingReturns: [], friends: {}, variants: {}, milestones: [], decor: [], visitors: [], visitorQuota: 0, visitorDay: '', lastVisitorAt: 0, errand: null, display: { souvenirs: [], postcards: [] }, cattree: [null, null, null], skins: {}, skinsOwned: {}, room: DEFAULT_ROOM, roomsOwned: [],
+    pond: Array(CONFIG.pond.slots).fill(null), lastCheckin: '', pendingReturns: [], friends: {}, variants: {}, milestones: [], decor: [], visitors: [], visitorQuota: 0, visitorDay: '', lastVisitorAt: 0, errand: null, display: { souvenirs: [], postcards: [] }, cattree: [null, null, null], hood: { now: null, bonds: {}, day: '', quota: 0, last: 0, stories: [] }, favor: {}, favorClaimed: [], finds: [], keepsakes: {}, skins: {}, skinsOwned: {}, room: DEFAULT_ROOM, roomsOwned: [],
     dev: { enabled: false, background: false, time: 'auto', season: 'auto', weather: 'auto', speed: 1, growth: 1, decay: { food: 1, mood: 1, clean: 1 } },
   };
   s.pets.push(newPet(CONFIG.startPet.name, `default:${CONFIG.startPet.color}`, now));
@@ -35,7 +35,7 @@ export const awaySpeed = (s: GameState) => (s.dev.enabled && s.dev.background ? 
 export const hasToy = (s: GameState) => !!(s.owned.scratcher || s.owned.ball);
 export const alivePets = (s: GameState) => s.pets.filter((p) => !p.dead);
 export const isLost = (p: Pet) => p.lostSince !== null && !p.dead;
-export const homePets = (s: GameState) => s.pets.filter((p) => !p.dead && !p.tripId && p.lostSince === null);
+export const homePets = (s: GameState) => s.pets.filter((p) => !p.dead && !p.tripId && !p.outing && p.lostSince === null);
 export const lostPets = (s: GameState) => s.pets.filter(isLost);
 export const albumLimit = () => Math.round(DESTS.length * CONFIG.travel.albumPerDest);
 
@@ -123,6 +123,9 @@ export function advance(s: GameState, dt: number): GameEvent[] {
     stepPets(s, step, events);
     for (const v of [...s.visitors]) if (s.clock >= v.leaveAt) { s.visitors = s.visitors.filter((x) => x.id !== v.id); events.push({ type: 'visitorLeft', who: v.who }); }
     if (s.errand && s.clock >= s.errand.expiresAt) s.errand = null;
+    if (s.hood.now && s.clock >= s.hood.now.leaveAt) neighborLeaves(s, events);
+    for (const p of s.pets) if (p.outing && s.clock >= p.outing.until) outingBack(s, p, events);
+    if (s.finds.length) s.finds = s.finds.filter((f) => s.clock - f.at < CONFIG.neighbors.findExpire);
     for (const trip of s.trips) if (!trip.letterSent && s.clock >= trip.letterAt) sendLetter(s, trip, events);
     for (const trip of [...s.trips]) if (s.clock >= trip.returnAt) resolveTrip(s, trip, events);
     for (const p of s.pets) if (p.searchUntil !== null && s.clock >= p.searchUntil) resolveSearch(s, p, events);
@@ -140,7 +143,7 @@ function stepPets(s: GameState, step: number, events: GameEvent[]) {
     p.age += step * s.dev.growth;
     const after = stageOf(p);
     if (after !== before) events.push({ type: 'stage', petId: p.id, stage: after });
-    if (p.tripId) continue; // 旅途中靠便当，状态不变
+    if (p.tripId || p.outing) continue; // 旅途中靠便当、在邻居家有人照顾，状态不变
 
     const hungry = p.food < c.lowThreshold;
     const dirty = p.clean < c.lowThreshold;
@@ -190,6 +193,7 @@ function usable(p: Pet | undefined): Result {
   if (!p || p.dead) return { ok: false, msg: '找不到这只宠物' };
   if (p.lostSince !== null) return { ok: false, msg: `${p.name}离家出走了` };
   if (p.tripId) return { ok: false, msg: `${p.name}出门了` };
+  if (p.outing) return { ok: false, msg: `${p.name}去邻居家玩了` };
   return { ok: true };
 }
 
@@ -371,6 +375,99 @@ export function setRoom(s: GameState, id: string): Result {
   return { ok: true, msg: `换成了「${def.name}」` };
 }
 
+// ---------- 常客的好感 ----------
+
+/** 送一款皮肤（不用买）。已经有了就不重复给 */
+export function grantSkin(s: GameState, kind: string, skin: string): boolean {
+  if (skinSize(kind) === null || !SKINS.some((k) => k.id === skin) || ownsSkin(s, kind, skin)) return false;
+  (s.skinsOwned[kind] ??= []).push(skin); return true;
+}
+const skinLabel = (kind: string, skin: string) => `${DECOR[kind]?.name ?? ({ bowl: '饭碗', bed: '小床', door: '门', sofa: '沙发', tub: '浴缸', cattree: '猫爬架', scratcher: '猫抓板', pond: '鱼塘', cabinet: '收藏柜', counter: '橱柜' } as Record<string, string>)[kind] ?? kind}的「${SKINS.find((k) => k.id === skin)?.name ?? skin}」皮肤`;
+/** 帮访客办成了一件事：好感 +1；到了数就送回礼。返回要接在提示后面的话 */
+function addFavor(s: GameState, who: string): string {
+  s.favor[who] = (s.favor[who] ?? 0) + 1; let msg = '';
+  (CONFIG.visitors.favor[who] ?? []).forEach((r, i) => {
+    const key = `${who}:${i}`; if (s.favor[who] < r.need || s.favorClaimed.includes(key)) return;
+    s.favorClaimed.push(key); s.fish += r.fish; msg += `。${VISITORS[who as VisitorWho]?.name ?? '它'}成了常客，送来回礼：小鱼干 +${r.fish}`;
+    if (r.skin && grantSkin(s, r.skin[0], r.skin[1])) msg += `、${skinLabel(r.skin[0], r.skin[1])}`;
+    if (r.decor && DECOR[r.decor]) { s.decor.push({ id: newId('decor'), kind: r.decor, zone: null, x: 0, y: 0 }); msg += `、装饰「${DECOR[r.decor].name}」（在「布置房间」里摆出来）`; }
+  });
+  return msg;
+}
+/** 这位访客的好感，和下一份回礼还差几次 */
+export function favorStatus(s: GameState, who: string) {
+  const have = s.favor[who] ?? 0; const next = (CONFIG.visitors.favor[who] ?? []).find((r, i) => !s.favorClaimed.includes(`${who}:${i}`));
+  return { have, next: next ? next.need : null };
+}
+
+// ---------- 邻居猫 ----------
+
+export const bondOf = (s: GameState, id: string) => s.hood.bonds[id] ?? 0;
+export const isNeighborFriend = (s: GameState, id: string) => bondOf(s, id) >= CONFIG.neighbors.friendAt;
+function addBond(s: GameState, id: string, n: number) { s.hood.bonds[id] = Math.min(CONFIG.neighbors.best, bondOf(s, id) + n); }
+/** 主人打开 App（或回到前台）时调用：今天还有名额、家里有宠物、现在没有邻居在、离上一次够久，就来一只 */
+export function openDoorToNeighbors(s: GameState, who?: string): GameEvent[] {
+  const NB = CONFIG.neighbors; const day = dayKey(s.clock); const h = s.hood;
+  if (h.day !== day) { h.day = day; let r = Math.random(); h.quota = 0; for (let n = 0; n < NB.perDayChance.length; n++) { r -= NB.perDayChance[n]; if (r <= 0) { h.quota = n; break; } } }
+  if (!who && (h.quota <= 0 || h.now || s.clock - h.last < NB.gap || homePets(s).length === 0)) return [];
+  if (h.now) return [];
+  const ids = Object.keys(NEIGHBORS); const id = who && NEIGHBORS[who] ? who : ids[Math.floor(Math.random() * ids.length)];
+  if (!who) h.quota--;
+  h.last = s.clock; h.now = { id, arrivedAt: s.clock, leaveAt: s.clock + between(NB.stay), met: [], ate: false };
+  return [{ type: 'neighbor', id }];
+}
+/** 邻居和家里的一只宠物玩了一会儿（画面里它们凑到一起时调用）。同一次串门里和同一只只算一次 */
+export function neighborMeet(s: GameState, petId: string): boolean {
+  const n = s.hood.now, p = s.pets.find((x) => x.id === petId);
+  if (!n || !p || p.dead || p.tripId || p.outing || n.met.includes(petId)) return false;
+  n.met.push(petId); p.mood = clamp(p.mood + CONFIG.neighbors.playMood); addBond(s, n.id, CONFIG.neighbors.bondPerPlay);
+  return true;
+}
+/** 邻居在饭碗边蹭了一口（只是记一笔，不扣你的食物） */
+export function neighborSnack(s: GameState) { if (s.hood.now) s.hood.now.ate = true; }
+function neighborLeaves(s: GameState, events: GameEvent[]) {
+  const n = s.hood.now; if (!n) return; const NB = CONFIG.neighbors; const def = NEIGHBORS[n.id];
+  addBond(s, n.id, NB.bondPerVisit); s.hood.now = null;
+  let find: string | undefined;
+  if (def && s.finds.length < NB.maxFinds && Math.random() < (isNeighborFriend(s, n.id) ? NB.giftChanceFriend : NB.giftChance)) {
+    find = weighted(NB.giftWeight);
+    s.finds.push({ id: newId('find'), kind: find, from: n.id, at: s.clock, x: 0.08 + Math.random() * 0.2, text: find === 'note' ? def.notes[Math.floor(Math.random() * def.notes.length)] : undefined });
+  }
+  events.push({ type: 'neighborLeft', id: n.id, find });
+}
+/** 开发者面板用：让正在串门的邻居马上走 */
+export function sendNeighborHome(s: GameState): GameEvent[] { const ev: GameEvent[] = []; neighborLeaves(s, ev); return ev; }
+/** 捡起院子里的一样小东西 */
+export function collectFind(s: GameState, id: string): Result {
+  const f = s.finds.find((x) => x.id === id); if (!f) return { ok: false, msg: '已经不在了' };
+  s.finds = s.finds.filter((x) => x.id !== id);
+  const from = f.from && NEIGHBORS[f.from] ? NEIGHBORS[f.from].name : '';
+  if (f.kind === 'fish') { const n = between(CONFIG.neighbors.giftFish); s.fish += n; return { ok: true, msg: `${from}留下的小鱼：小鱼干 +${n}` }; }
+  const key = `${f.kind}:${f.from ?? ''}`; s.keepsakes[key] = (s.keepsakes[key] ?? 0) + 1;
+  const name = FIND_KINDS[f.kind]?.name ?? SEASON_FINDS[f.kind]?.name ?? '小东西';
+  return { ok: true, msg: f.kind === 'note' ? `${from}的脚印纸条：「${f.text ?? '……'}」` : from ? `${from}留下的${name.replace(/^一[朵条张片只个]/, '')}，收好了` : `捡到了${name}` };
+}
+export const keepsakeCount = (s: GameState, kind: string, from = '') => s.keepsakes[`${kind}:${from}`] ?? 0;
+/** 让一只宠物去邻居家回访（要先和这只邻居成为朋友）。半小时后自己回来，带回一句小见闻 */
+export function visitNeighbor(s: GameState, petId: string, neighborId: string): Result {
+  const p = s.pets.find((x) => x.id === petId); const def = NEIGHBORS[neighborId];
+  if (!def) return { ok: false, msg: '没有这位邻居' };
+  const u = usable(p); if (!u.ok) return u;
+  if (isWeak(p!)) return { ok: false, msg: `${p!.name}太虚弱了，出不了门` };
+  if (!isNeighborFriend(s, neighborId)) return { ok: false, msg: `和${def.name}还不够熟，等它多来几次` };
+  if (s.hood.now?.id === neighborId) return { ok: false, msg: `${def.name}正在你家呢` };
+  if (p!.food < CONFIG.stats.lowThreshold) return { ok: false, msg: `${p!.name}饿着肚子，不想出门` };
+  p!.outing = { neighborId, until: s.clock + CONFIG.neighbors.outing };
+  return { ok: true, msg: `${p!.name}去${def.home}找${def.name}玩了，大概 ${Math.round(CONFIG.neighbors.outing / MIN)} 分钟后回来` };
+}
+function outingBack(s: GameState, p: Pet, events: GameEvent[]) {
+  const o = p.outing; if (!o) return; p.outing = null; const def = NEIGHBORS[o.neighborId]; if (!def || p.dead) return;
+  p.mood = clamp(p.mood + CONFIG.neighbors.outingMood); addBond(s, o.neighborId, CONFIG.neighbors.outingBond);
+  const text = def.stories[Math.floor(Math.random() * def.stories.length)].replace(/\{pet\}/g, p.name);
+  s.hood.stories = [{ petId: p.id, neighborId: o.neighborId, text, at: s.clock }, ...s.hood.stories].slice(0, 12);
+  events.push({ type: 'outingBack', petId: p.id, neighborId: o.neighborId, text });
+}
+
 // ---------- 猫爬架 ----------
 
 export const CATTREE_LEVELS = ['顶层', '中层', '底层'];
@@ -434,6 +531,7 @@ export function answerVisitor(s: GameState, id: string, yes: boolean): Result {
       s.errand = { destId: v.destId!, reward: between(V.errandFish), from: v.who, expiresAt: s.clock + V.errandExpire };
       msg = `接下了信。派宠物出门时可以选「顺路送信」`;
     }
+    msg += addFavor(s, v.who);
   }
   s.visitors = s.visitors.filter((x) => x.id !== id);
   return { ok: true, msg };

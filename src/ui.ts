@@ -1,5 +1,5 @@
 // 界面：顶部和底部的按钮，以及所有从下方弹出的面板。
-import { SKINS, SKIN_PRICE, ROOM_THEMES, ZONES, CONFIG, DAY, DESTS, TREAT, TIME_NAMES, SEASON_NAMES, FOODS, FRY, FUR_COLORS, DECOR, VISITORS, SEASON_IDS, TIME_IDS, SPECIAL_DECOR, TRAITS, TRAIT_IDS, type Trait, PATTERN_NAMES, DEFAULT_LOOK, encodeLook, decodeLook, type Look, type CoatPattern, GEAR, GOODS, HOUR, MIN, SOUVENIRS, SPRITE, TOOLS, type ActionName } from './config';
+import { NEIGHBORS, FIND_KINDS, SEASON_EVENTS, SEASON_FINDS, SKINS, SKIN_PRICE, ROOM_THEMES, ZONES, CONFIG, DAY, DESTS, TREAT, TIME_NAMES, SEASON_NAMES, FOODS, FRY, FUR_COLORS, DECOR, VISITORS, SEASON_IDS, TIME_IDS, SPECIAL_DECOR, TRAITS, TRAIT_IDS, type Trait, PATTERN_NAMES, DEFAULT_LOOK, encodeLook, decodeLook, type Look, type CoatPattern, GEAR, GOODS, HOUR, MIN, SOUVENIRS, SPRITE, TOOLS, type ActionName } from './config';
 import { renderPostcard } from './art/postcard';
 import { drawDefaultSheet } from './art/defaultPet';
 import type { Game } from './game';
@@ -80,6 +80,9 @@ export class UI {
       if (e.type === 'letter') { if (!this.sheet) this.showReturns(); else this.toast('路上寄来了一张明信片'); sfx('door'); }
       if (e.type === 'visitor') { const v = game.state.visitors.find((x) => x.id === e.visitorId); if (v) { this.toast(`门口来了客人：${VISITORS[v.who].name}`); sfx('door'); } }
       if (e.type === 'visitorLeft') this.toast(`${VISITORS[e.who].name}等了很久，自己走了`);
+      if (e.type === 'neighbor') { this.toast(`${NEIGHBORS[e.id]?.name ?? '邻居'}来串门了（从院子那边进来）`); sfx('door'); meow('short'); }
+      if (e.type === 'neighborLeft') this.toast(`${NEIGHBORS[e.id]?.name ?? '邻居'}回去了` + (e.find ? `，在院子里留下了${FIND_KINDS[e.find]?.name ?? '一点东西'}` : ''));
+      if (e.type === 'outingBack') { this.toast(e.text); sfx('return'); meow('happy'); }
       if (e.type === 'errandDone') { const d = DESTS.find((x) => x.id === e.destId); this.toast(`信送到${d?.name ?? ''}了，谢礼：小鱼干 +${e.reward}`); sfx('coin'); }
       if (e.type === 'hungry' || e.type === 'weak') meow('hungry');
       if (e.type === 'ranAway' || e.type === 'notFound') meow('sad');
@@ -195,10 +198,10 @@ export class UI {
     this.hudDev.style.display = s.dev.enabled ? '' : 'none';
     this.hudDev.textContent = `调试×${s.dev.speed}`;
     this.scene.relayout();
-    const sig = sim.alivePets(s).map((p) => `${p.id}${p.name}${p.tripId ? 1 : 0}${sim.isLost(p) ? 1 : 0}${p.spriteId}`).join('|') + this.game.avatarRev;
+    const sig = sim.alivePets(s).map((p) => `${p.id}${p.name}${p.tripId || p.outing ? 1 : 0}${sim.isLost(p) ? 1 : 0}${p.spriteId}`).join('|') + this.game.avatarRev;
     if (sig !== this.stripSig) {
       this.stripSig = sig;
-      this.strip.replaceChildren(...sim.alivePets(s).map((p) => h('button', { class: 'petchip' + (p.tripId || sim.isLost(p) ? ' out' : ''), 'data-pet': p.id, title: p.name, onclick: () => { this.scene.focusPet(p.id); this.openPet(p.id); } }, this.avatarCanvas(p), h('span', { class: 'dot' }))));
+      this.strip.replaceChildren(...sim.alivePets(s).map((p) => h('button', { class: 'petchip' + (p.tripId || p.outing || sim.isLost(p) ? ' out' : ''), 'data-pet': p.id, title: p.name, onclick: () => { this.scene.focusPet(p.id); this.openPet(p.id); } }, this.avatarCanvas(p), h('span', { class: 'dot' }))));
     }
     this.updateHudLive();
   }
@@ -215,9 +218,9 @@ export class UI {
     this.hudCheck.classList.toggle('hot', sim.canCheckin(s));
     for (const chip of this.strip.children as any as HTMLElement[]) {
       const p = this.game.pet(chip.dataset.pet!); const dot = chip.querySelector('.dot') as HTMLElement; if (!p) continue;
-      const text = sim.isLost(p) ? '出走' : p.tripId ? '外出' : sim.isWeak(p) ? '虚弱' : p.food < low ? '饿' : p.clean < low ? '脏' : p.mood < low ? '闷' : '';
+      const text = sim.isLost(p) ? '出走' : p.tripId ? '外出' : p.outing ? '串门' : sim.isWeak(p) ? '虚弱' : p.food < low ? '饿' : p.clean < low ? '脏' : p.mood < low ? '闷' : '';
       dot.textContent = text; dot.style.display = text ? '' : 'none';
-      dot.className = 'dot' + (sim.isLost(p) ? ' grey' : p.tripId ? ' blue' : sim.isWeak(p) ? ' grey' : '');
+      dot.className = 'dot' + (sim.isLost(p) ? ' grey' : p.tripId || p.outing ? ' blue' : sim.isWeak(p) ? ' grey' : '');
     }
   }
 
@@ -281,6 +284,8 @@ export class UI {
 
   onObject(kind: ObjectKind, id?: string) {
     if (kind === 'visitor' && id) { this.openVisitor(id); return; }
+    if (kind === 'neighbor') { this.openNeighbors(); return; }
+    if (kind === 'find' && id) { const r = this.game.act((st) => sim.collectFind(st, id)); this.say(r); sfx(r.ok ? 'coin' : 'error'); return; }
     if (kind === 'door') this.openDoor();
     else if (kind === 'album') this.openAlbum();
     else if (kind === 'cabinet') this.openCabinet();
@@ -304,6 +309,32 @@ export class UI {
 
   // ---------- 访客 ----------
 
+  // ---------- 邻居 ----------
+
+  openNeighbors() {
+    this.open({ title: '邻居', render: () => {
+      const s = this.game.state; const NB = CONFIG.neighbors; const home = sim.homePets(s).filter((p) => !sim.isWeak(p));
+      const out: Kid[] = [h('p', { class: 'soft' }, '住在附近的三只猫。你开着游戏的时候，它们偶尔会从院子那边进来串门，和家里的宠物玩一会儿、蹭口饭再走。来得多了就成了朋友，可以让宠物去它家回访。')];
+      for (const [id, nb] of Object.entries(NEIGHBORS)) {
+        const bond = sim.bondOf(s, id), friend = sim.isNeighborFriend(s, id), here = s.hood.now?.id === id; const set = this.game.sprites.get(nb.look);
+        const keeps = (['flower', 'note'] as const).map((k) => [k, sim.keepsakeCount(s, k, id)] as const).filter(([, n]) => n > 0);
+        out.push(h('div', { class: 'card' },
+          h('div', { class: 'pethead' }, set ? this.petAnim(set, () => (here ? 'happy' : 'sit')) : null, h('div', { style: 'flex:1;min-width:0' },
+            h('b', { style: 'font-size:18px' }, nb.name, h('span', { class: 'soft' }, `  ${nb.home}` + (here ? ' · 正在你家' : ''))), h('p', { class: 'soft' }, nb.desc),
+            h('div', { class: 'bar' }, h('span', null, friend ? '朋友' : '熟悉'), h('div', { class: 'track' }, h('div', { class: 'fill', style: `width:${(bond / NB.best) * 100}%;background:${friend ? 'var(--coral)' : 'var(--mustard)'}` })), h('span', { class: 'num' }, String(Math.round(bond)))),
+            keeps.length ? h('p', { class: 'soft' }, '它留下的：', keeps.map(([k, n]) => `${FIND_KINDS[k].icon} ×${n}`).join('  ')) : null)),
+          friend
+            ? h('div', { class: 'seg' }, h('span', { class: 'soft', style: 'align-self:center' }, `去它家玩 ${Math.round(NB.outing / MIN)} 分钟：`), home.length ? home.map((p) => h('button', { class: 'chip', disabled: here, onclick: () => { const r = this.game.act((st) => sim.visitNeighbor(st, p.id, id)); this.say(r); sfx(r.ok ? 'door' : 'error'); } }, p.name)) : h('span', { class: 'soft', style: 'align-self:center' }, '家里现在没有能出门的宠物'))
+            : h('p', { class: 'soft' }, `再熟 ${Math.ceil(NB.friendAt - bond)} 点就是朋友了（它每来一次 +${NB.bondPerVisit}，和一只宠物玩一次 +${NB.bondPerPlay}）。`)));
+      }
+      const outs = s.pets.filter((p) => p.outing);
+      if (outs.length) out.push(h('h3', null, '正在串门'), ...outs.map((p) => h('p', null, `${p.name} 在${NEIGHBORS[p.outing!.neighborId]?.name ?? '邻居'}家，`, this.countdown(() => p.outing?.until ?? 0, '马上到家'), '后回来')));
+      if (s.hood.stories.length) out.push(h('h3', null, '串门回来讲的'), ...s.hood.stories.map((st) => h('p', { class: 'soft' }, `· ${st.text}`)));
+      out.push(h('p', { class: 'soft' }, `今天还会来 ${s.hood.quota} 次。`));
+      return out;
+    } });
+  }
+
   openVisitor(id: string) {
     const s = this.game.state; const v0 = s.visitors.find((x) => x.id === id); if (!v0) return;
     const who = VISITORS[v0.who]; meow('short');
@@ -312,7 +343,9 @@ export class UI {
       const v = s.visitors.find((x) => x.id === id);
       if (!v) return [h('p', { class: 'center soft' }, '它已经走了。'), h('button', { class: 'btn block', onclick: () => this.close() }, '好')];
       const set = this.game.sprites.get(who.look); const name = (item: string) => [...FOODS, ...TOOLS, ...GOODS, FRY, TREAT].find((x) => x.id === item)?.name ?? item;
-      const out: Kid[] = [h('div', { class: 'pethead' }, set ? this.petAnim(set, () => 'idle') : null, h('div', { style: 'flex:1' }, h('p', null, `「${who.hello}」`), h('p', { class: 'soft' }, '再过 ', this.countdown(() => v.leaveAt, '马上'), ' 它就走了')))];
+      const fav = sim.favorStatus(s, v.who);
+      const out: Kid[] = [h('div', { class: 'pethead' }, set ? this.petAnim(set, () => 'idle') : null, h('div', { style: 'flex:1' }, h('p', null, `「${who.hello}」`), h('p', { class: 'soft' }, '再过 ', this.countdown(() => v.leaveAt, '马上'), ' 它就走了'),
+        h('p', { class: 'soft' }, `帮过它 ${fav.have} 次` + (fav.next !== null ? `，再帮 ${Math.max(1, fav.next - fav.have)} 次它会送回礼` : '，已经是老朋友了'))))];
       if (v.kind === 'gift') {
         out.push(h('div', { class: 'card' }, h('div', { class: 'item' }, h('span', { class: 'ico' }, '🎁'), h('div', { class: 'txt' }, h('b', null, '带了一份小礼物'), h('span', { class: 'soft' }, v.item ? `${name(v.item)} ×1` : `小鱼干 ${v.fish}`)))));
         out.push(h('p', null, h('button', { class: 'btn primary block', onclick: () => answer(true) }, '收下，谢谢')));
@@ -404,6 +437,11 @@ export class UI {
       out.push(h('div', { class: 'bar' }, h('span', null, STAT_NAME[k]), h('div', { class: 'track' }, fill), num));
     }
 
+    if (p.outing) {
+      const nb = NEIGHBORS[p.outing.neighborId];
+      out.push(h('div', { class: 'banner' }, `去${nb?.home ?? '邻居家'}找${nb?.name ?? '邻居'}玩了，`, this.countdown(() => p.outing?.until ?? 0, '马上到家'), '后回来。在邻居家有人照顾，状态不会下降。'));
+      return out;
+    }
     if (trip) {
       out.push(h('div', { class: 'banner' }, '出门中，', this.countdown(() => trip.returnAt, '马上到家'), '后回家。旅途中靠便当，状态不会下降。'));
       return out;
@@ -725,7 +763,7 @@ export class UI {
       return [h('div', { class: 'grid2' },
         h('button', { class: 'btn', onclick: () => this.openFamily() }, '家庭成员'), h('button', { class: 'btn', onclick: () => this.openAlbum() }, '纪念相册'),
         h('button', { class: 'btn', onclick: () => this.openCabinet() }, '收藏柜'), h('button', { class: 'btn' + (sim.milestoneStatus(s).some((m) => m.ready) ? ' primary' : ''), onclick: () => this.openCodex() }, '图鉴'), h('button', { class: 'btn', onclick: () => this.openBack() }, '背屏预览'),
-        h('button', { class: 'btn', onclick: () => this.startDecor() }, '布置房间'),
+        h('button', { class: 'btn', onclick: () => this.startDecor() }, '布置房间'), h('button', { class: 'btn', onclick: () => this.openNeighbors() }, '邻居'),
         h('button', { class: 'btn', onclick: () => this.openDoor() }, '派宠物出门'), h('button', { class: 'btn', onclick: () => this.openPond() }, '鱼塘')),
         h('h3', null, '声音'),
         h('label', { class: 'volume' }, '音乐', h('input', { type: 'range', min: '0', max: '100', step: '5', value: String(Math.round(audioSettings.music * 100)), oninput: (e: Event) => setVolume('music', Number((e.target as HTMLInputElement).value) / 100) })),
@@ -1256,6 +1294,10 @@ export class UI {
         h('h3', null, '访客'),
         h('div', { class: 'seg' }, (['gift', 'trade', 'errand'] as const).map((k) => h('button', { class: 'chip', onclick: () => { this.game.act((st) => { st.visitors.push(sim.makeVisitor(st, undefined, k)); return { ok: true }; }); this.close(); this.toast('门口来了一位访客'); } }, `叫一个来：${{ gift: '送礼', trade: '换东西', errand: '托送信' }[k]}`))),
         h('p', { class: 'soft' }, `今天还会来 ${s.visitorQuota} 个（每天第一次打开时随机定 0–2 个，回到游戏时出现）。`),
+        h('h3', null, '邻居'),
+        h('div', { class: 'seg' }, Object.entries(NEIGHBORS).map(([nid, nb]) => h('button', { class: 'chip', onclick: () => { const ev = sim.openDoorToNeighbors(s, nid); this.game.changed(); this.close(); this.toast(ev.length ? `${nb.name}来了，去院子和客厅看看` : '已经有一只邻居在了'); } }, `叫${nb.name}来`)),
+          h('button', { class: 'chip', onclick: () => { sim.sendNeighborHome(s); this.game.changed(); } }, '让它回去'),
+          h('button', { class: 'chip', onclick: () => { for (const nid of Object.keys(NEIGHBORS)) s.hood.bonds[nid] = CONFIG.neighbors.friendAt; this.game.changed(); this.toast('三只邻居都成了朋友'); } }, '都变成朋友')),
         h('h3', null, '范围框'),
         h('button', { class: 'btn block' + (d.debugBoxes ? ' on' : ''), onclick: () => { d.debugBoxes = !d.debugBoxes; this.cardCache.clear(); this.game.changed(); if (d.debugBoxes) { this.close(); this.toast('范围框已打开：蓝=物品，绿=站位，橙=遮挡线，红=宠物，紫=地板'); } } }, `显示范围框：${d.debugBoxes ? '开' : '关'}`),
         h('p', { class: 'soft' }, '蓝框 = 物品的图片范围（也是点击范围）；绿点 = 宠物用这件家具时站的位置；橙线 = 遮挡线，线以下盖在宠物前面；黄点 = 发光的位置；红框 = 宠物的图片范围，红点 = 脚底；紫线 = 地板线和每只宠物走的线。明信片上会标出所有落脚点。'),

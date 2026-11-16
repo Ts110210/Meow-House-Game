@@ -152,6 +152,39 @@ export const CONFIG = {
     /** 托送信：送到之后的奖励；接了信之后多久没送就作废 */
     errandFish: [40, 70] as [number, number],
     errandExpire: 3 * DAY,
+    /** 常客：每帮一位访客办成一件事（收礼、换东西、接信），它的好感 +1。到了下面的数会送回礼。
+     *  skin = 送一款家具皮肤（[家具, 皮肤]，不用再买）；decor = 送一件商店里买不到的装饰 */
+    favor: {
+      tabby: [{ need: 3, fish: 40, skin: ['bowl', 'berry'] }, { need: 7, fish: 80, decor: 'bell' }],
+      neighbor: [{ need: 3, fish: 40, skin: ['bed', 'cream'] }, { need: 7, fish: 80, decor: 'lantern' }],
+      courier: [{ need: 3, fish: 40, skin: ['door', 'navy'] }, { need: 7, fish: 80, decor: 'parcel' }],
+    } as Record<string, { need: number; fish: number; skin?: [string, string]; decor?: string }[]>,
+  },
+
+  // ---------- 邻居猫 ----------
+  neighbors: {
+    /** 每天来串门 0、1、2 次的可能性（加起来是 1）。只在你开着游戏的时候来 */
+    perDayChance: [0.3, 0.45, 0.25],
+    /** 两次串门之间至少隔多久 */
+    gap: 90 * MIN,
+    /** 来了之后待多久 */
+    stay: [4 * MIN, 7 * MIN] as [number, number],
+    /** 每来一次，和这个家熟一点；每和一只宠物玩一次，再熟一点 */
+    bondPerVisit: 8, bondPerPlay: 3,
+    /** 熟到这个数算「朋友」：可以让宠物去它家回访，它走的时候更常留下小东西。满了是 best */
+    friendAt: 30, best: 100,
+    /** 和邻居玩一次，宠物加多少心情 */
+    playMood: 6,
+    /** 走的时候留下小东西的可能性：还不熟 / 已经是朋友 */
+    giftChance: 0.35, giftChanceFriend: 0.7,
+    /** 留下的是什么：小鱼、小花、脚印纸条各占多少 */
+    giftWeight: { fish: 0.45, flower: 0.3, note: 0.25 },
+    /** 捡到小鱼换多少小鱼干 */
+    giftFish: [6, 14] as [number, number],
+    /** 院子里的小东西最多同时有几样；多久没捡就不见了 */
+    maxFinds: 4, findExpire: 2 * DAY,
+    /** 回访：去多久，回来加多少心情，和邻居熟多少 */
+    outing: 30 * MIN, outingMood: 12, outingBond: 6,
   },
 
   // ---------- 动作要做多久（毫秒，真实时间） ----------
@@ -512,6 +545,37 @@ export const VISITORS: Record<VisitorWho, { name: string; look: string; hello: s
   courier: { name: '快递猫', look: 'look:cow|#FBF8F2|#3F6FA8|#4A4550|#3B2A22|0', hello: '有你家的东西，签收一下。' },
 };
 
+/** 住在附近的三只邻居猫。会自己来串门，和家里的宠物玩一会儿、蹭口饭再走；熟了之后宠物也可以去它家回访。
+ *  look = 用捏猫系统画的占位样子；notes = 它留下的脚印纸条上写的话；stories = 宠物去它家回来讲的小见闻（{pet} 换成宠物的名字） */
+export interface NeighborDef { name: string; home: string; look: string; desc: string; hello: string; notes: string[]; stories: string[] }
+export const NEIGHBORS: Record<string, NeighborDef> = {
+  mochi: { name: '麻薯', home: '隔壁奶茶店', look: 'look:solid|#F6F1E7|#E9DFCB|#4A4550|#6FA8DC|1', desc: '隔壁奶茶店的白猫，慢吞吞的，最爱蹭饭和晒太阳', hello: '喵——（慢慢地走了进来）',
+    notes: ['今天的太阳很好，谢谢你家的地板。', '饭很好吃。下次还来。', '我把最舒服的位置留给你们了。'],
+    stories: ['{pet}在奶茶店的柜台上趴了一下午，回来身上有一股奶香。', '麻薯带{pet}看了后门的那只大纸箱，两只挤在里面睡了一觉。', '{pet}学会了在收银机旁边装招财猫。'] },
+  dahei: { name: '大黑', home: '巷子口', look: 'look:solid|#3C3A40|#5A5660|#4A4550|#E3B341|0', desc: '巷子口的黑猫，胆子大，爱追着跑、爱打闹', hello: '喵！（从院子的栅栏上跳了下来）',
+    notes: ['你们家的球不错。', '巷子口新来了一只麻雀，改天带你们去看。', '下次比谁跑得快。'],
+    stories: ['大黑带{pet}爬上了巷子口的矮墙，在上面看了很久的自行车。', '{pet}跟着大黑追了一路落叶，回来累得直喘。', '{pet}和大黑在巷子里发现了一个会滚的瓶盖。'] },
+  huajuan: { name: '花卷', home: '楼上', look: 'look:calico|#FBF8F2|#E29A4B|#4A4550|#8DAA4E|0', desc: '楼上的三花，爱干净，见了谁都想给它舔舔毛', hello: '喵～（先把爪子舔干净才进门）',
+    notes: ['你家那只的耳朵后面，我帮它舔干净了。', '窗台上的花开了，给你们带了一朵。', '记得天天梳毛哦。'],
+    stories: ['花卷把{pet}从头到尾巴舔了一遍，回来毛都是顺的。', '{pet}在楼上的窗台看见了自己家的院子。', '花卷教了{pet}怎么把爪子洗得最干净。'] },
+};
+/** 季节活动：每个季节在院子和阳台上会出现三种小东西，每种捡够 need 个，就能领这一季限定的装饰。
+ *  每一轮季节都可以重新收集；装饰领过一次之后，再完成只给小鱼干。 */
+export interface SeasonEventDef { name: string; items: { id: string; name: string; icon: string; color: string }[]; need: number; reward: string; fish: number }
+export const SEASON_EVENTS: Record<Season, SeasonEventDef> = {
+  spring: { name: '春天的花信', need: 2, reward: 'vase', fish: 60, items: [{ id: 'petalPink', name: '粉色花瓣', icon: '🌸', color: '#F2A9BC' }, { id: 'petalWhite', name: '白色花瓣', icon: '🤍', color: '#FBF6EC' }, { id: 'sprout', name: '嫩芽', icon: '🌱', color: '#9CC987' }] },
+  summer: { name: '夏夜的收藏', need: 2, reward: 'jar', fish: 60, items: [{ id: 'firefly', name: '萤火虫', icon: '✨', color: '#F3E77A' }, { id: 'shell', name: '小贝壳', icon: '🐚', color: '#F4D9C6' }, { id: 'clover', name: '四叶草', icon: '🍀', color: '#7FB870' }] },
+  autumn: { name: '秋天的落叶', need: 2, reward: 'wreath', fish: 60, items: [{ id: 'leafRed', name: '红枫叶', icon: '🍁', color: '#D9603F' }, { id: 'leafYellow', name: '银杏叶', icon: '🍂', color: '#E3B341' }, { id: 'acorn', name: '橡果', icon: '🌰', color: '#A97B50' }] },
+  winter: { name: '冬天的小礼物', need: 2, reward: 'snowman', fish: 60, items: [{ id: 'snowflake', name: '雪花', icon: '❄️', color: '#DCEBF5' }, { id: 'pinecone', name: '松果', icon: '🌲', color: '#8A6A4E' }, { id: 'holly', name: '冬青果', icon: '🔴', color: '#C9404A' }] },
+};
+export const SEASON_FINDS: Record<string, { name: string; icon: string; color: string; season: Season }> = Object.fromEntries(
+  (Object.entries(SEASON_EVENTS) as [Season, SeasonEventDef][]).flatMap(([se, ev]) => ev.items.map((it) => [it.id, { name: it.name, icon: it.icon, color: it.color, season: se }])));
+
+/** 邻居留在院子里的小东西 */
+export const FIND_KINDS: Record<string, { name: string; icon: string }> = {
+  fish: { name: '一条小鱼', icon: '🐟' }, flower: { name: '一朵小花', icon: '🌼' }, note: { name: '脚印纸条', icon: '🐾' },
+};
+
 export const SEASON_IDS: Season[] = ['spring', 'summer', 'autumn', 'winter'];
 export const TIME_IDS: DayTime[] = ['day', 'dusk', 'night'];
 /** 房间装饰。layer：wall 挂在墙上；floor 铺在地上（宠物踩在上面）；stand 摆在地上。
@@ -532,6 +596,13 @@ export const DECOR: Record<string, DecorDef> = {
   shelf: { name: '小书架', icon: '📚', price: 300, height: 190, layer: 'stand', desc: '摆满了书和小东西' },
   globe: { name: '小地球仪', icon: '🌏', price: 0, height: 96, layer: 'stand', desc: '图鉴里程碑的奖励', special: true },
   goldframe: { name: '金边相框', icon: '🖼️', price: 0, height: 130, layer: 'wall', desc: '图鉴里程碑的奖励', special: true },
+  vase: { name: '樱花花瓶', icon: '🌸', price: 0, height: 120, layer: 'stand', desc: '春天活动的奖励', special: true },
+  jar: { name: '萤火虫玻璃罐', icon: '✨', price: 0, height: 84, layer: 'stand', desc: '夏天活动的奖励，天黑了会亮', special: true, light: [0.5, 0.5] },
+  wreath: { name: '落叶花环', icon: '🍁', price: 0, height: 110, layer: 'wall', desc: '秋天活动的奖励', special: true },
+  snowman: { name: '雪人摆件', icon: '⛄', price: 0, height: 110, layer: 'stand', desc: '冬天活动的奖励', special: true },
+  bell: { name: '铃铛挂饰', icon: '🔔', price: 0, height: 90, layer: 'wall', desc: '狸花猫的回礼：常客才有', special: true },
+  lantern: { name: '小灯笼', icon: '🏮', price: 0, height: 110, layer: 'stand', desc: '邻居家的猫的回礼：常客才有，天黑了会亮', special: true, light: [0.5, 0.45] },
+  parcel: { name: '快递纸箱摆件', icon: '📦', price: 0, height: 80, layer: 'stand', desc: '快递猫的回礼：常客才有', special: true },
   trophy: { name: '收藏家奖杯', icon: '🏆', price: 0, height: 100, layer: 'stand', desc: '图鉴里程碑的奖励', special: true },
 };
 /** 兼容旧名字：里程碑奖励的特殊装饰 */

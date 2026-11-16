@@ -4,6 +4,7 @@ import { PALETTE, SKINS } from '../config';
 import { makeCanvas, Sketch } from './sketch';
 
 let P: typeof PALETTE = PALETTE;
+const lighten = (hex: string, t: number) => { const n = parseInt(hex.slice(1), 16); const f = (v: number) => Math.round(v + (255 - v) * t); return `rgb(${f(n >> 16)},${f((n >> 8) & 255)},${f(n & 255)})`; };
 
 const ART: Record<string, { w: number; h: number; draw(s: Sketch): void }> = {
   rug: { w: 300, h: 70, draw(s) { s.ellipse(150, 36, 146, 30, { fill: P.coral }); s.ellipse(150, 36, 112, 21, { fill: '#F1C9B8' }); s.ellipse(150, 36, 70, 12, { fill: P.mustard }); } },
@@ -42,6 +43,15 @@ const ART: Record<string, { w: number; h: number; draw(s: Sketch): void }> = {
     s.line(26, 46, 26, 194, P.woodDark, 3); s.ellipse(26, 195, 16, 5, { fill: P.woodDark, width: 1.2 });
     s.poly([[4, 46], [48, 46], [38, 2], [14, 2]], { fill: P.mustard });
   } },
+  // 季节活动的奖励
+  vase: { w: 80, h: 120, draw(s) { s.line(40, 70, 30, 20, P.woodDark, 2); s.line(40, 70, 52, 14, P.woodDark, 2); s.line(40, 70, 44, 34, P.woodDark, 2); for (const [x, y] of [[28, 20], [22, 30], [52, 14], [60, 24], [44, 32], [36, 12], [50, 40]]) s.ellipse(x, y, 7, 6, { fill: '#F2A9BC', width: 1 }); s.poly([[24, 116], [56, 116], [62, 84], [50, 66], [30, 66], [18, 84]], { fill: P.mist }); } },
+  jar: { w: 64, h: 84, draw(s) { s.rect(8, 16, 48, 66, { fill: lighten(P.mist, 0.55), r: 10 }); s.rect(14, 6, 36, 12, { fill: P.woodDark, r: 3 }); for (const [x, y] of [[22, 36], [40, 46], [30, 62], [44, 68], [20, 54]]) s.ellipse(x, y, 4, 4, { fill: '#F3E77A', stroke: false, hatch: 0 }); } },
+  wreath: { w: 110, h: 110, draw(s) { for (let i = 0; i < 14; i++) { const a = (i / 14) * Math.PI * 2; s.ellipse(55 + Math.cos(a) * 36, 58 + Math.sin(a) * 36, 13, 8, { fill: ['#D9603F', '#E3B341', '#A97B50'][i % 3], width: 1 }); } s.rect(46, 6, 18, 14, { fill: P.coral, r: 4 }); } },
+  snowman: { w: 90, h: 110, draw(s) { s.ellipse(45, 78, 32, 30, { fill: P.white }); s.ellipse(45, 36, 22, 21, { fill: P.white }); s.rect(28, 50, 34, 9, { fill: P.coral, r: 4 }); s.ellipse(38, 32, 2.5, 2.5, { fill: P.ink, stroke: false, hatch: 0 }); s.ellipse(52, 32, 2.5, 2.5, { fill: P.ink, stroke: false, hatch: 0 }); s.poly([[45, 38], [60, 41], [45, 44]], { fill: P.mustard, width: 1 }); s.rect(32, 8, 26, 10, { fill: P.woodDark, r: 2 }); } },
+  // 常客的回礼
+  bell: { w: 70, h: 90, draw(s) { s.line(35, 0, 35, 22, P.ink, 1.3); s.poly([[14, 60], [56, 60], [48, 26], [22, 26]], { fill: P.mustard }); s.rect(10, 58, 50, 8, { fill: P.mustard, r: 4 }); s.ellipse(35, 74, 7, 7, { fill: P.coral }); s.rect(27, 16, 16, 10, { fill: P.coral, r: 4 }); } },
+  lantern: { w: 80, h: 110, draw(s) { s.line(40, 2, 40, 14, P.ink, 1.3); s.rect(26, 12, 28, 8, { fill: P.woodDark, r: 3 }); s.ellipse(40, 54, 32, 36, { fill: P.coral }); for (const x of [26, 40, 54]) s.curve([[x, 22], [x + (x - 40) * 0.5, 54], [x, 88]], P.ink, 1.1, 0.5); s.rect(26, 88, 28, 8, { fill: P.woodDark, r: 3 }); s.line(40, 96, 40, 108, P.mustard, 3); } },
+  parcel: { w: 96, h: 80, draw(s) { s.rect(4, 22, 88, 56, { fill: lighten(P.wood, 0.25), r: 3 }); s.poly([[4, 22], [22, 4], [48, 22]], { fill: lighten(P.wood, 0.4) }); s.poly([[48, 22], [74, 4], [92, 22]], { fill: lighten(P.wood, 0.4) }); s.line(48, 22, 48, 78, P.mustard, 6, 0.8); s.rect(58, 44, 24, 16, { fill: P.white, r: 2, width: 1 }); } },
   // 里程碑奖励的特殊装饰
   globe: { w: 80, h: 100, draw(s) { s.rect(34, 78, 12, 14, { fill: P.woodDark }); s.rect(20, 90, 40, 8, { fill: P.woodDark, r: 4 }); s.ellipse(40, 44, 32, 32, { fill: P.mist }); s.poly([[22, 36], [36, 26], [44, 40], [34, 56], [24, 50]], { fill: P.sage }); s.poly([[48, 46], [60, 40], [62, 56], [52, 62]], { fill: P.sage }); } },
   goldframe: { w: 110, h: 130, draw(s) { s.rect(4, 4, 102, 122, { fill: '#E3B341', r: 6 }); s.rect(16, 16, 78, 98, { fill: '#FBF6EC' }); s.ellipse(55, 58, 22, 20, { fill: P.coral }); s.poly([[38, 44], [44, 26], [52, 44]], { fill: P.coral }); s.poly([[58, 44], [66, 26], [72, 44]], { fill: P.coral }); s.rect(30, 86, 50, 16, { fill: P.coral, r: 8 }); } },
