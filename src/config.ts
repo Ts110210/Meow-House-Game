@@ -29,7 +29,7 @@ export const TIME_NAMES: Record<DayTime, string> = { day: '白天', dusk: '傍�
 export const SEASON_NAMES: Record<Season, string> = { spring: '春', summer: '夏', autumn: '秋', winter: '冬' };
 
 export const CONFIG = {
-  version: '0.6.0',
+  version: '0.7.0',
 
   // ---------- 宠物数量 ----------
   maxPets: 5,
