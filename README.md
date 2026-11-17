@@ -94,7 +94,7 @@ TypeScript + PixiJS，用 Capacitor 打包成安卓 App。美术目前全部是�
 | 院子里小东西的图标 | 未做 | 邻居留下的和季节活动的 15 种小东西现在用表情符号占位，不同手机显示不一样，和彩铅风不搭。要换成画的占位图标，并加 `finds/<编号>.png` 的图片接口（清单见 `docs/素材模板.md` 第 7 节）。 |
 | 经济平衡 | 未做，价格都是暂定 | 皮肤全部买齐约 13,320 小鱼干，两套房间风格 800；每天净收入约 55–95。要么降价，要么增加收入来源。价格在 `src/config.ts` 的 `SKIN_PRICE`、`ROOM_THEMES`、`GEAR`。 |
 | 真机性能 | **没验证过** | 宠物贴图从 8 行变成 16 行，占用翻倍；5 只猫加邻居加访客同时在场时，要在手机上看会不会卡、发热。最近几批改动都只在电脑上的替身环境里看过画面。 |
-| 网页版的公开链接 | 未部署 | 现有的网页预览是 claude.ai 上的一个 artifact（见最上面的链接），是早期版本，不会跟着仓库更新，打开需要能访问 claude.ai。仓库没有配置任何网页部署（只有打安卓包的 Actions）。没有在 iPhone 上验证过，也没有在中国大陆网络下验证过。下一步如果要做：用 GitHub Pages 或别的静态托管发布 `npm run build` 的 `dist/`（`vite.config.ts` 已经是相对路径 `base: './'`）；需要主人决定托管在哪（大陆网络下 GitHub Pages 不稳定，可能要国内可访问的托管和域名）、是否公开；iPhone 上还要检查存档、声音、全屏和安全区。 |
+| 网页版（给 iPhone 用） | 未部署，主人决定先不做 | 安卓用 APK 就行，网页版主要是给 iPhone 的 Safari 用。**本地 HTML 文件在 iPhone 上不行**：从「文件」App 打开只会预览、不执行游戏代码，所以必须放到 https 网址上。最上面那个 claude.ai 链接是早期版本，不会更新，主人也不想用 Claude 托管。现成的方案：仓库是公开的，可以免费用 GitHub Pages——在 `.github/workflows/android.yml` 里加一步，把 `npm run build` 的 `dist/` 发布出去（`vite.config.ts` 已经是相对路径），网址会是 `https://ts110210.github.io/back-screen-pet/`，每次推送自动更新；需要主人在仓库 Settings → Pages 把来源设成 GitHub Actions（AI 这边没有权限开）。缺点：拿到网址谁都能打开；中国大陆网络下 github.io 不稳定。iPhone Safari 上的存档、声音、全屏、安全区都还没验证过。另外：电脑上要单文件版，可以从 Releases 的 APK 里取出 `assets/public/` 的 `index.html`、`game.js`、`index.css`，把 CSS 和 JS 内联进 HTML（2026-11-17 做过一次 build-29 的，电脑版 Chrome 能玩）。 |
 
 ## 更新记录
 
@@ -103,6 +103,7 @@ TypeScript + PixiJS，用 Capacitor 打包成安卓 App。美术目前全部是�
 
 | 时间（UTC+8） | 安装包 | 内容 |
 | --- | --- | --- |
+| 11-18 02:35 | 见 Actions（只改文档） | 待办里的网页版一行补上 iPhone 的结论：本地 HTML 不行、要 https；方案是 GitHub Pages，主人决定先不部署 |
 | 11-17 11:15 | 见 Actions（只改文档） | README 加「待办与待决策」；`CLAUDE.md` 指向它 |
 | 11-17 10:40 | build-27 | v0.7.0：加接手说明 `CLAUDE.md`，README 补上这一批的功能，素材模板核对一遍 |
 | 11-17 07:38 | build-26 | 背屏预览多了小剧场和时钟两种画面 |
