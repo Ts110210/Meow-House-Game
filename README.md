@@ -4,7 +4,7 @@
 TypeScript + PixiJS，用 Capacitor 打包成安卓 App。美术目前全部是代码画的彩铅风占位图，都可以换成图片。
 
 - 网页预览版：https://claude.ai/artifact/LVbx5Ga666fJqhFytToquw
-- 安卓安装包：每次推送到 main 都会自动打包，在 [Releases](https://github.com/Ts110210/back-screen-pet/releases) 里下载最新的 `build-N`（覆盖安装，存档保留）
+- 安卓安装包：每次推送到 main 都会自动打包，在 [Releases](https://github.com/Ts110210/Meow-House-Game/releases) 里下载最新的 `build-N`（覆盖安装，存档保留）
 - 版本号：`0.大版本.小修` 写在 `src/config.ts` 和 `package.json`；安装包另有自动递增的 build 号
 - 存档格式：第 6 版，旧存档打开时自动升级
 - 网页版（iPhone 用 Safari 打开、添加到主屏幕）：发布和设置见 [`docs/网页版发布.md`](docs/网页版发布.md)
@@ -108,6 +108,8 @@ TypeScript + PixiJS，用 Capacitor 打包成安卓 App。美术目前全部是�
 
 | 时间（UTC+8） | 安装包 | 内容 |
 | --- | --- | --- |
+| 11-18 21:58 | build-55 | 仓库改名为 `Meow-House-Game` 之后，README、接手说明、网页版发布说明里的仓库地址跟着改 |
+| 11-18 21:50 | build-54 | 网页版自动发布：打完 APK 后同一份网页版发布到 GitHub Pages 和 Cloudflare Pages（没设置就跳过，不影响 APK）；网页加了 iPhone「添加到主屏幕」需要的设置和喵屋图标（用默认橘猫头像做的占位图）。设置步骤写在 `docs/网页版发布.md` |
 | 11-18 21:27 | build-53 | 最终名字：**喵屋**，英文名 **Meow House**（手机语言是英文时桌面上显示英文名）。应用编号改成 `com.uermm.meowhouse`，APK 文件名 `meow-house-N.apk`。这一版装上又是**一个新的 App**，存档要从上一个 App 导出再导入 |
 | 11-18 21:09 | build-52 | 改名 uermm meow：桌面图标、游戏里的标题、网页标题、打包的标题和 APK 文件名都改了；应用编号从 `com.chen.backscreenpet` 改成 `com.uermm.meow`，所以这一版装上是**一个新的 App**，和旧的并存，旧存档要先在旧 App 里导出、再在新 App 里导入 |
 | 11-18 19:33 | build-51 | 阳台到院子的过渡：交界处加一件平铺在地上的收边（阳台木地板的深色收边木条、一级矮木阶、草从地板边上长出来盖住硬边，跟着季节换），栅栏最左边换成贴着房子墙角的粗柱子。素材表、素材清单和构图底稿跟着更新 |

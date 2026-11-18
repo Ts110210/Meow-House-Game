@@ -84,7 +84,7 @@ jobs:
       - name: 存一份到这次运行的附件里
         uses: actions/upload-artifact@v4
         with:
-          name: back-screen-pet-${{ github.run_number }}
+          name: meow-house-${{ github.run_number }}
           path: out/*.apk
 
       - name: 发布到 Releases

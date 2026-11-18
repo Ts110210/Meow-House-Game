@@ -17,7 +17,7 @@
 ## 名字
 
 游戏叫 **喵屋**，英文名 **Meow House**（2026-11-18 定的；之前叫过「背屏宠物」「uermm meow」）。手机语言是英文时桌面上显示 Meow House（`android/app/src/main/res/values-en/strings.xml`）。
-应用编号 `com.uermm.meowhouse`，安卓代码在 `android/app/src/main/java/com/uermm/meowhouse/`。GitHub 仓库名还是 `back-screen-pet`，没改。存档的内部键名（`pet-game-…`）也没改。
+应用编号 `com.uermm.meowhouse`，安卓代码在 `android/app/src/main/java/com/uermm/meowhouse/`。GitHub 仓库是 `Ts110210/Meow-House-Game`（2026-11-18 主人从 `back-screen-pet` 改过来的，旧地址会自动跳转）。网页版的发布见 `docs/网页版发布.md`。存档的内部键名（`pet-game-…`）也没改。
 
 ## 现在做到哪
 
@@ -73,7 +73,7 @@ npm run build       # 类型检查 + 打包（推送后 GitHub Actions 也会跑
 npm run sim 30 3    # 数值模拟
 ```
 
-推送到 main 后用 `gh run list --repo Ts110210/back-screen-pet --limit 3` 确认 Actions 成功。
+推送到 main 后用 `gh run list --repo Ts110210/Meow-House-Game --limit 3` 确认 Actions 成功。
 
 如果所在的环境装不了依赖（上一个对话就是这样，`npm install` 连不上）：
 
