@@ -304,6 +304,19 @@ export class UI {
     else if (kind === 'pond') this.openPond();
     else if (kind === 'npc') this.openRescue();
     else if (kind === 'cattree') this.openCatTree();
+    // 木梯子：在阳台点它问要不要上屋顶，在屋顶上点梯子顶端问要不要回阳台
+    else if (kind === 'ladder') {
+      const onRoof = this.scene.layer === 'roof';
+      this.confirmBox(onRoof ? '回阳台' : '上屋顶', onRoof ? '顺着木梯子回阳台吗？' : '顺着木梯子去屋顶看看吗？', onRoof ? '回阳台' : '去屋顶', () => {
+        if (onRoof) this.scene.scrollToZone(ZONES.findIndex((z) => z.id === 'balcony')); else this.scene.goRoof();
+      });
+    }
+  }
+  /** 一个小小的确认框：确定 / 算了 */
+  private confirmBox(title: string, text: string, ok: string, onOk: () => void) {
+    this.open({ title, render: () => [h('p', null, text), h('div', { class: 'grid2' },
+      h('button', { class: 'btn', onclick: () => this.close() }, '算了'),
+      h('button', { class: 'btn primary', onclick: () => { this.close(); sfx('open'); onOk(); } }, ok))] });
   }
 
   // ---------- 猫爬架：指定谁待在哪一层 ----------
