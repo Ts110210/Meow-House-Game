@@ -121,6 +121,8 @@ export function repair(raw: Raw, now = Date.now()): GameState {
       for (const c of postcards) if (c.season && c.time) { const k = `${c.season}-${c.time}`; const list = (out[c.destId] ??= []); if (!list.includes(k)) list.push(k); }
       return out; })(),
     milestones: arr(raw.milestones).filter((id) => CONFIG.milestones.some((m) => m.id === id)),
+    // 第一次打开的引导：旧存档没有这一项，当作已经做完
+    tutorial: num(raw.tutorial, 99, 0, 99),
     // 任务：形状不对就当老玩家（不走引导）；只留认识的步骤和任务
     quests: (() => { const q = obj(raw.quests); if (!raw.quests) return newQuests(true); const ids = (v: any, ok: (x: string) => boolean) => arr(v).filter((x) => typeof x === 'string' && ok(x));
       return { guide: ids(q.guide, (x) => QUESTS.guide.some((g) => g.id === x)), guideClaimed: ids(q.guideClaimed, (x) => QUESTS.guide.some((g) => g.id === x)), guideDone: !!q.guideDone, day: str(q.day, ''),

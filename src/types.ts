@@ -143,6 +143,8 @@ export interface GameState {
   decor: Decor[];
   /** 任务。guide = 新手引导里做到了的步骤，guideClaimed = 已经领了奖励的；guideDone = 引导全部领完（开始每日任务）。
    *  day = 每日任务是哪一天抽的，daily = 当天的任务和进度，bonus = 全部完成的额外奖励领了没有 */
+  /** 第一次打开的聚光灯引导做到第几步（0 = 还没开始，99 = 做完了或者不需要） */
+  tutorial: number;
   quests: { guide: string[]; guideClaimed: string[]; guideDone: boolean; day: string; daily: { id: string; got: number; claimed: boolean }[]; bonus: boolean };
   /** 现在在门口的访客 */
   visitors: Visitor[];

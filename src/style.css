@@ -181,3 +181,12 @@ textarea.export { width: 100%; font: 12px/1.5 ui-monospace, Menlo, Consolas, mon
 
 /* 瞬间相册：竖着的照片 */
 .postgrid.moments canvas { aspect-ratio: 3 / 4; }
+
+/* 第一次打开的聚光灯引导：四块半透明的黑挡住别的地方，中间留一个洞 */
+.tut { position: fixed; inset: 0; z-index: 900; pointer-events: none; }
+.tut-block { position: fixed; background: rgba(40, 30, 22, .62); pointer-events: auto; }
+.tut-hole { position: fixed; border-radius: 16px; box-shadow: 0 0 0 3px #fff, 0 0 0 7px rgba(232,138,122,.9); pointer-events: none; animation: tutPulse 1.4s ease-in-out infinite; }
+.tut-tip { position: fixed; left: 50%; width: min(86vw, 360px); background: #fffaf0; color: var(--ink); border-radius: 18px; padding: 14px 16px; text-align: center; pointer-events: auto; box-shadow: 0 6px 20px rgba(0,0,0,.25); }
+.tut-tip p { margin: 0 0 6px; white-space: pre-line; line-height: 1.5; font-weight: 600; }
+.tut-tip .btn { margin-top: 6px; min-width: 120px; }
+@keyframes tutPulse { 50% { box-shadow: 0 0 0 3px #fff, 0 0 0 12px rgba(232,138,122,.5); } }

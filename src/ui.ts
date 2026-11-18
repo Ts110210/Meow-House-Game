@@ -73,6 +73,8 @@ export class UI {
     this.buildHud();
     const savedScale = Number(kv.get('pet-game-ui-scale')); if (savedScale >= 0.8 && savedScale <= 1.6) this.applyUiScale(savedScale, false);
     setToastHandler((t) => this.toast(t));
+    // 新存档第一次打开：聚光灯引导（旧存档 tutorial = 99，不会出现）
+    setTimeout(() => this.startTutorial(), 900);
     game.onChange(() => { this.updateHud(); this.refresh(); });
     game.onEvent((e) => {
       if (e.type === 'return') {
@@ -158,7 +160,7 @@ export class UI {
   private buildHud() {
     this.hudFish = h('button', { class: 'pill', onclick: () => this.openShop() });
     this.hudCheck = h('button', { class: 'pill', onclick: () => { const r = this.game.act((s) => sim.checkin(s)); this.say(r); sfx(r.ok ? 'checkin' : 'error'); } }, '签到');
-    this.hudQuest = h('button', { class: 'pill', onclick: () => this.openQuests() }, '任务');
+    this.hudQuest = h('button', { class: 'pill quest', onclick: () => this.openQuests() }, '任务');
     this.hudDev = h('button', { class: 'pill dev', onclick: () => this.openDev() });
     const top = h('div', { class: 'hud-top' }, this.hudFish, this.hudCheck, this.hudQuest, h('div', { class: 'spacer' }), this.hudDev,
       h('button', { class: 'pill', onclick: () => this.openShop() }, '商店'),
@@ -320,6 +322,59 @@ export class UI {
   }
 
   // ---------- 猫爬架：指定谁待在哪一层 ----------
+
+  // ---------- 第一次打开的聚光灯引导：屏幕变暗，只亮出这一步要点的东西，其他地方点不了 ----------
+  // 1 欢迎 → 2 点房间里的猫 → 3 点「猫粮」 → 4 点「摸摸」 → 5 点顶部的「引导」按钮。做完就解锁，后面的在任务清单里
+  private tut: { root: HTMLElement; blocks: HTMLElement[]; hole: HTMLElement; tip: HTMLElement; raf: number } | null = null;
+  private startTutorial() {
+    const s = this.game.state; if (s.tutorial >= 99 || !sim.homePets(s).length || this.tut) return;
+    const blocks = [0, 1, 2, 3].map(() => h('div', { class: 'tut-block' }));
+    const hole = h('div', { class: 'tut-hole' }); const tip = h('div', { class: 'tut-tip' });
+    const root = h('div', { class: 'tut' }, ...blocks, hole, tip); document.body.appendChild(root);
+    this.tut = { root, blocks, hole, tip, raf: 0 };
+    const loop = () => { this.tutFrame(); if (this.tut) this.tut.raf = requestAnimationFrame(loop); }; loop();
+  }
+  private tutSet(step: number) { this.game.state.tutorial = step; this.game.touch(); }
+  private tutEnd() { if (!this.tut) return; cancelAnimationFrame(this.tut.raf); this.tut.root.remove(); this.tut = null; this.tutSet(99); }
+  private tutFrame() {
+    const t = this.tut!; const s = this.game.state; const pet = sim.homePets(s)[0];
+    if (!pet) { this.tutEnd(); return; }
+    let rect: { x: number; y: number; w: number; h: number } | null = null; let text = ''; let card: HTMLElement | null = null;
+    const el = (sel: string) => { const e = document.querySelector(sel) as HTMLElement | null; if (!e) return null; const r = e.getBoundingClientRect(); return r.width ? { x: r.left, y: r.top, w: r.width, h: r.height } : null; };
+    const step = s.tutorial;
+    if (step === 0) {
+      text = `欢迎！这是${pet.name}，以后就由你照顾它啦。\n跟着提示做几步，马上就会玩。`;
+      card = h('button', { class: 'btn primary', onclick: () => { this.tutSet(1); this.scene.focusPet(pet.id); } }, '开始');
+    } else if (step === 1) {
+      rect = this.scene.petScreenRect(pet.id); text = `点一下${pet.name}，看看它现在怎么样`;
+      if (document.querySelector('[data-tut="pet"]')) this.tutSet(2); // 宠物面板打开了
+    } else if (step === 2) {
+      // 宠物面板开着就亮「猫粮」，被关掉了就再亮一次猫
+      rect = el('[data-tut="feed-kibble"]'); text = rect ? '喂它一碗猫粮' : `再点一下${pet.name}，喂它一碗猫粮`; rect ??= this.scene.petScreenRect(pet.id);
+      if (s.quests.guide.includes('feed') || s.quests.guideDone) this.tutSet(3);
+    } else if (step === 3) {
+      // 喂完它会走去饭碗吃：再点它一下，打开面板摸摸它
+      rect = el('[data-tut="pet"]'); text = rect ? '再摸摸它' : `${pet.name}去吃饭了。再点它一下，摸摸它`; rect ??= this.scene.petScreenRect(pet.id);
+      if (s.quests.guide.includes('pet') || s.quests.guideDone) { this.close(); this.tutSet(4); }
+    } else if (step === 4) {
+      rect = el('.hud-top .pill.quest'); text = '还有一些可以做的事，都在这里。每做完一件可以领小鱼干';
+      if (document.querySelector('.sheet')) { this.tutEnd(); return; } // 任务面板打开了：引导结束
+    } else { this.tutEnd(); return; }
+    // 洞的位置：有目标就在目标周围留一圈，没有就全暗
+    const W = window.innerWidth, H = window.innerHeight, pad = 8;
+    const r = rect ? { x: rect.x - pad, y: rect.y - pad, w: rect.w + pad * 2, h: rect.h + pad * 2 } : { x: W / 2, y: H / 2, w: 0, h: 0 };
+    const [top, left, right, bottom] = t.blocks;
+    Object.assign(top.style, { left: '0px', top: '0px', width: W + 'px', height: Math.max(0, r.y) + 'px' });
+    Object.assign(bottom.style, { left: '0px', top: r.y + r.h + 'px', width: W + 'px', height: Math.max(0, H - r.y - r.h) + 'px' });
+    Object.assign(left.style, { left: '0px', top: r.y + 'px', width: Math.max(0, r.x) + 'px', height: r.h + 'px' });
+    Object.assign(right.style, { left: r.x + r.w + 'px', top: r.y + 'px', width: Math.max(0, W - r.x - r.w) + 'px', height: r.h + 'px' });
+    Object.assign(t.hole.style, { left: r.x + 'px', top: r.y + 'px', width: r.w + 'px', height: r.h + 'px', display: rect ? '' : 'none' });
+    const key = step + '|' + text;
+    if (t.tip.dataset.key !== key) { t.tip.dataset.key = key; t.tip.replaceChildren(h('p', null, text), ...(card ? [card] : [])); }
+    // 提示放在洞的上面或下面，哪边空间大放哪边
+    const below = !rect || r.y + r.h / 2 < H / 2; const tipY = !rect ? H * 0.38 : below ? r.y + r.h + 14 : r.y - 14;
+    Object.assign(t.tip.style, { top: tipY + 'px', transform: below ? 'translate(-50%, 0)' : 'translate(-50%, -100%)' });
+  }
 
   // ---------- 任务：新手引导和每日任务（同一个入口） ----------
 
@@ -608,13 +663,13 @@ export class UI {
       }
     };
     out.push(h('h3', null, '喂食'));
-    out.push(h('div', { class: 'grid3' }, FOODS.map((f) => h('button', { class: 'act', disabled: sim.count(s, f.id) < 1, onclick: () => doAct((st) => sim.feed(st, id, f.id), 'eat', f.id) },
+    out.push(h('div', { class: 'grid3' }, FOODS.map((f) => h('button', { class: 'act', 'data-tut': `feed-${f.id}`, disabled: sim.count(s, f.id) < 1, onclick: () => doAct((st) => sim.feed(st, id, f.id), 'eat', f.id) },
       h('span', { class: 'big' }, f.icon), `${f.name} ×${sim.count(s, f.id)}`, h('small', null, `饱食 +${f.restore}`)))));
     const fm = mult('feed'); if (fm) out.push(h('p', { class: 'soft' }, '短时间内连续喂食，每次效果减半；', `下一次 ×${sim.peekMult(s, p, 'feed')}`));
     if (FOODS.every((f) => sim.count(s, f.id) < 1)) out.push(h('button', { class: 'btn block', onclick: () => this.openShop() }, '食物吃完了，去商店'));
     out.push(h('h3', null, '互动'));
     out.push(h('div', { class: 'grid3' },
-      h('button', { class: 'act', onclick: () => doAct((st) => sim.petPet(st, id), 'happy') }, '摸摸', mult('pet') ?? h('small', null, `心情 +${CONFIG.actions.petMood}`)),
+      h('button', { class: 'act', 'data-tut': 'pet', onclick: () => doAct((st) => sim.petPet(st, id), 'happy') }, '摸摸', mult('pet') ?? h('small', null, `心情 +${CONFIG.actions.petMood}`)),
       h('button', { class: 'act', onclick: () => doAct((st) => sim.bath(st, id), 'bath') }, '洗澡', mult('bath') ?? h('small', null, `干净 +${CONFIG.actions.bathClean}`)),
       h('button', { class: 'act', onclick: () => doAct((st) => sim.play(st, id), 'play') }, '玩耍', mult('play') ?? h('small', null, s.owned.wand ? `逗猫棒 · 心情 +${CONFIG.actions.playMoodWand}` : `心情 +${CONFIG.actions.playMoodHand}`))));
     // 性格和朋友

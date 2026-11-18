@@ -1157,6 +1157,15 @@ export class Scene {
     this.overlay.addChild(t); this.floats.push({ t, t0: this.now });
   }
 
+  /** 一只宠物现在在屏幕上的位置（CSS 像素，给新手引导的聚光灯用）；不在画面里返回 null */
+  petScreenRect(petId: string): { x: number; y: number; w: number; h: number } | null {
+    const a = this.actors.get(petId); if (!a || !a.root.visible) return null;
+    const c = this.app.canvas.getBoundingClientRect(); const sp = a.sprite; const w = Math.abs(sp.width) * this.scale * 0.8, h = Math.abs(sp.height) * this.scale * 0.75;
+    const x = c.left + this.world.x + a.root.x * this.scale, y = c.top + this.world.y + a.root.y * this.scale;
+    if (x < c.left || x > c.right) return null;
+    return { x: x - w / 2, y: y - h, w, h: h + 8 };
+  }
+
   focusPet(petId: string) {
     const a = this.actors.get(petId); if (!a) return;
     // 在屋顶上（或正在爬梯子）：切到屋顶，对准它
