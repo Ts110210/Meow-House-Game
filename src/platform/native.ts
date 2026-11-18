@@ -45,6 +45,11 @@ const CHANNEL = 'pet-reminders-v2';
 /** 游戏提醒用的编号范围。测试通知用 999，不在这个范围里，所以不会被「重新安排提醒」顺手取消掉 */
 const FIRST_ID = 1000, MAX = 20;
 let channelReady = false;
+/** 每条通知都要带上 isExactNotification: false。
+ *  通知插件从 8.3.0 起，只要有一条通知想要精确闹钟（默认就是想要）而 App 没有「闹钟和提醒」权限，schedule() 就会自己跳到系统的那个设置页。
+ *  我们在 AndroidManifest 里特意去掉了这个权限（提醒不用准点到秒），所以永远拿不到，结果每次安排提醒都跳过去；
+ *  按返回回到游戏又会再安排一次、再跳过去，在荣耀手机上卡死在设置页出不来。不要精确闹钟，插件就不会跳，提醒照样会来，只是可能晚几分钟。 */
+const NOT_EXACT = { isExactNotification: false } as const;
 
 async function ensureChannel() {
   if (channelReady) return;
@@ -80,7 +85,7 @@ export async function scheduleReminders(list: Reminder[]) {
     const next = list.filter((r) => r.at > Date.now() + 5000).sort((a, b) => a.at - b.at).slice(0, MAX);
     const stale = (await LocalNotifications.getPending()).notifications.filter((n) => n.id >= FIRST_ID + next.length && n.id < FIRST_ID + MAX);
     if (stale.length) await LocalNotifications.cancel({ notifications: stale.map((n) => ({ id: n.id })) });
-    if (next.length) await LocalNotifications.schedule({ notifications: next.map((r, i) => ({ id: FIRST_ID + i, title: r.title, body: r.body, channelId: CHANNEL, schedule: { at: new Date(r.at), allowWhileIdle: true } })) });
+    if (next.length) await LocalNotifications.schedule({ notifications: next.map((r, i) => ({ id: FIRST_ID + i, title: r.title, body: r.body, channelId: CHANNEL, ...NOT_EXACT, schedule: { at: new Date(r.at), allowWhileIdle: true } })) });
   } catch { /* 安排不上不影响游戏 */ }
 }
 
@@ -91,7 +96,7 @@ export async function testNotification(seconds: number): Promise<string> {
   if (!(await notifyPermission(true))) return '系统没有允许通知，请到手机设置里给这个 App 打开通知权限';
   try {
     await ensureChannel();
-    await LocalNotifications.schedule({ notifications: [{ id: seconds > 0 ? 999 : 998, title: '测试通知', body: seconds > 0 ? '看到这条，说明退到桌面后的提醒能正常弹出来' : '看到这条，说明通知权限和横幅是好的', channelId: CHANNEL, schedule: { at: new Date(Date.now() + Math.max(1, seconds) * 1000), allowWhileIdle: true } }] });
+    await LocalNotifications.schedule({ notifications: [{ id: seconds > 0 ? 999 : 998, title: '测试通知', body: seconds > 0 ? '看到这条，说明退到桌面后的提醒能正常弹出来' : '看到这条，说明通知权限和横幅是好的', channelId: CHANNEL, ...NOT_EXACT, schedule: { at: new Date(Date.now() + Math.max(1, seconds) * 1000), allowWhileIdle: true } }] });
     return '';
   } catch (e) { return '安排通知时出错：' + String((e as Error)?.message ?? e); }
 }
