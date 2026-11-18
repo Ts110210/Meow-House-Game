@@ -26,12 +26,13 @@ const LAYOUT: Record<string, { objects: string[]; front?: string; poses: Pose[];
 
 /** 屋顶的照片从上层图的哪里开始裁（平顶的右边，和游戏里看星星的位置一样） */
 const ROOF_X = 2364;
+/** PET = 「最初设计」大小的猫在照片里画多大（432 宽的区域里），每只再乘自己的大小 */
 const W = 432, TOP = 100, VIEW_H = 576, OUT_W = 480, OUT_H = 640, PET = 201.6;
 
 export interface MomentInfo { kind: string; season: string; time: string }
 
 /** sets = 照片里每只宠物的精灵图（按 petIds 的顺序）；guest = 邻居猫的精灵图；skin = 每件家具现在用哪款皮肤；room = 房间风格 */
-export function renderMoment(m: MomentInfo, sets: (SpriteSet | undefined)[], opts: { guest?: SpriteSet; skin?: (kind: string) => string; room?: string } = {}): HTMLCanvasElement {
+export function renderMoment(m: MomentInfo, sets: (SpriteSet | undefined)[], opts: { guest?: SpriteSet; /** 每只的大小（按最初设计算，和 sets 同顺序；邻居的在 guest 那个位置） */ sizes?: number[]; skin?: (kind: string) => string; room?: string } = {}): HTMLCanvasElement {
   const cv = document.createElement('canvas'); cv.width = OUT_W; cv.height = OUT_H; const c = cv.getContext('2d')!;
   const def = MOMENTS[m.kind], lay = LAYOUT[m.kind]; if (!def || !lay) return cv;
   const zi = ZONES.findIndex((z) => z.id === def.zone); const time = m.time as DayTime, season = m.season as Season;
@@ -45,7 +46,8 @@ export function renderMoment(m: MomentInfo, sets: (SpriteSet | undefined)[], opt
   };
   for (const o of lay.objects) obj(o);
   const cast = [...sets]; if (lay.guest && opts.guest) cast[lay.poses.length - 1] = opts.guest;
-  lay.poses.forEach(([x, y, action, frame, flip], i) => { const set = cast[i]; if (set) drawFrame(c, set, action, frame, x - PET / 2, y - PET * 0.9, PET, !!flip); });
+  const sz = [...(opts.sizes ?? [])]; if (lay.guest && opts.guest && opts.sizes?.length) sz[lay.poses.length - 1] = opts.sizes[opts.sizes.length - 1];
+  lay.poses.forEach(([x, y, action, frame, flip], i) => { const set = cast[i]; const P = PET * (sz[i] ?? 0.85); if (set) drawFrame(c, set, action, frame, x - P / 2, y - P * 0.9, P, !!flip); });
   if (lay.front) obj(lay.front, ASSETS.objects[lay.front]?.frontFrom ?? 0);
   if (lay.note) { const [x, y] = lay.poses[0]; c.fillStyle = '#E88A7A'; c.beginPath(); (c as any).roundRect(x - 26, y - PET * 0.86, 52, 34, 17); c.fill(); c.fillStyle = '#fff'; c.font = 'bold 20px system-ui, sans-serif'; c.textAlign = 'center'; c.fillText(lay.note, x, y - PET * 0.86 + 24); }
   if (m.kind === 'rainWatch') { c.strokeStyle = 'rgba(230,240,246,0.8)'; c.lineWidth = 1.4; for (let i = 0; i < 14; i++) { const x = 46 + ((i * 37.1) % 150), y = 174 + ((i * 29.3) % 108); c.beginPath(); c.moveTo(x, y); c.lineTo(x - 2, y + 13); c.stroke(); } }

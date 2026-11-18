@@ -180,6 +180,8 @@ export const CONFIG = {
     perDayChance: [0.3, 0.45, 0.25],
     /** 两次串门之间至少隔多久 */
     gap: 90 * MIN,
+    /** 开始玩之后多久才会有邻居来（游戏时间）。第一天不来，免得以为家里多了一只猫 */
+    firstAfter: DAY,
     /** 来了之后待多久 */
     stay: [4 * MIN, 7 * MIN] as [number, number],
     /** 每来一次，和这个家熟一点；每和一只宠物玩一次，再熟一点 */
@@ -241,11 +243,13 @@ export const CONFIG = {
 
   // ---------- 成长 ----------
   growth: {
-    stageNames: ['幼年', '青年', '壮年'],
+    stageNames: ['幼年', '青年', '成年'],
     /** 每个阶段持续多久 */
     stageDuration: 7 * DAY,
-    /** 三个阶段在房间里的体型（共用一套序列帧）：幼年是壮年的一半，青年是壮年的 2/3 */
+    /** 三个阶段在房间里的体型（共用一套序列帧）：幼年是这只猫自己成年大小的一半，青年是 2/3 */
     stageScale: [0.5, 2 / 3, 1],
+    /** 成年后有多大（按最初设计的大小算，1 = 最初设计）。领养时在范围里随机定一次，之后不变。公猫稍大，母猫稍小 */
+    adultSize: { m: [0.85, 0.9], f: [0.8, 0.85] } as Record<Sex, [number, number]>,
     /** 背屏上的体型。背屏只有 2.86 寸，按房间里的比例幼年会太小，所以单独一套 */
     backScale: [0.8, 0.9, 1],
   },
@@ -398,8 +402,8 @@ export const CONFIG = {
     landscapeCropTop: 60,
     /** 门的高度（只用来换算宠物大小；调整门的点击区域不会影响宠物） */
     doorHeight: 392,
-    /** 壮年宠物的身高大约是门高的多少（幼年、青年再按 stageScale 缩小）。原来是 0.36，2026-11-18 缩小到 90% */
-    petHeightOfDoor: 0.324,
+    /** 「最初设计」的猫身高大约是门高的多少。实际大小再乘每只猫的成年大小（growth.adultSize，最大 0.9）和成长阶段（stageScale） */
+    petHeightOfDoor: 0.36,
     /** 宠物在 256 的格子里大约占多高（用来换算上面的比例） */
     petCellFill: 0.7,
     /** 几点到几点宠物会去睡觉 */
@@ -597,25 +601,31 @@ export const TRAITS: Record<Trait, { name: string; icon: string; desc: string }>
 };
 export const TRAIT_IDS = Object.keys(TRAITS) as Trait[];
 
+/** 公猫、母猫。现在只决定成年后的大小（见 CONFIG.growth.adultSize） */
+export type Sex = 'm' | 'f';
+export const SEXES: Record<Sex, { name: string; icon: string }> = { m: { name: '公猫', icon: '♂' }, f: { name: '母猫', icon: '♀' } };
+export const SEX_IDS = Object.keys(SEXES) as Sex[];
+
 /** 访客。look = 用捏猫系统画的占位样子（以后可以换成图片） */
 export type VisitorWho = 'tabby' | 'neighbor' | 'courier';
-export const VISITORS: Record<VisitorWho, { name: string; look: string; hello: string }> = {
-  tabby: { name: '狸花猫', look: 'look:stripes|#A89A82|#EDE6D8|#4A4550|#8DAA4E|0', hello: '路过，顺便来看看你们。' },
-  neighbor: { name: '邻居家的猫', look: 'look:point|#F3E6D0|#8A6A58|#4A4550|#5E9BD6|1', hello: '我就住隔壁，过来串个门。' },
-  courier: { name: '快递猫', look: 'look:cow|#FBF8F2|#3F6FA8|#4A4550|#3B2A22|0', hello: '有你家的东西，签收一下。' },
+/** sex、size = 公母和大小（按最初设计算，和家里成年猫的范围一样） */
+export const VISITORS: Record<VisitorWho, { name: string; look: string; hello: string; sex: Sex; size: number }> = {
+  tabby: { name: '狸花猫', look: 'look:stripes|#A89A82|#EDE6D8|#4A4550|#8DAA4E|0', hello: '路过，顺便来看看你们。', sex: 'm', size: 0.88 },
+  neighbor: { name: '邻居家的猫', look: 'look:point|#F3E6D0|#8A6A58|#4A4550|#5E9BD6|1', hello: '我就住隔壁，过来串个门。', sex: 'f', size: 0.83 },
+  courier: { name: '快递猫', look: 'look:cow|#FBF8F2|#3F6FA8|#4A4550|#3B2A22|0', hello: '有你家的东西，签收一下。', sex: 'm', size: 0.86 },
 };
 
 /** 住在附近的三只邻居猫。会自己来串门，和家里的宠物玩一会儿、蹭口饭再走；熟了之后宠物也可以去它家回访。
  *  look = 用捏猫系统画的占位样子；notes = 它留下的脚印纸条上写的话；stories = 宠物去它家回来讲的小见闻（{pet} 换成宠物的名字） */
-export interface NeighborDef { name: string; home: string; look: string; desc: string; hello: string; notes: string[]; stories: string[] }
+export interface NeighborDef { name: string; home: string; look: string; desc: string; hello: string; notes: string[]; stories: string[]; /** 公母和大小（按最初设计算） */ sex: Sex; size: number }
 export const NEIGHBORS: Record<string, NeighborDef> = {
-  mochi: { name: '麻薯', home: '隔壁奶茶店', look: 'look:solid|#F6F1E7|#E9DFCB|#4A4550|#6FA8DC|1', desc: '隔壁奶茶店的白猫，慢吞吞的，最爱蹭饭和晒太阳', hello: '喵——（慢慢地走了进来）',
+  mochi: { sex: 'f', size: 0.84, name: '麻薯', home: '隔壁奶茶店', look: 'look:solid|#F6F1E7|#E9DFCB|#4A4550|#6FA8DC|1', desc: '隔壁奶茶店的白猫，慢吞吞的，最爱蹭饭和晒太阳', hello: '喵——（慢慢地走了进来）',
     notes: ['今天的太阳很好，谢谢你家的地板。', '饭很好吃。下次还来。', '我把最舒服的位置留给你们了。'],
     stories: ['{pet}在奶茶店的柜台上趴了一下午，回来身上有一股奶香。', '麻薯带{pet}看了后门的那只大纸箱，两只挤在里面睡了一觉。', '{pet}学会了在收银机旁边装招财猫。'] },
-  dahei: { name: '大黑', home: '巷子口', look: 'look:solid|#3C3A40|#5A5660|#4A4550|#E3B341|0', desc: '巷子口的黑猫，胆子大，爱追着跑、爱打闹', hello: '喵！（从院子的栅栏上跳了下来）',
+  dahei: { sex: 'm', size: 0.9, name: '大黑', home: '巷子口', look: 'look:solid|#3C3A40|#5A5660|#4A4550|#E3B341|0', desc: '巷子口的黑猫，胆子大，爱追着跑、爱打闹', hello: '喵！（从院子的栅栏上跳了下来）',
     notes: ['你们家的球不错。', '巷子口新来了一只麻雀，改天带你们去看。', '下次比谁跑得快。'],
     stories: ['大黑带{pet}爬上了巷子口的矮墙，在上面看了很久的自行车。', '{pet}跟着大黑追了一路落叶，回来累得直喘。', '{pet}和大黑在巷子里发现了一个会滚的瓶盖。'] },
-  huajuan: { name: '花卷', home: '楼上', look: 'look:calico|#FBF8F2|#E29A4B|#4A4550|#8DAA4E|0', desc: '楼上的三花，爱干净，见了谁都想给它舔舔毛', hello: '喵～（先把爪子舔干净才进门）',
+  huajuan: { sex: 'f', size: 0.81, name: '花卷', home: '楼上', look: 'look:calico|#FBF8F2|#E29A4B|#4A4550|#8DAA4E|0', desc: '楼上的三花，爱干净，见了谁都想给它舔舔毛', hello: '喵～（先把爪子舔干净才进门）',
     notes: ['你家那只的耳朵后面，我帮它舔干净了。', '窗台上的花开了，给你们带了一朵。', '记得天天梳毛哦。'],
     stories: ['花卷把{pet}从头到尾巴舔了一遍，回来毛都是顺的。', '{pet}在楼上的窗台看见了自己家的院子。', '花卷教了{pet}怎么把爪子洗得最干净。'] },
 };

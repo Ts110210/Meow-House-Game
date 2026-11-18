@@ -1,4 +1,4 @@
-import type { DayTime, Season, Trait, VisitorWho } from './config';
+import type { DayTime, Season, Sex, Trait, VisitorWho } from './config';
 import type { StatKey } from './config';
 
 export type RepeatKey = 'feed' | 'pet' | 'bath' | 'play';
@@ -12,6 +12,10 @@ export interface Pet {
   age: number;
   /** 性格 */
   trait: Trait;
+  /** 公猫、母猫 */
+  sex: Sex;
+  /** 成年后的大小（按最初设计算，公猫 0.85–0.9、母猫 0.8–0.85）。领养时定一次 */
+  size: number;
   /** 上一次被照顾（喂、摸、洗、玩）的时刻 */
   lastCare: number;
   food: number;

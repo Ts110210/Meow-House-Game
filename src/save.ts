@@ -5,7 +5,7 @@
 //   2. 在 MIGRATIONS 里加一条「从上一个版本升到这个版本」的函数
 //   3. 在 repair() 里给新字段补默认值
 // 旧存档会在打开时自动一步一步升上来，升级前的原样会另存一份。
-import { MOMENTS, SEASON_IDS, NEIGHBORS, FIND_KINDS, SEASON_FINDS, CONFIG, DESTS, FOODS, SOUVENIRS, TRAIT_IDS, VISITORS, ZONES, DECOR, SKINS, DEFAULT_SKIN, ROOM_THEMES, DEFAULT_ROOM, skinSize } from './config';
+import { MOMENTS, SEASON_IDS, NEIGHBORS, FIND_KINDS, SEASON_FINDS, CONFIG, DESTS, FOODS, SOUVENIRS, TRAIT_IDS, SEX_IDS, type Sex, VISITORS, ZONES, DECOR, SKINS, DEFAULT_SKIN, ROOM_THEMES, DEFAULT_ROOM, skinSize } from './config';
 import { kv } from './platform/storage';
 import type { GameState, Pet, Postcard, Trip } from './types';
 
@@ -51,12 +51,23 @@ const obj = (v: any): Raw => (v && typeof v === 'object' && !Array.isArray(v) ? 
 const arr = (v: any): any[] => (Array.isArray(v) ? v : []);
 
 /** 把存档里缺的、坏的字段补好，保证游戏拿到的一定是能用的数据 */
+/** 公母不对就按编号定一个；成年大小不在这个公母的范围里就按编号在范围里取一个 */
+function sexAndSize(p: any): { sex: Sex; size: number } {
+  const h = [...String(p.id)].reduce((a, ch) => (a * 31 + ch.charCodeAt(0)) % 100003, 7);
+  const sex: Sex = SEX_IDS.includes(p.sex) ? p.sex : SEX_IDS[h % SEX_IDS.length];
+  const [lo, hi] = CONFIG.growth.adultSize[sex];
+  const size = typeof p.size === 'number' && p.size >= lo && p.size <= hi ? p.size : Math.round((lo + ((h % 997) / 996) * (hi - lo)) * 1000) / 1000;
+  return { sex, size };
+}
+
 export function repair(raw: Raw, now = Date.now()): GameState {
   const clock = num(raw.clock, now);
   const pets: Pet[] = arr(raw.pets).filter((p) => p && typeof p.id === 'string').map((p) => ({
     id: p.id, name: str(p.name, '宠物').slice(0, 8) || '宠物', spriteId: str(p.spriteId, 'default:orange'),
     // 旧存档里的宠物没有性格：按编号算一个，每次读档都一样
     trait: TRAIT_IDS.includes(p.trait) ? p.trait : TRAIT_IDS[[...String(p.id)].reduce((a, ch) => a + ch.charCodeAt(0), 0) % TRAIT_IDS.length], lastCare: num(p.lastCare, clock),
+    // 旧存档没有公母和成年大小：按编号定一个（每次读出来都一样），大小落在这个公母的范围里
+    ...sexAndSize(p),
     age: num(p.age, 0, 0), food: num(p.food, 50, 0, 100), mood: num(p.mood, 50, 0, 100), clean: num(p.clean, 50, 0, 100),
     weakSince: typeof p.weakSince === 'number' && isFinite(p.weakSince) ? p.weakSince : null,
     dead: !!p.dead, ...(p.dead ? { diedAt: num(p.diedAt, clock) } : {}),

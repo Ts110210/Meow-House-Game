@@ -1,5 +1,5 @@
 // 界面：顶部和底部的按钮，以及所有从下方弹出的面板。
-import { MOMENTS, NEIGHBORS, FIND_KINDS, SEASON_EVENTS, SEASON_FINDS, SKINS, SKIN_PRICE, ROOM_THEMES, ZONES, CONFIG, DAY, DESTS, TREAT, TIME_NAMES, SEASON_NAMES, FOODS, FRY, FUR_COLORS, DECOR, VISITORS, SEASON_IDS, TIME_IDS, SPECIAL_DECOR, TRAITS, TRAIT_IDS, type Trait, PATTERN_NAMES, DEFAULT_LOOK, encodeLook, decodeLook, type Look, type CoatPattern, GEAR, GOODS, HOUR, MIN, SOUVENIRS, SPRITE, TOOLS, type ActionName } from './config';
+import { MOMENTS, SEXES, SEX_IDS, type Sex, NEIGHBORS, FIND_KINDS, SEASON_EVENTS, SEASON_FINDS, SKINS, SKIN_PRICE, ROOM_THEMES, ZONES, CONFIG, DAY, DESTS, TREAT, TIME_NAMES, SEASON_NAMES, FOODS, FRY, FUR_COLORS, DECOR, VISITORS, SEASON_IDS, TIME_IDS, SPECIAL_DECOR, TRAITS, TRAIT_IDS, type Trait, PATTERN_NAMES, DEFAULT_LOOK, encodeLook, decodeLook, type Look, type CoatPattern, GEAR, GOODS, HOUR, MIN, SOUVENIRS, SPRITE, TOOLS, type ActionName } from './config';
 import { renderPostcard } from './art/postcard';
 import { drawDefaultSheet } from './art/defaultPet';
 import type { Game } from './game';
@@ -356,7 +356,10 @@ export class UI {
     let cv = this.momentCache.get(key);
     if (!cv) {
       const guest = m.extra && NEIGHBORS[m.extra] ? this.game.sprites.get(NEIGHBORS[m.extra].look) : undefined;
-      cv = renderMoment(m, m.sprites.map((id) => this.game.sprites.get(id)), { guest, skin: (k) => sim.skinOf(s, k), room: sim.roomOf(s) });
+      // 照片里的猫按它现在的大小画（宠物不在了就按一般成年猫），邻居按它自己的大小
+      const sizes = m.petIds.map((id) => { const p = s.pets.find((x) => x.id === id); return p ? sim.bodySize(p) : 0.85; });
+      if (m.extra && NEIGHBORS[m.extra]) sizes.push(NEIGHBORS[m.extra].size);
+      cv = renderMoment(m, m.sprites.map((id) => this.game.sprites.get(id)), { guest, sizes, skin: (k) => sim.skinOf(s, k), room: sim.roomOf(s) });
       if (this.momentCache.size > 80) this.momentCache.clear(); this.momentCache.set(key, cv);
     }
     return cv;
@@ -569,6 +572,7 @@ export class UI {
     const tr = TRAITS[p.trait]; const friends = sim.friendsOf(s, id);
     out.push(h('div', { class: 'card', style: 'margin-top:12px' },
       h('div', { class: 'item' }, h('span', { class: 'ico' }, tr.icon), h('div', { class: 'txt' }, h('b', null, `性格：${tr.name}`), h('span', { class: 'soft' }, tr.desc))),
+      h('div', { class: 'item' }, h('span', { class: 'ico' }, SEXES[p.sex].icon), h('div', { class: 'txt' }, h('b', null, SEXES[p.sex].name), h('span', { class: 'soft' }, p.sex === 'm' ? '长大后个子稍大一些' : '长大后个子稍小一些'))),
       friends.map((f) => h('div', { class: 'item' }, h('span', { class: 'ico' }, h('span', { class: 'chip', style: 'padding:0;box-shadow:none;background:none' }, this.avatarCanvas(f.pet, 56))),
         h('div', { class: 'txt' }, h('b', null, f.best ? `和${f.pet.name}是好朋友 ❤` : `和${f.pet.name}`),
           f.best ? h('span', { class: 'soft' }, `一起玩心情加倍，结伴出门更容易带回纪念品`) : h('span', { class: 'soft' }, `友情 ${Math.round(f.value)} / ${CONFIG.friendship.best}　一起出门、一起玩会增加`),
@@ -939,7 +943,7 @@ export class UI {
   openAdopt() {
     const keys = Object.keys(FUR_COLORS);
     this.adoptForm = { name: '', color: keys[sim.alivePets(this.game.state).length % keys.length] };
-    let look: Look | null = null; let trait: Trait | null = null;
+    let look: Look | null = null; let trait: Trait | null = null; let sex: Sex | null = null;
     this.open({ title: '领养新宠物', render: () => {
       const f = this.adoptForm; const sid = look ? encodeLook(look) : 'default:' + f.color;
       return [
@@ -952,9 +956,12 @@ export class UI {
         h('h3', null, '性格'),
         h('div', { class: 'seg' }, h('button', { class: 'chip' + (trait === null ? ' on' : ''), onclick: () => { trait = null; this.refresh(true); } }, '随缘'), TRAIT_IDS.map((k) => h('button', { class: 'chip' + (trait === k ? ' on' : ''), onclick: () => { trait = k; this.refresh(true); } }, `${TRAITS[k].icon} ${TRAITS[k].name}`))),
         h('p', { class: 'soft' }, trait ? TRAITS[trait].desc : '不选的话，领回家才知道它是什么性格。'),
+        h('h3', null, '公猫还是母猫'),
+        h('div', { class: 'seg' }, h('button', { class: 'chip' + (sex === null ? ' on' : ''), onclick: () => { sex = null; this.refresh(true); } }, '随缘'), SEX_IDS.map((k) => h('button', { class: 'chip' + (sex === k ? ' on' : ''), onclick: () => { sex = k; this.refresh(true); } }, `${SEXES[k].icon} ${SEXES[k].name}`))),
+        h('p', { class: 'soft' }, '公猫长大后个子稍大，母猫稍小。'),
         h('p', null, h('button', { class: 'btn primary block', onclick: async () => {
           await this.game.ensureSprite(sid);
-          const r = this.game.act((s) => sim.adopt(s, f.name, sid, trait ?? undefined)); this.say(r);
+          const r = this.game.act((s) => sim.adopt(s, f.name, sid, trait ?? undefined, sex ?? undefined)); this.say(r);
           if (r.ok && r.petId) this.openPet(r.petId);
         } }, '领养')),
         h('p', { class: 'soft' }, '领养之后还可以再换样子，也可以在宠物面板里给它换一张自己的头像。')];
@@ -1411,6 +1418,10 @@ export class UI {
           h('button', { class: 'chip', onclick: () => { sim.homePets(s).forEach((p) => { p.food = 26; p.mood = 26; p.clean = 26; }); this.game.changed(); } }, '全部降到 26'),
           h('button', { class: 'chip', onclick: () => { sim.homePets(s).forEach((p) => { p.food = 0.5; }); this.game.changed(); } }, '饱食降到快归零'),
           h('button', { class: 'chip', onclick: () => { s.lastCheckin = ''; this.game.changed(); } }, '重置今日签到')),
+        h('h3', null, '成长阶段（直接设成某个阶段，看体型）'),
+        ...sim.alivePets(s).map((p) => h('div', { class: 'seg', style: 'margin-bottom:6px;align-items:center' },
+          h('span', { class: 'soft', style: 'min-width:9em' }, `${p.name} ${SEXES[p.sex].icon} 成年 ${Math.round(p.size * 100)}%`),
+          CONFIG.growth.stageNames.map((n, i) => h('button', { class: 'chip' + (sim.stageOf(p) === i ? ' on' : ''), onclick: () => { this.say(sim.devSetStage(s, p.id, i)); this.game.changed(); this.refresh(true); } }, n)))),
         h('p', { class: 'soft', style: 'margin-top:16px' }, '关闭开发者模式：菜单最下面的版本号连点 5 次。')];
     } });
   }

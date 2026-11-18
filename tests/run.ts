@@ -1,5 +1,5 @@
 // 规则和存档的自动检查。运行：npm test
-import { ZONES, MOMENTS, NEIGHBORS, SEASON_EVENTS, SEASON_FINDS, CONFIG, DAY, DECOR, DESTS, FUR_COLORS, GEAR, HOUR, MIN, ROOM_THEMES, SKIN_PRICE, SKIN_SIZE, SKINNABLE, SKINS, SOUVENIRS, decodeLook, encodeLook, skinSize } from '../src/config';
+import { ZONES, MOMENTS, VISITORS, NEIGHBORS, SEASON_EVENTS, SEASON_FINDS, CONFIG, DAY, DECOR, DESTS, FUR_COLORS, GEAR, HOUR, MIN, ROOM_THEMES, SKIN_PRICE, SKIN_SIZE, SKINNABLE, SKINS, SOUVENIRS, decodeLook, encodeLook, skinSize } from '../src/config';
 import { ASSETS } from '../src/assets.config';
 import * as sim from '../src/sim';
 import { diaryPlaceCount, writeDiary } from '../src/diary';
@@ -286,13 +286,35 @@ console.log('家具、皮肤和房间风格');
   const ro = migrate(old); check('旧存档升级：皮肤和房间都是默认的，以前买的固定落地灯不再出现也不报错', ro.ok && sim.roomOf(ro.state) === 'classic' && Object.keys(ro.state.skins).length === 0 && sim.skinOf(ro.state, 'door') === 'wood');
 }
 
+console.log('公母和体型');
+{
+  const s = blank(); s.slots = 3;
+  const many = Array.from({ length: 400 }, (_, i) => sim.newPet('猫' + i, 'default:orange', s.clock));
+  const inRange = (p: any) => { const [a, b] = CONFIG.growth.adultSize[p.sex as 'm' | 'f']; return p.size >= a && p.size <= b; };
+  check('新领养的猫有公母，成年大小落在自己公母的范围里（公 0.85–0.9，母 0.8–0.85）', many.every(inRange) && many.some((p) => p.sex === 'm') && many.some((p) => p.sex === 'f'));
+  check('成年最大是最初设计的 90%', many.every((p) => p.size <= 0.9) && CONFIG.growth.adultSize.m[1] === 0.9);
+  check('领养时可以指定公母', sim.newPet('a', 'default:orange', s.clock, 'tidy', 'f').sex === 'f' && sim.adopt(s, '小母', 'default:grey', undefined, 'm').ok && s.pets[s.pets.length - 1].sex === 'm');
+  const p = s.pets[0];
+  sim.devSetStage(s, p.id, 0); const kid = sim.bodySize(p); sim.devSetStage(s, p.id, 1); const young = sim.bodySize(p); sim.devSetStage(s, p.id, 2); const adult = sim.bodySize(p);
+  check('开发者面板能直接设成幼年、青年、成年；幼年是自己成年的一半，青年 2/3', sim.stageOf(p) === 2 && Math.abs(kid - adult / 2) < 1e-9 && Math.abs(young - adult * 2 / 3) < 1e-9 && adult === p.size);
+  check('三个阶段叫幼年、青年、成年', CONFIG.growth.stageNames.join() === '幼年,青年,成年');
+  const old = JSON.parse(JSON.stringify(s)); delete old.pets[0].sex; delete old.pets[0].size; old.pets[1].size = 5;
+  const r1 = repair(JSON.parse(JSON.stringify(old)), T0), r2 = repair(JSON.parse(JSON.stringify(old)), T0);
+  check('旧存档读出来补上公母和大小，每次读都一样，乱写的大小会被修回范围里', r1.pets.every(inRange) && r1.pets[0].sex === r2.pets[0].sex && r1.pets[0].size === r2.pets[0].size && r1.pets[1].size !== 5);
+  check('邻居和访客都有公母和大小，和家猫的范围一样', [...Object.values(NEIGHBORS), ...Object.values(VISITORS)].every(inRange));
+}
+
 console.log('邻居猫和常客');
 {
   const s = blank(); s.fish = 0; const p = s.pets[0]; p.food = 80; p.mood = 50;
   check('有三只邻居，样子都画得出来', Object.keys(NEIGHBORS).length === 3 && Object.values(NEIGHBORS).every((n) => !!decodeLook(n.look) && n.notes.length >= 3 && n.stories.length >= 3));
   s.hood.day = sim.dayKey(s.clock); s.hood.quota = 0;
   check('今天没有名额就不来', sim.openDoorToNeighbors(s).length === 0 && s.hood.now === null);
-  s.hood.quota = 2; const ev = sim.openDoorToNeighbors(s);
+  s.hood.quota = 2;
+  check('开始玩的第一天不来串门（免得以为家里多了一只猫）', sim.openDoorToNeighbors(s).length === 0 && s.hood.now === null && s.hood.quota === 2);
+  check('开发者面板叫来的不受这个限制', sim.openDoorToNeighbors(s, 'mochi').length === 1 && sim.sendNeighborHome(s) !== null && s.hood.now === null);
+  s.createdAt -= CONFIG.neighbors.firstAfter; s.hood.last = -1e15; s.hood.bonds = {}; // 上面叫来的那次让麻薯熟了一点，清掉免得影响下面
+  const ev = sim.openDoorToNeighbors(s);
   check('有名额就来一只，名额减一', ev.length === 1 && ev[0].type === 'neighbor' && !!s.hood.now && s.hood.quota === 1 && s.hood.now.leaveAt > s.clock);
   check('家里已经有一只邻居时不会再来第二只', sim.openDoorToNeighbors(s).length === 0);
   const id = s.hood.now!.id;

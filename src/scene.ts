@@ -78,7 +78,7 @@ const walkMin = () => 70, walkMax = () => worldW() - 70;
 const depthMin = () => geo.floorY + (H - geo.floorY) * 0.22, depthMax = () => geo.floorY + (H - geo.floorY) * 0.9;
 const clampX = (x: number) => Math.max(walkMin(), Math.min(walkMax(), x)), clampY = (y: number) => Math.max(depthMin(), Math.min(depthMax(), y));
 const hex = (c: string) => parseInt(c.slice(1), 16);
-/** 壮年宠物在画面里的缩放：身高约为门高的 petHeightOfDoor */
+/** 「最初设计」的猫在画面里的缩放：身高约为门高的 petHeightOfDoor。实际的猫再乘自己的大小（sim.bodySize） */
 // ---------- 屋顶那一层：画在地面这一层的正上方（世界坐标 y 从 -720 到 0） ----------
 // 上层图的坐标（u）每 432 对应下面一个区域；区域宽度变了（背景长图），上层跟着每一段拉伸
 const RF = ASSETS.roof;
@@ -97,6 +97,8 @@ function roofWalk(u: number): { y: number; tilt: number } {
 /** 屋顶在世界里的右边（= 院子的左边）；屋顶那一层左右滑只能滑到这里 */
 const roofW = () => { const g = zoneIndex('garden'); return g > 0 ? zx(g) : worldW(); };
 
+/** 最大的成年猫（公猫的上限，0.9）：算家具站位时用 */
+const ADULT_MAX = CONFIG.growth.adultSize.m[1];
 const PET_BASE = (CONFIG.room.petHeightOfDoor * CONFIG.room.doorHeight) / (SPRITE.cell * CONFIG.room.petCellFill);
 
 interface Actor {
@@ -418,7 +420,7 @@ export class Scene {
     // 狸花猫：有宠物离家出走、而它没在外面找的时候，会坐在门口等你
     const tabby = this.game.sprites.get('npc:tabby');
     if (!this.editMode && tabby && sim.lostPets(s).length && !s.pets.some((p) => p.searchUntil !== null)) {
-      const door = objPos(ASSETS.objects.door); const sc = PET_BASE * ASSETS.petScale * 0.95;
+      const door = objPos(ASSETS.objects.door); const sc = PET_BASE * ASSETS.petScale * VISITORS.tabby.size;
       const n = new Sprite(tabby.tex[0][0]); n.anchor.set(0.5, 0.9); n.scale.set(-sc, sc);
       n.position.set(door.x + 118 * door.k, geo.floorY + (H - geo.floorY) * 0.3);
       n.eventMode = 'static'; n.cursor = 'pointer'; n.on('pointertap', this.tap(() => this.hooks.onObject('npc')));
@@ -437,7 +439,7 @@ export class Scene {
     // 访客：站在门口，头顶有个小气泡，点一下看它来干什么
     if (!this.editMode) s.visitors.forEach((v, i) => {
       const set = this.game.sprites.get(VISITORS[v.who].look); if (!set) return;
-      const door = objPos(ASSETS.objects.door); const sc = PET_BASE * ASSETS.petScale * 0.95;
+      const door = objPos(ASSETS.objects.door); const sc = PET_BASE * ASSETS.petScale * VISITORS[v.who].size;
       const n = new Sprite(set.tex[0][0]); n.anchor.set(0.5, 0.9); n.scale.set(-sc, sc);
       n.position.set(door.x + (this.npc ? -118 - i * 90 : 118 - i * 236) * door.k, geo.floorY + (H - geo.floorY) * (0.34 + i * 0.06));
       n.eventMode = 'static'; n.cursor = 'pointer'; n.on('pointertap', this.tap(() => this.hooks.onObject('visitor', v.id)));
@@ -900,7 +902,7 @@ export class Scene {
       else if (free.length && Math.random() < 0.35) { const b = free[Math.floor(Math.random() * free.length)]; g.step = 'meet'; g.buddy = b.id; this.stop(b); this.setAction(b, 'idle', 9000); goTo(b.x + (g.x < b.x ? -78 : 78), b.y + 2); }
       else { g.step = 'roam'; const z = 1 + Math.floor(Math.random() * 4); goTo(zx(z) + zw(z) * (0.2 + Math.random() * 0.6), depthMin() + 10 + Math.random() * (depthMax() - depthMin() - 10)); }
     }
-    const sc = PET_BASE * ASSETS.petScale * 0.95;
+    const sc = PET_BASE * ASSETS.petScale * (NEIGHBORS[g.id]?.size ?? 0.85);
     g.sprite.texture = set.tex[rowFor(set, g.action)][frameIndex(g.action, this.now - g.t0)];
     g.sprite.scale.set(sc * g.dir, sc); g.root.position.set(g.x, g.y); g.root.zIndex = g.y;
     (g as any).tag.position.set(0, -256 * sc * 0.8);
@@ -967,10 +969,10 @@ export class Scene {
     return true;
   }
 
-  private scaleOf(a: Actor) { const p = this.game.pet(a.id); return PET_BASE * ASSETS.petScale * CONFIG.growth.stageScale[p ? sim.stageOf(p) : 2]; }
+  private scaleOf(a: Actor) { const p = this.game.pet(a.id); return PET_BASE * ASSETS.petScale * (p ? sim.bodySize(p) : 0.85); }
   /** 嘴在世界里离脚底多远（面朝右；朝左时 x 取反） */
   private mouthOffset(sc: number): [number, number] { return [(SPRITE.mouth[0] - SPRITE.cell / 2) * sc, (SPRITE.mouth[1] - SPRITE.cell * 0.9) * sc]; }
-  private floorSpot(kind: string, slot: number, sc = PET_BASE * ASSETS.petScale): [number, number] | null {
+  private floorSpot(kind: string, slot: number, sc = PET_BASE * ASSETS.petScale * ADULT_MAX): [number, number] | null {
     const A = this.anchor(kind), st = STATIONS[kind]?.[slot]; if (!A || !st) return null;
     const box = ASSETS.objects[kind]?.mouth;
     if (st.eat && box) {
@@ -1217,7 +1219,7 @@ export class Scene {
         const f = this.floorSpot(kind, i); if (!f) return; const [x, y] = f;
         const taken = [...this.actors.values()].some((a) => a.station === kind && a.slot === i);
         g.circle(x, y, 7).fill(taken ? 0x1f8a3a : 0x6fd08a).stroke({ width: 2, color: 0x0f5a22 }).moveTo(x, y).lineTo(x + st.dir * 26, y).stroke({ width: 3, color: 0x0f5a22 });
-        const pt = this.perchSpot(kind, i, PET_BASE * ASSETS.petScale); if (pt) g.moveTo(x, y).lineTo(pt.x, pt.y).stroke({ width: 2, color: 0x1aa7b8, alpha: 0.8 }).circle(pt.x, pt.y, 6).fill(0x1aa7b8);
+        const pt = this.perchSpot(kind, i, PET_BASE * ASSETS.petScale * ADULT_MAX); if (pt) g.moveTo(x, y).lineTo(pt.x, pt.y).stroke({ width: 2, color: 0x1aa7b8, alpha: 0.8 }).circle(pt.x, pt.y, 6).fill(0x1aa7b8);
       });
       if (this.npc) g.rect(this.npc.x - this.npc.width / 2, this.npc.y - this.npc.height * 0.9, this.npc.width, this.npc.height).stroke({ width: 2, color: 0x2f7fd0 });
       for (const a of this.actors.values()) {
@@ -1326,7 +1328,7 @@ export class Scene {
       a.lane = i;
       const set = this.game.spriteOf(p); if (!set) return;
       const weak = sim.isWeak(p);
-      const sc = PET_BASE * ASSETS.petScale * CONFIG.growth.stageScale[sim.stageOf(p)];
+      const sc = PET_BASE * ASSETS.petScale * sim.bodySize(p);
       if (a.inter && this.now >= a.inter.until) a.inter = null;
       if (this.roofStep(a, dt, weak)) { /* 在爬梯子或在屋顶上 */ }
       else if (a.inter && !weak) { /* 正在打哈欠或伸懒腰：做完再说 */ }

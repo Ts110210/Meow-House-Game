@@ -1,6 +1,6 @@
 // 游戏规则。这个文件不碰画面，只改存档数据，方便单独测试。
 import { writeDiary } from './diary';
-import { CONFIG, DAY, MOMENTS, NEIGHBORS, FIND_KINDS, SEASON_FINDS, SEASON_EVENTS, SEASON_IDS, SKINS, DEFAULT_SKIN, SKIN_PRICE, skinSize, ROOM_THEMES, DEFAULT_ROOM, DESTS, FOODS, FRY, FUR_COLORS, GEAR, GOODS, HOUR, MIN, SOUVENIRS, TOOLS, TREAT, type DayTime, type Season, type StatKey, decodeLook, TRAIT_IDS, type Trait, VISITORS, type VisitorWho, SPECIAL_DECOR, DECOR, ZONES } from './config';
+import { CONFIG, DAY, SEX_IDS, type Sex, MOMENTS, NEIGHBORS, FIND_KINDS, SEASON_FINDS, SEASON_EVENTS, SEASON_IDS, SKINS, DEFAULT_SKIN, SKIN_PRICE, skinSize, ROOM_THEMES, DEFAULT_ROOM, DESTS, FOODS, FRY, FUR_COLORS, GEAR, GOODS, HOUR, MIN, SOUVENIRS, TOOLS, TREAT, type DayTime, type Season, type StatKey, decodeLook, TRAIT_IDS, type Trait, VISITORS, type VisitorWho, SPECIAL_DECOR, DECOR, ZONES } from './config';
 import type { Find, Moment, GameEvent, GameState, Pet, Postcard, RepeatKey, Result, Trip, Visitor, Weather } from './types';
 
 const T = CONFIG.traits;
@@ -8,9 +8,13 @@ const clamp = (v: number, lo = 0, hi = 100) => Math.max(lo, Math.min(hi, v));
 let idSeq = 0;
 export const newId = (p: string) => `${p}_${Date.now().toString(36)}_${(idSeq++).toString(36)}${Math.floor(Math.random() * 1296).toString(36)}`;
 
-export function newPet(name: string, spriteId: string, clock: number, trait: Trait = TRAIT_IDS[Math.floor(Math.random() * TRAIT_IDS.length)]): Pet {
+/** 随机一个公母；在这个公母的范围里随机一个成年大小 */
+export const randomSex = (): Sex => SEX_IDS[Math.floor(Math.random() * SEX_IDS.length)];
+export const randomAdultSize = (sex: Sex) => { const [a, b] = CONFIG.growth.adultSize[sex]; return Math.round((a + Math.random() * (b - a)) * 1000) / 1000; };
+
+export function newPet(name: string, spriteId: string, clock: number, trait: Trait = TRAIT_IDS[Math.floor(Math.random() * TRAIT_IDS.length)], sex: Sex = randomSex()): Pet {
   return {
-    id: newId('pet'), name, spriteId, age: 0, trait, lastCare: clock,
+    id: newId('pet'), name, spriteId, age: 0, trait, sex, size: randomAdultSize(sex), lastCare: clock,
     food: CONFIG.stats.start.food, mood: CONFIG.stats.start.mood, clean: CONFIG.stats.start.clean,
     weakSince: null, dead: false, lostSince: null, searchUntil: null, tripId: null, repeats: {}, hungryNotified: false, adoptedAt: clock,
   };
@@ -92,6 +96,14 @@ function addFriendship(s: GameState, a: string, b: string, n: number) {
 /** 这只宠物和家里其他宠物的关系，友情高的排前面 */
 export function friendsOf(s: GameState, petId: string) {
   return alivePets(s).filter((o) => o.id !== petId).map((o) => ({ pet: o, value: friendship(s, petId, o.id), best: bestFriends(s, petId, o.id) })).sort((x, y) => y.value - x.value);
+}
+/** 现在画出来有多大（按最初设计算）：成年大小 × 成长阶段 */
+export const bodySize = (p: Pet) => p.size * CONFIG.growth.stageScale[stageOf(p)];
+/** 开发者面板：直接把宠物设成某个成长阶段（幼年、青年、成年刚开始的时候） */
+export function devSetStage(s: GameState, petId: string, stage: number): Result {
+  const p = s.pets.find((x) => x.id === petId); if (!p) return { ok: false, msg: '找不到这只宠物' };
+  const st = Math.max(0, Math.min(2, Math.floor(stage))); p.age = st * CONFIG.growth.stageDuration;
+  return { ok: true, msg: `${p.name}现在是${CONFIG.growth.stageNames[st]}` };
 }
 export const stageName = (p: Pet) => CONFIG.growth.stageNames[stageOf(p)];
 export const isWeak = (p: Pet) => p.weakSince !== null && !p.dead;
@@ -411,7 +423,7 @@ function addBond(s: GameState, id: string, n: number) { s.hood.bonds[id] = Math.
 export function openDoorToNeighbors(s: GameState, who?: string): GameEvent[] {
   const NB = CONFIG.neighbors; const day = dayKey(s.clock); const h = s.hood;
   if (h.day !== day) { h.day = day; let r = Math.random(); h.quota = 0; for (let n = 0; n < NB.perDayChance.length; n++) { r -= NB.perDayChance[n]; if (r <= 0) { h.quota = n; break; } } }
-  if (!who && (h.quota <= 0 || h.now || s.clock - h.last < NB.gap || homePets(s).length === 0)) return [];
+  if (!who && (h.quota <= 0 || h.now || s.clock - h.last < NB.gap || s.clock - s.createdAt < NB.firstAfter || homePets(s).length === 0)) return [];
   if (h.now) return [];
   const ids = Object.keys(NEIGHBORS); const id = who && NEIGHBORS[who] ? who : ids[Math.floor(Math.random() * ids.length)];
   if (!who) h.quota--;
@@ -891,11 +903,11 @@ export function unlockSlot(s: GameState): Result {
   return { ok: true, msg: '多了一个空位' };
 }
 
-export function adopt(s: GameState, name: string, spriteId: string, trait?: Trait): Result & { petId?: string } {
+export function adopt(s: GameState, name: string, spriteId: string, trait?: Trait, sex?: Sex): Result & { petId?: string } {
   if (alivePets(s).length >= s.slots) return { ok: false, msg: '没有空位了' };
   const n = name.trim().slice(0, 8);
   if (!n) return { ok: false, msg: '先取个名字' };
-  const p = newPet(n, spriteId, s.clock, trait);
+  const p = newPet(n, spriteId, s.clock, trait, sex);
   s.pets.push(p);
   return { ok: true, msg: `${n}来到了家里`, petId: p.id };
 }
