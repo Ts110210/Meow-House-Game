@@ -15,6 +15,7 @@ export class AssetStore {
   slots(): Slot[] {
     const out: Slot[] = [];
     out.push({ key: 'room.strip', group: '房间背景', name: `长图（盖住左边 ${ASSETS.room.strip.coverZones} 个区域）`, src: ASSETS.room.strip.src, hint: '约 3:1，建议 2160×720', kind: 'room' });
+    out.push({ key: 'room.top', group: '房间背景', name: '上面一层（屋顶和天空）', src: ASSETS.room.top, hint: '3456×720，横向 8 等分对着下面 8 个区域', kind: 'room' });
     for (const z of ZONES) out.push({ key: `room.zone.${z.id}`, group: '房间背景', name: `${z.name}（单独一张）`, src: ASSETS.room.zones[z.id], hint: '3:5，建议 432×720 的倍数', kind: 'room' });
     for (const [k, d] of Object.entries(ASSETS.objects)) out.push({ key: `object.${k}`, group: '家具和物品', name: d.label, src: d.src, hint: `透明背景 PNG，显示高度 ${d.height}`, kind: 'object' });
     for (const [k, src] of Object.entries(ASSETS.decor)) out.push({ key: `decor.${k}`, group: '装饰', name: DECOR[k]?.name ?? k, src, hint: `透明背景 PNG，底边贴地，显示高度 ${DECOR[k]?.height ?? 80}`, kind: 'object' });
@@ -25,6 +26,7 @@ export class AssetStore {
     const withId = (src: string, id: string) => src.replace(/\.png$/, `-${id}.png`);
     for (const r of ROOM_THEMES.slice(1)) {
       out.push({ key: `room.strip@${r.id}`, group: `房间风格 · ${r.name}`, name: '长图', src: withId(ASSETS.room.strip.src, r.id), hint: '和默认的长图一样的尺寸和布局（地板线、分界线共用）', kind: 'room' });
+      out.push({ key: `room.top@${r.id}`, group: `房间风格 · ${r.name}`, name: '上面一层（屋顶和天空）', src: withId(ASSETS.room.top, r.id), hint: '和默认的那张一样大', kind: 'room' });
       for (const z of ZONES) out.push({ key: `room.zone.${z.id}@${r.id}`, group: `房间风格 · ${r.name}`, name: `${z.name}（单独一张）`, src: withId(ASSETS.room.zones[z.id], r.id), hint: '3:5，和默认的那张一样大', kind: 'room' });
     }
     for (const k of SKINS.slice(1)) {

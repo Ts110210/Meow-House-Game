@@ -2,7 +2,7 @@
 // 所以换了正式素材之后，旧照片也会跟着变成新画风。每种瞬间里宠物站在哪、做什么动作，写在下面的 LAYOUT 里。
 import { CONFIG, MOMENTS, ZONES, type ActionName, type DayTime, type Season } from '../config';
 import { ASSETS } from '../assets.config';
-import { drawObject, drawZone } from './room';
+import { drawObject, drawTop, drawZone } from './room';
 import { drawFrame, type SpriteSet } from '../sprites';
 
 /** 一只宠物在照片里的位置（按 432×720 的区域算，x、y 是脚底）、动作、用第几帧、是不是朝左 */
@@ -13,7 +13,8 @@ const LAYOUT: Record<string, { objects: string[]; front?: string; poses: Pose[];
   treeFull: { objects: ['sofa', 'cattree'], poses: [[282, 273, 'sit', 0], [380, 380, 'sleep', 1, true], [290, 487, 'idle', 0]] },
   fishing: { objects: ['pond'], poses: [[84, 662, 'fish', 2], [190, 608, 'fish', 1], [334, 608, 'fish', 2, true]] },
   butterfly: { objects: ['pond'], poses: [[150, 604, 'fish', 1], [236, 604, 'jump', 2, true]] },
-  stargaze: { objects: [], poses: [[140, 626, 'sit', 0], [262, 660, 'sit', 2, true], [60, 680, 'sit', 1]] },
+  // 屋顶那一层：从平顶右边裁一块（ROOF_X 起 432 宽），两只坐在平顶上
+  stargaze: { objects: [], poses: [[228, 440, 'sit', 0, true], [276, 440, 'sit', 2, true]] },
   groom: { objects: ['sofa'], poses: [[186, 640, 'groom', 0], [262, 642, 'happy', 1, true], [90, 680, 'sit', 0]] },
   box: { objects: ['door', 'box'], front: 'box', poses: [[340, 650, 'idle', 0]] },
   tunnel: { objects: ['tunnel'], front: 'tunnel', poses: [[251, 670, 'idle', 0]] },
@@ -23,6 +24,8 @@ const LAYOUT: Record<string, { objects: string[]; front?: string; poses: Pose[];
   neighbor: { objects: ['sofa'], guest: true, poses: [[176, 644, 'play', 1], [264, 646, 'play', 2, true]] },
 };
 
+/** 屋顶的照片从上层图的哪里开始裁（平顶的右边，和游戏里看星星的位置一样） */
+const ROOF_X = 2364;
 const W = 432, TOP = 100, VIEW_H = 576, OUT_W = 480, OUT_H = 640, PET = 201.6;
 
 export interface MomentInfo { kind: string; season: string; time: string }
@@ -33,7 +36,8 @@ export function renderMoment(m: MomentInfo, sets: (SpriteSet | undefined)[], opt
   const def = MOMENTS[m.kind], lay = LAYOUT[m.kind]; if (!def || !lay) return cv;
   const zi = ZONES.findIndex((z) => z.id === def.zone); const time = m.time as DayTime, season = m.season as Season;
   const k = OUT_W / W; c.save(); c.scale(k, k); c.translate(0, -TOP);
-  c.drawImage(drawZone(def.zone, zi, { time, season, weather: m.kind === 'rainWatch' ? 'rain' : 'clear' }, opts.room), 0, 0, W, 720);
+  const env = { time, season, weather: m.kind === 'rainWatch' ? 'rain' as const : 'clear' as const };
+  c.drawImage(def.zone === 'roof' ? drawTop(ROOF_X, W, env, opts.room) : drawZone(def.zone, zi, env, opts.room), 0, 0, W, 720);
   const obj = (kind: string, from = 0) => {
     const d = ASSETS.objects[kind]; const img = drawObject(kind, opts.skin?.(kind)); if (!d || !img) return;
     const h = d.height, w = (h * img.width) / img.height;

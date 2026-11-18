@@ -162,7 +162,8 @@ export class UI {
       h('button', { class: 'pill', onclick: () => this.openShop() }, '商店'),
       h('button', { class: 'pill', onclick: () => this.openMenu() }, '菜单'));
     this.strip = h('div', { class: 'petstrip' });
-    this.zonesEl = h('div', { class: 'zones' }, ZONES.map((z, i) => h('button', { class: 'zone', onclick: () => this.scene.scrollToZone(i) }, z.name)));
+    // 最后一个按钮是「屋顶」：切到房子上面那一层（编号 = 区域个数）
+    this.zonesEl = h('div', { class: 'zones' }, [...ZONES.map((z, i) => h('button', { class: 'zone', onclick: () => this.scene.scrollToZone(i) }, z.name)), h('button', { class: 'zone', onclick: () => this.scene.goRoof() }, '屋顶')]);
     this.toasts = h('div', { class: 'toasts' });
     this.hudSeason = h('div', { class: 'hud-season' });
     this.root.append(top, this.hudSeason, h('div', { class: 'hud-bottom' }, this.strip, this.zonesEl), this.toasts);

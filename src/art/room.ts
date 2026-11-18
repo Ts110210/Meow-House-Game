@@ -202,25 +202,6 @@ const ZONE_ART: Record<ZoneId, (s: Sketch) => void> = {
   },
   // 院子：完全在室外。天空、远山、一棵大树、篱笆、草地；鱼塘是单独的物品。
   // 屋顶：一大片天，远处是别人家的屋顶，脚下是瓦片。夜里上来看星星
-  roof(s) {
-    s.rect(0, 0, W, 560, { fill: skyColor(), stroke: false, hatch: 0.5 });
-    skyThings(s, 0, 90, W);
-    if (ENV.time === 'night' && !rainy()) stars(s, 10, 250, W - 20, 200, 22);
-    // 远处的屋顶和楼，夜里窗户亮着灯
-    const far = ENV.time === 'night' ? '#3A4670' : lighten(P.mist, 0.25);
-    for (const [x, w, h] of [[0, 70, 70], [64, 90, 120], [150, 60, 84], [206, 110, 150], [312, 64, 96], [372, 60, 130]]) {
-      s.rect(x, 560 - h, w, h, { fill: far, width: 1 });
-      for (let wy = 560 - h + 14; wy < 548; wy += 24) for (let wx = x + 10; wx < x + w - 12; wx += 20) if ((wx * 7 + wy * 3) % 5 < 2) s.rect(wx, wy, 9, 11, { fill: ENV.time === 'day' ? lighten(P.mist, 0.55) : '#F4D98A', stroke: false, hatch: 0 });
-    }
-    // 烟囱和天线
-    s.rect(322, 432, 62, 128, { fill: P.coral, r: 2 }); s.rect(314, 420, 78, 16, { fill: P.woodDark, r: 3 });
-    for (let y = 452; y < 556; y += 20) s.line(324, y, 382, y, P.ink, 1, 0.4);
-    s.line(60, 560, 60, 452, P.ink, 2); s.line(38, 470, 82, 470, P.ink, 1.6); s.line(46, 486, 74, 486, P.ink, 1.4);
-    // 瓦片
-    const tile = ENV.season === 'winter' ? '#E9EEF1' : ROOF_TILE;
-    s.rect(0, FY, W, H - FY, { fill: tile, stroke: false, hatch: 0.6 }); s.rect(0, FY - 8, W, 12, { fill: darken(tile, 0.12), r: 4 });
-    for (let row = 0; row < 6; row++) for (let x = (row % 2) * 24 - 24; x < W; x += 48) s.curve([[x, FY + 22 + row * 26], [x + 24, FY + 34 + row * 26], [x + 48, FY + 22 + row * 26]], darken(tile, 0.22), 1.3, 0.7);
-  },
   garden(s) {
     const c = sea();
     s.rect(0, 0, W, 560, { fill: skyColor(), stroke: false, hatch: 0.5 });
@@ -244,8 +225,9 @@ const ZONE_ART: Record<ZoneId, (s: Sketch) => void> = {
 };
 
 /** 每个区域的地面颜色（院子是草地，其他是木地板）。画面底部往下延伸时用。 */
-const ROOF_TILE = '#B9694C';
-export const groundColor = (id: ZoneId, env: Env, room?: string) => (id === 'garden' ? SEASON[env.season].ground : id === 'roof' ? (env.season === 'winter' ? '#E9EEF1' : ROOF_TILE) : roomPalette(room).floor);
+export const groundColor = (id: ZoneId, env: Env, room?: string) => (id === 'garden' ? SEASON[env.season].ground : roomPalette(room).floor);
+/** 天空的颜色（画面最上面、上层图以外的地方用） */
+export const skyFor = (env: Env) => { const old = ENV; ENV = env; try { return skyColor(); } finally { ENV = old; } };
 
 /** room = 房间风格（不写 = 默认的那一套） */
 export function drawZone(id: ZoneId, index: number, env: Env = ENV, room?: string): HTMLCanvasElement {
@@ -253,6 +235,55 @@ export function drawZone(id: ZoneId, index: number, env: Env = ENV, room?: strin
   const [cv, ctx] = makeCanvas(W, H, 1.5);
   const s = new Sketch(ctx, 101 + index * 17);
   try { base(s); ZONE_ART[id](s); } finally { P = PALETTE; }
+  return cv;
+}
+
+// ---------- 上面那一层：屋顶和天空 ----------
+
+const ROOF_TILE = '#B9694C';
+/** 上层图的一段：从 x0 开始、宽 w（整层 3456×720，坐标见 assets.config.ts 的 roof）。
+ *  每一段都把整层画一遍再裁出来，所以接缝对得上；天空的笔触和瓦片纹路每段各自画。 */
+export function drawTop(x0: number, w: number, env: Env = ENV, room?: string): HTMLCanvasElement {
+  ENV = env; P = roomPalette(room);
+  const [cv, ctx] = makeCanvas(w, H, 1.5);
+  try {
+    ctx.translate(-x0, 0);
+    new Sketch(ctx, 900 + x0).rect(x0 - 4, 0, w + 8, H, { fill: skyColor(), stroke: false, hatch: 0.5 });
+    const s = new Sketch(ctx, 777); const TW = 8 * W;
+    // 天上：阴天几朵灰云；夜里月亮和满天星星；白天和傍晚太阳和白云
+    if (rainy()) { const c = ENV.time === 'night' ? '#4A5378' : '#A9B3BC'; for (const [x, y, rx] of [[300, 120, 70], [420, 100, 50], [1250, 150, 80], [2100, 110, 60], [2260, 130, 70], [3200, 120, 60]]) s.ellipse(x, y, rx, 18, { fill: c, width: 1 }); }
+    else if (ENV.time === 'night') { stars(s, 0, 10, TW, 400, 190); s.ellipse(2300, 120, 26, 26, { fill: '#F6ECC6', width: 1.1 }); s.ellipse(2311, 112, 21, 21, { fill: SKY.night, stroke: false, hatch: 0 }); }
+    else {
+      s.ellipse(2300, ENV.time === 'dusk' ? 330 : 120, 30, 30, { fill: ENV.time === 'dusk' ? '#F0A46A' : '#F4E3A6', width: 1.1 });
+      for (const x of [420, 1300, 1980, 3150]) { s.ellipse(x, 150, 52, 14, { fill: P.white, width: 1 }); s.ellipse(x + 34, 136, 36, 13, { fill: P.white, width: 1 }); }
+    }
+    // 屋顶：梯形，瓦片一排排；平顶上有烟囱和天线；正面两扇阁楼小圆窗（以后做阁楼时就是从这里剖开）
+    const snow = ENV.season === 'winter', tile = ROOF_TILE;
+    const [l0, l1, r1, r0] = [[-30, 724], [380, 430], [2644, 430], [3054, 724]] as Pt[];
+    s.rect(1480, 352, 72, 82, { fill: P.coral, r: 2 }); s.rect(1470, 340, 92, 16, { fill: P.woodDark, r: 3 });
+    for (let y = 372; y < 430; y += 18) s.line(1482, y, 1550, y, P.ink, 1, 0.4);
+    s.line(820, 432, 820, 330, P.ink, 2); s.line(796, 350, 844, 350, P.ink, 1.6); s.line(804, 368, 836, 368, P.ink, 1.4);
+    if (snow) { s.rect(1468, 332, 96, 12, { fill: '#F7FAFC', r: 5, width: 1 }); }
+    s.poly([l0, l1, r1, r0], { fill: tile, hatch: 0.5 });
+    ctx.save(); ctx.beginPath(); ctx.moveTo(l0[0], l0[1]); ctx.lineTo(l1[0], l1[1]); ctx.lineTo(r1[0], r1[1]); ctx.lineTo(r0[0], r0[1]); ctx.closePath(); ctx.clip();
+    const t = new Sketch(ctx, 500 + x0);
+    for (let row = 0; row < 11; row++) { const y = 460 + row * 26; for (let x = (row % 2) * 24 - 60; x < 3100; x += 48) if (x > x0 - 60 && x < x0 + w + 10) t.curve([[x, y], [x + 24, y + 12], [x + 48, y]], darken(tile, 0.22), 1.3, 0.7); }
+    if (snow) { ctx.fillStyle = 'rgba(240,245,248,0.55)'; ctx.fillRect(x0, 430, w, 300); }
+    ctx.restore();
+    s.rect(374, 424, 2276, 16, { fill: darken(tile, 0.15), r: 4 });
+    s.poly([[-36, 704], [3060, 704], [3060, 724], [-36, 724]], { fill: darken(tile, 0.3) });
+    for (const x of [1000, 2050]) {
+      s.ellipse(x, 590, 36, 36, { fill: P.woodDark, width: 1.4 });
+      s.ellipse(x, 590, 28, 28, { fill: ENV.time === 'night' ? '#F4D98A' : lighten(skyColor(), 0.3), width: 1 });
+      s.line(x - 28, 590, x + 28, 590, P.woodDark, 2); s.line(x, 562, x, 618, P.woodDark, 2);
+    }
+    // 冬天屋脊和斜坡上积一层雪；春天落几片花瓣，秋天几片落叶
+    if (snow) { s.curve([l0, l1, r1, r0], '#FFFFFF', 9, 0.95); s.curve([l0, l1, r1, r0], '#E3EAF0', 2, 0.9); }
+    if (ENV.season === 'spring' || ENV.season === 'autumn') for (let i = 0; i < 60; i++) {
+      const x = 420 + s.r() * 2200, y = 452 + s.r() * 240;
+      s.ellipse(x, y, 6, 3.5, { fill: ENV.season === 'spring' ? '#F2B8C6' : i % 2 ? '#E0914F' : '#D9A94A', stroke: false, hatch: 0 });
+    }
+  } finally { P = PALETTE; }
   return cv;
 }
 
@@ -264,6 +295,11 @@ const OBJECT_ART: Record<string, { w: number; h: number; draw: (s: Sketch) => vo
     s.rect(13, 13, 150, 379, { fill: P.wood, r: 3 });
     s.rect(30, 36, 116, 130, { fill: lighten(P.wood, 0.2), r: 4, width: 1.3 }); s.rect(30, 192, 116, 172, { fill: lighten(P.wood, 0.2), r: 4, width: 1.3 });
     s.ellipse(142, 210, 9, 9, { fill: P.mustard });
+  } },
+  // 木梯子：两根竖杆，十几根横档。很细很长（顶端伸出阳台的天花板，搭到屋檐上）
+  ladder: { w: 84, h: 632, draw(s) {
+    for (let y = 30; y < 620; y += 44) s.rect(12, y, 60, 9, { fill: lighten(P.wood, 0.15), r: 2, width: 1.2 });
+    s.rect(6, 4, 12, 626, { fill: P.woodDark, r: 3, width: 1.4 }); s.rect(66, 4, 12, 626, { fill: P.woodDark, r: 3, width: 1.4 });
   } },
   bowl: { w: 96, h: 44, draw(s) {
     s.poly([[6, 12], [90, 12], [78, 40], [18, 40]], { fill: P.coral }); s.ellipse(48, 13, 42, 9, { fill: darken(P.wood, 0.1) });

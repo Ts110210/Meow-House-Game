@@ -5,7 +5,7 @@ import 'pixi.js/unsafe-eval';
 import { Application, Circle, Container, Graphics, Rectangle, Sprite, Text, Texture, type FederatedPointerEvent } from 'pixi.js';
 import { ASSETS, type ObjectDef } from './assets.config';
 import type { AssetStore } from './assets';
-import { drawObject, drawZone, groundColor, objectAspect, roomPalette, type Env } from './art/room';
+import { drawObject, drawTop, drawZone, groundColor, objectAspect, roomPalette, skyFor, type Env } from './art/room';
 import { renderPostcard } from './art/postcard';
 import { CONFIG, DECOR, PALETTE, SOUVENIRS, SPRITE, VISITORS, ZONES, type ActionName , NEIGHBORS, FIND_KINDS, SEASON_FINDS } from './config';
 import { drawDecor } from './art/decor';
@@ -14,7 +14,7 @@ import { BASE_FY, BASE_ZW, geo, recompute } from './geo';
 import * as sim from './sim';
 import { frameIndex, rowFor } from './sprites';
 
-export type ObjectKind = 'neighbor' | 'find' | 'door' | 'bowl' | 'tub' | 'bed' | 'cabinet' | 'album' | 'pond' | 'scratcher' | 'feeder' | 'ball' | 'sofa' | 'counter' | 'nightstand' | 'bedlamp' | 'pendantDoor' | 'pendantShelf' | 'cattree' | 'npc' | 'visitor';
+export type ObjectKind = 'neighbor' | 'find' | 'ladder' | 'door' | 'bowl' | 'tub' | 'bed' | 'cabinet' | 'album' | 'pond' | 'scratcher' | 'feeder' | 'ball' | 'sofa' | 'counter' | 'nightstand' | 'bedlamp' | 'pendantDoor' | 'pendantShelf' | 'cattree' | 'npc' | 'visitor';
 
 /** 家具的位置：每件家具能同时容纳几只、各自在哪、脸朝哪边。
  *  有位置才过去，位置满了就不去挤，所以不会重叠，也不会互相打断。
@@ -46,12 +46,11 @@ const STATIONS: Record<string, Station[]> = {
   autoball: [{ dx: -52, dir: 1, at: -0.2 }, { dx: 52, dir: -1, at: -0.2 }], // 追自动逗猫球，最多两只
   heater: [{ dx: 92, dir: -1, at: -0.04 }, { dx: 158, dir: -1, at: -0.2 }, { dx: 124, dir: -1, at: -0.42 }], // 围着暖炉，最多三只
   butterfly: [{ dx: -34, dir: 1, at: 0 }, { dx: 44, dir: -1, at: 0 }], // 院子里扑蝴蝶
-  roofA: [{ dx: 0, dir: 1, at: 0 }], roofB: [{ dx: 0, dir: -1, at: 0 }], // 屋顶上看星星
   pond: [{ dx: -178, dir: 1, at: 0.45 }, { dx: -72, dir: 1, at: 1.12 }, { dx: 72, dir: -1, at: 1.12 }], // 鱼塘边捞鱼：左边一只、后面两只，都在岸上
 };
 /** 猫会自己跳上去待着的地方（猫爬架另算：可以指定谁待在哪一层） */
 /** 露天的区域：下雨时宠物不去 */
-const OUTDOOR: string[] = ['balcony', 'garden', 'roof'];
+const OUTDOOR: string[] = ['balcony', 'garden'];
 const LOUNGE = ['sofa', 'bed', 'kitchenWindow', 'bedroomWindow', 'cattree', 'box', 'basket', 'tunnel', 'counter', 'cabinet'];
 /** 钻进去只露出脑袋的那几样：在里面只会待着或者睡，不舔毛 */
 const HIDEY = ['box', 'basket', 'tunnel'];
@@ -80,6 +79,24 @@ const depthMin = () => geo.floorY + (H - geo.floorY) * 0.22, depthMax = () => ge
 const clampX = (x: number) => Math.max(walkMin(), Math.min(walkMax(), x)), clampY = (y: number) => Math.max(depthMin(), Math.min(depthMax(), y));
 const hex = (c: string) => parseInt(c.slice(1), 16);
 /** 壮年宠物在画面里的缩放：身高约为门高的 petHeightOfDoor */
+// ---------- 屋顶那一层：画在地面这一层的正上方（世界坐标 y 从 -720 到 0） ----------
+// 上层图的坐标（u）每 432 对应下面一个区域；区域宽度变了（背景长图），上层跟着每一段拉伸
+const RF = ASSETS.roof;
+const topToWorld = (u: number) => { const i = Math.max(0, Math.min(N - 1, Math.floor(u / BASE_ZW))); return zx(i) + (u - i * BASE_ZW) * (zw(i) / BASE_ZW); };
+const worldToTop = (x: number) => { const i = zoneAt(x); return i * BASE_ZW + (x - zx(i)) * (BASE_ZW / zw(i)); };
+/** 屋顶上 u 这个位置，猫的脚底在上层图里的高度，和那一段的坡度（弧度，画的时候猫跟着歪） */
+function roofWalk(u: number): { y: number; tilt: number } {
+  const w = RF.walk; u = Math.max(w[0][0], Math.min(w[w.length - 1][0], u));
+  for (let i = 1; i < w.length; i++) if (u <= w[i][0] || i === w.length - 1) {
+    const [x0, y0] = w[i - 1], [x1, y1] = w[i]; const t = (u - x0) / (x1 - x0 || 1);
+    const k = zw(Math.max(0, Math.min(N - 1, Math.floor(u / BASE_ZW)))) / BASE_ZW;
+    return { y: y0 + (y1 - y0) * t, tilt: Math.atan2(y1 - y0, (x1 - x0) * k) };
+  }
+  return { y: w[0][1], tilt: 0 };
+}
+/** 屋顶在世界里的右边（= 院子的左边）；屋顶那一层左右滑只能滑到这里 */
+const roofW = () => { const g = zoneIndex('garden'); return g > 0 ? zx(g) : worldW(); };
+
 const PET_BASE = (CONFIG.room.petHeightOfDoor * CONFIG.room.doorHeight) / (SPRITE.cell * CONFIG.room.petCellFill);
 
 interface Actor {
@@ -95,7 +112,7 @@ interface Actor {
   /** 闹脾气到什么时候（主人离开太久）。摸一下就好 */
   sulkUntil: number;
   /** meet = 走到这只同伴身边再开始；partner = 到了之后同伴做什么动作 */
-  pending: { action: ActionName; dur: number; ball?: boolean; meet?: string; partner?: ActionName; dish?: string } | null;
+  pending: { action: ActionName; dur: number; ball?: boolean; meet?: string; partner?: ActionName; dish?: string; /** 要上屋顶：走到梯子底下就开始爬，数字 = 看星星的第几个位置 */ roof?: number } | null;
   /** 正在去吃（或正在吃）的那份罐头、便当 */
   dishId?: string; fast: boolean;
   /** 正在追球：到什么时候为止、是不是带球的那只、刚跑到位要不要先扑一下 */
@@ -106,6 +123,10 @@ interface Actor {
   station: string | null; slot: number; selfPlayAt: number;
   /** 想用的家具现在满了：先在旁边等，空出来再过去 */
   want: { kind: string; since: number } | null;
+  /** 正在爬梯子（上屋顶或下来）。stay = 上去之后看星星看多久，slot = 看星星的第几个位置 */
+  climb?: { t0: number; up: boolean; stay: number; slot: number } | null;
+  /** 在屋顶上：u = 在上层图里的位置，tu = 要走去哪；home = 要回去了（走回梯子爬下来） */
+  roof?: { u: number; tu: number; slot: number; home: boolean; slept: boolean; stay: number } | null;
 }
 
 export interface SceneHooks { /** 抓拍到了一个瞬间 */ onMoment?(id: string): void; onPet(id: string): void; onObject(kind: ObjectKind, id?: string): void; onZone(index: number): void; onEdit?(kind: string | null): void; onBgEdit?(done: boolean): void; /** 布置房间时：选中了哪件装饰（null = 没选中），或者摆放被拒绝的原因 */ onDecor?(id: string | null, msg?: string): void }
@@ -142,6 +163,9 @@ export class Scene {
   private stripSprite: Sprite | null = null;
   private zoneSprites: ({ sp: Sprite; code: boolean } | null)[] = [];
   private camX = 0; private camTarget: number | null = null; private vel = 0;
+  /** 现在看的是哪一层：地面（屋里、阳台、院子）还是屋顶。lift = 镜头往上抬了多少（0 = 地面，720 = 屋顶），切换时慢慢抬 */
+  layer: 'ground' | 'roof' = 'ground'; private lift = 0; private baseY = 0;
+  private topSprites: Sprite[] = []; private topCode = true; private roofNext = 0;
   private scale = 1; private viewW = 400; private nameScreenY = 30; private hudSpans: [number, number][] = [];
   private drag = { on: false, moved: false, startX: 0, lastX: 0, lastT: 0 };
   bgMode = false;
@@ -215,10 +239,19 @@ export class Scene {
       const sp = new Sprite(this.tex(img ?? drawZone(z.id, i, env, room))); this.bgLayer.addChild(sp);
       return { sp, code: !img };
     });
+    // 上面那一层：有上层图就切成 8 段（每段在一个区域的正上方），没有就用代码画
+    const top = this.roomPic('room.top'); this.topCode = !top;
+    this.topSprites = ZONES.map((_, i) => { const sp = new Sprite(this.tex(top ? this.topPiece(top, i) : drawTop(i * BASE_ZW, BASE_ZW, env, room))); this.bgLayer.addChild(sp); return sp; });
     this.placeArt();
     this.rebuildObjects();
     if (this.names.length) this.applyCam();
     if (this.bgMode) this.setBgMode(true);
+  }
+
+  /** 上层图的第 i 段（横向 8 等分） */
+  private topPiece(img: HTMLCanvasElement | HTMLImageElement, i: number): HTMLCanvasElement {
+    const cw = img.width / N, cv = document.createElement('canvas'); cv.width = Math.round(cw); cv.height = img.height;
+    cv.getContext('2d')!.drawImage(img, i * cw, 0, cw, img.height, 0, 0, cw, img.height); return cv;
   }
 
   private env(): Env { return { time: sim.dayTime(this.game.state), season: sim.season(this.game.state), weather: sim.weather(this.game.state) }; }
@@ -227,7 +260,9 @@ export class Scene {
   /** 昼夜或季节变了：只重画代码画的那些区域（窗外、阳台、院子会变样） */
   private redrawForEnv() {
     const env = this.env();
-    this.zoneSprites.forEach((z, i) => { if (z && z.code) { const old = z.sp.texture; z.sp.texture = this.tex(drawZone(ZONES[i].id, i, env, this.room())); this.textures = this.textures.filter((t) => t !== old); old.destroy(true); } });
+    const swap = (sp: Sprite, cv: HTMLCanvasElement) => { const old = sp.texture; sp.texture = this.tex(cv); this.textures = this.textures.filter((t) => t !== old); old.destroy(true); };
+    this.zoneSprites.forEach((z, i) => { if (z && z.code) swap(z.sp, drawZone(ZONES[i].id, i, env, this.room())); });
+    if (this.topCode) this.topSprites.forEach((sp, i) => swap(sp, drawTop(i * BASE_ZW, BASE_ZW, env, this.room())));
     this.placeArt();
   }
 
@@ -237,12 +272,14 @@ export class Scene {
     // 房间外面的填充：上面是天花板，下面和两边接着墙和地板的颜色
     const g = this.fill.clear();
     const rp = roomPalette(this.room());
-    g.rect(-3000, -3000, W + 6000, 3000).fill(hex(rp.ceiling));
+    const env = this.env();
+    // 上层图再往上（很高的屏幕才看得到）接着天空
+    g.rect(-3000, -3000 - H, W + 6000, 3000 + 2).fill(hex(skyFor(env)));
+    g.rect(-3000, -H, W + 6000, H).fill(hex(rp.ceiling));
     g.rect(-3000, 0, W + 6000, fy).fill(hex(rp.wall));
     g.rect(-3000, fy, W + 6000, 3000).fill(hex(rp.floor));
     g.rect(-3000, -5, W + 6000, 5).fill({ color: hex(PALETTE.ink), alpha: 0.25 });
     // 屏幕底部往下延伸的地面：院子是草地，其他是木地板
-    const env = this.env();
     ZONES.forEach((z, i) => { const c = groundColor(z.id, env, this.room()); if (c !== rp.floor && this.zoneSprites[i]?.code) g.rect(zx(i), H - 2, zw(i) + (i === N - 1 ? 3000 : 0), 3000).fill(c.startsWith('#') ? hex(c) : c); });
     // 傍晚偏暖、夜里压暗但保留暖色：整个画面乘上一个颜色（正片叠底）。屋里和室外（阳台、院子）各用各的颜色
     this.shade.clear();
@@ -252,12 +289,14 @@ export class Scene {
         const x0 = i === 0 ? -3000 : zx(i), x1 = i === N - 1 ? W + 3000 : zx(i + 1);
         const outdoor = OUTDOOR.includes(z.id);
         // 阳台有屋檐，木地板和屋里连着：地板以下用屋里的颜色，不然和隔壁的地板接不上
-        const split = z.id === 'balcony' ? fy : outdoor ? 6000 + H : -3000;
-        if (split > -3000) this.shade.rect(x0, -3000, x1 - x0, split + 3000).fill(hex(tone.outdoor));
+        // 天花板以上（屋顶那一层）都是露天
+        const split = z.id === 'balcony' ? fy : outdoor ? 6000 + H : 0;
+        this.shade.rect(x0, -3000 - H, x1 - x0, split + 3000 + H).fill(hex(tone.outdoor));
         if (split < 6000 + H) this.shade.rect(x0, split, x1 - x0, 6000 + H - split).fill(hex(tone.indoor));
       });
     }
     if (this.stripSprite && geo.strip) { this.stripSprite.position.set(geo.strip.x, 0); this.stripSprite.width = geo.strip.w; this.stripSprite.height = H; }
+    this.topSprites.forEach((sp, i) => { sp.position.set(zx(i), -H); sp.width = zw(i); sp.height = H; });
     this.zoneSprites.forEach((z, i) => {
       if (!z) return;
       // 代码画的占位区域：整体上下挪，让它的地板线和背景图的对齐
@@ -281,6 +320,7 @@ export class Scene {
     const s = this.game.state;
     if (kind === 'door') return s.trips.length ? `门 · 出门中 ×${s.trips.length}` : '门 · 派宠物出门';
     if (kind === 'cabinet') return `收藏柜 ${Object.keys(s.souvenirs).length}/${Object.keys(SOUVENIRS).length}`;
+    if (kind === 'ladder') return '木梯子 · 通往屋顶';
     if (kind === 'album') return `相册 ${s.postcards.length}/${sim.albumLimit()} 张`;
     return ASSETS.objects[kind]?.label ?? '';
   }
@@ -534,10 +574,10 @@ export class Scene {
     this.scale = Math.min(avail / (H - crop), landscape ? Infinity : w / maxZW());
     this.viewW = w / this.scale;
     this.world.scale.set(this.scale);
-    this.world.y = avail - H * this.scale;
+    this.baseY = avail - H * this.scale; this.world.y = this.baseY + this.lift * this.scale;
     this.app.stage.hitArea = new Rectangle(0, 0, w, h);
     // 区域名字：天花板够高就写在天花板上，否则和顶部按钮排在同一行（被按钮挡住的会隐藏）
-    this.nameScreenY = this.world.y >= 88 ? 56 + (this.world.y - 56) / 2 : landscape ? 23 : 29;
+    this.nameScreenY = this.baseY >= 88 ? 56 + (this.baseY - 56) / 2 : landscape ? 23 : 29;
     this.readHud();
     this.applyCam();
   }
@@ -546,21 +586,35 @@ export class Scene {
   }
   relayout() { this.layout(); for (const k of this.editBoxes.keys()) this.updateEditBox(k); this.drawBgEdit(); }
 
-  private maxCam() { return Math.max(0, worldW() - this.viewW); }
+  /** 能滑多远：地面是整个房子加院子，屋顶只到屋顶的右边 */
+  private spanW() { return this.layer === 'roof' ? roofW() : worldW(); }
+  private maxCam() { return Math.max(0, this.spanW() - this.viewW); }
   private applyCam() {
     this.camX = Math.max(0, Math.min(this.maxCam(), this.camX));
-    const offset = this.viewW > worldW() ? (this.viewW - worldW()) / 2 : -this.camX;
-    this.world.x = offset * this.scale;
-    const z = zoneAt(this.camX + this.viewW / 2);
+    const offset = this.viewW > this.spanW() ? (this.viewW - this.spanW()) / 2 : -this.camX;
+    this.world.x = offset * this.scale; this.world.y = this.baseY + this.lift * this.scale;
+    // 屋顶那一层对应底部按钮里最后的「屋顶」（编号 = 区域个数）
+    const z = this.layer === 'roof' ? N : zoneAt(this.camX + this.viewW / 2);
     if (z !== this.zone) { this.zone = z; this.hooks.onZone(z); }
     const inHudRow = this.nameScreenY < 50;
     this.names.forEach((t, i) => {
+      if (this.lift > 1) { t.visible = false; return; } // 在屋顶上不显示下面各个区域的名字
       t.position.set(zx(i) + zw(i) / 2, (this.nameScreenY - this.world.y) / this.scale); t.scale.set(0.5 / this.scale);
       const sx = this.world.x + t.x * this.scale, half = t.width / 2;
       t.visible = !(inHudRow && this.hudSpans.some(([l, r]) => sx + half > l && sx - half < r));
     });
   }
+  /** 切到屋顶那一层：镜头往上抬，落在最右边（木梯子那里）。镜头不跟着猫走 */
+  goRoof(instant = false) {
+    if (this.editMode || this.decorMode || this.bgMode) return;
+    this.layer = 'roof'; this.follow = null; this.vel = 0;
+    const target = Math.max(0, Math.min(this.maxCam(), this.ladder().x + 40 - this.viewW)); // 梯子顶在这一屏的右边
+    if (instant) { this.lift = H; this.camX = target; this.camTarget = null; } else this.camTarget = target;
+    this.applyCam();
+  }
   scrollToZone(i: number, instant = false) {
+    if (i >= N) { this.goRoof(instant); return; }
+    if (this.layer === 'roof') { this.layer = 'ground'; if (instant) this.lift = 0; }
     const target = Math.max(0, Math.min(this.maxCam(), zx(i) + zw(i) / 2 - this.viewW / 2));
     if (instant) { this.camX = target; this.camTarget = null; this.applyCam(); } else { this.camTarget = target; this.vel = 0; }
   }
@@ -586,7 +640,7 @@ export class Scene {
     if (!this.drag.on) return;
     this.drag.on = false; if (performance.now() - this.drag.lastT > 80) this.vel = 0;
     // 屏幕只放得下一个区域时，松手后自动对齐到最近的区域，家具不会被切掉一半
-    if (this.drag.moved && this.viewW < maxZW() * 1.3) {
+    if (this.drag.moved && this.layer === 'ground' && this.viewW < maxZW() * 1.3) {
       const centre = this.camX + this.vel * 220 + this.viewW / 2;
       let best = 0; ZONES.forEach((_, i) => { if (Math.abs(zx(i) + zw(i) / 2 - centre) < Math.abs(zx(best) + zw(best) / 2 - centre)) best = i; });
       this.scrollToZone(best);
@@ -681,13 +735,13 @@ export class Scene {
   /** 可以挨着睡的同伴：正在地上睡觉、离得不太远，而且关系够好（冬天怕冷，不管关系） */
   private napBuddy(a: Actor): Actor | null {
     const s = this.game.state; const winter = sim.season(s) === 'winter';
-    return [...this.actors.values()].find((o) => o !== a && o.action === 'sleep' && !o.perch && !o.hop && !this.far(o) && Math.abs(o.x - a.x) < zw(2) * 2 && !this.isOutdoor(o.x)
+    return [...this.actors.values()].find((o) => o !== a && o.action === 'sleep' && !o.perch && !o.hop && !o.roof && !o.climb && !this.far(o) && Math.abs(o.x - a.x) < zw(2) * 2 && !this.isOutdoor(o.x)
       && (winter || sim.friendship(s, a.id, o.id) >= CONFIG.friendship.close) && ![...this.actors.values()].some((q) => q !== a && q !== o && Math.abs(q.x - o.x) < 90 && Math.abs(q.y - o.y) < 20)) ?? null;
   }
   /** 主人回来了。离开得够久：在家的宠物跑到屏幕中间站起来迎接；离开太久：黏人的那只（没有就是心情最差的）背对着你闹脾气 */
   greet(awayMs: number) {
     const s = this.game.state; if (awayMs < CONFIG.greet.after || this.editMode) return;
-    const free = [...this.actors.values()].filter((a) => { const p = this.game.pet(a.id); return p && !sim.isWeak(p) && !this.busy(a.id) && p.food >= CONFIG.stats.lowThreshold; });
+    const free = [...this.actors.values()].filter((a) => { const p = this.game.pet(a.id); return p && !a.roof && !a.climb && !sim.isWeak(p) && !this.busy(a.id) && p.food >= CONFIG.stats.lowThreshold; });
     let sulker: Actor | null = null;
     if (awayMs >= CONFIG.greet.sulkAfter && free.length) {
       const pets = free.map((a) => this.game.pet(a.id)!); const pick = pets.find((p) => p.trait === 'clingy') ?? [...pets].sort((m, n) => m.mood - n.mood)[0];
@@ -752,9 +806,9 @@ export class Scene {
     const a = this.actors.get(petId); if (!a) return null;
     const where: Record<string, string> = { bed: '床上', sofa: '沙发上', cattree: '猫爬架上', kitchenWindow: '厨房的窗台上', bedroomWindow: '卧室的窗台上', box: '纸箱里', basket: '洗衣篮里', tunnel: '隧道里', counter: '橱柜台面上', cabinet: '收藏柜顶上', tub: '浴缸里' };
     const act = a.inter?.action ?? (a.hop ? 'jump' : a.action); const at = a.perch ? where[a.perch.kind] ?? '' : '';
-    const text = a.sulkUntil > this.now ? '在闹脾气' : act === 'sleep' ? `在${at || '地上'}睡觉` : act === 'fish' ? (a.station === 'pond' ? '在鱼塘边捞鱼' : '在院子里扑蝴蝶') : act === 'scratch' ? '在抓猫抓板' : act === 'eat' ? (a.station === 'catgrass' ? '在啃猫草' : '在吃饭') : act === 'bath' ? '在泡澡'
+    const text = a.climb ? (a.climb.up ? '在爬梯子上屋顶' : '在爬梯子下来') : a.roof ? (act === 'sleep' ? '在屋顶上睡觉' : act === 'sit' ? '在屋顶上看星星' : act === 'walk' ? '在屋顶上走' : '在屋顶上') : a.sulkUntil > this.now ? '在闹脾气' : act === 'sleep' ? `在${at || '地上'}睡觉` : act === 'fish' ? (a.station === 'pond' ? '在鱼塘边捞鱼' : '在院子里扑蝴蝶') : act === 'scratch' ? '在抓猫抓板' : act === 'eat' ? (a.station === 'catgrass' ? '在啃猫草' : '在吃饭') : act === 'bath' ? '在泡澡'
       : act === 'groom' ? '在和同伴蹭来蹭去' : act === 'play' ? '在玩' : act === 'lick' ? '在舔毛' : act === 'beg' ? '站起来讨吃的' : act === 'yawn' ? '打了个哈欠' : act === 'stretch' ? '在伸懒腰' : act === 'jump' ? '跳了一下'
-      : act === 'sit' ? (a.station?.startsWith('roof') ? '在屋顶上看星星' : at ? `蹲在${at}` : '端坐着') : act === 'walk' ? '在家里走来走去' : at ? `待在${at}` : '在发呆';
+      : act === 'sit' ? (at ? `蹲在${at}` : '端坐着') : act === 'walk' ? '在家里走来走去' : at ? `待在${at}` : '在发呆';
     return { action: act, text };
   }
   /** 瞬间相册：每两秒看一眼家里有没有值得抓拍的画面（同一种瞬间多久拍一次由规则那边管） */
@@ -770,7 +824,7 @@ export class Scene {
     if (on('cattree').length >= 3) this.snap('treeFull', on('cattree'));
     this.snap('fishing', A.filter((a) => a.action === 'fish' && a.station === 'pond'));
     this.snap('butterfly', A.filter((a) => a.action === 'fish' && a.station === 'butterfly'));
-    this.snap('stargaze', A.filter((a) => (a.station === 'roofA' || a.station === 'roofB') && a.action === 'sit'));
+    this.snap('stargaze', A.filter((a) => a.roof && !a.roof.home && a.action === 'sit'));
     const groomers = A.filter((a) => a.action === 'groom' && !a.inter);
     if (groomers.length) this.snap('groom', A.filter((a) => groomers.includes(a) || (a.action === 'happy' && groomers.some((o) => Math.abs(o.x - a.x) < 130))));
     this.snap('box', on('box')); this.snap('tunnel', on('tunnel'));
@@ -868,6 +922,51 @@ export class Scene {
   }
   /** 用这件家具的第几个位置时，脚站在地上的哪里（要跳上去的家具：这里是起跳的地方） */
   /** 这只宠物现在画多大 */
+  // ---------- 屋顶：顺着阳台的木梯爬上去，在平顶上看星星，有时就睡在上面 ----------
+
+  /** 梯子底下（宠物站在地上开始爬的地方）和顶端（屋顶那一层里落脚的地方，u = 上层图坐标） */
+  private ladder() { const p = objPos(ASSETS.objects.ladder); const u = worldToTop(p.x); return { x: p.x, y: depthMin() + 4, u, topY: roofWalk(u).y - H }; }
+  /** 正在屋顶上、在爬梯子、或者正往梯子走的宠物 */
+  private roofers() { return [...this.actors.values()].filter((o) => o.roof || o.climb || o.pending?.roof != null); }
+  /** 夜里想不想上屋顶：概率低、有间隔、最多两只 */
+  private wantsRoof(a: Actor, adv: boolean) {
+    const R = CONFIG.roof; const up = this.roofers();
+    if (up.length >= R.max || this.now < this.roofNext || this.now - a.selfPlayAt < SELF_PLAY_COOLDOWN * 3 || Math.random() >= (adv ? R.chanceAdventurer : R.chance)) return false;
+    const slot = [0, 1].find((k) => !up.some((o) => (o.roof?.slot ?? o.climb?.slot ?? o.pending?.roof) === k)) ?? 0;
+    const L = this.ladder(); this.go(a, L.x, L.y); a.pending = { action: 'sit', dur: between(D.stargaze), roof: slot };
+    a.selfPlayAt = this.now; this.roofNext = this.now + R.gap; return true;
+  }
+  /** 爬梯子、屋顶上走路和待着。返回 true = 这一帧已经处理过了 */
+  private roofStep(a: Actor, dt: number, weak: boolean): boolean {
+    const R = CONFIG.roof;
+    if (a.climb) {
+      if (this.now - a.climb.t0 < R.climbMs) return true;
+      const c = a.climb; a.climb = null;
+      if (c.up) { const L = this.ladder(); a.roof = { u: L.u, tu: RF.spots[c.slot] ?? RF.spots[0], slot: c.slot, home: false, slept: false, stay: c.stay }; a.action = 'walk'; a.t0 = this.now; }
+      else if (!a.pending) this.setAction(a, 'idle', 800);
+      return true;
+    }
+    const r = a.roof; if (!r) return false;
+    const s = this.game.state;
+    // 天亮了、下雨了、饿得没力气了、主人叫它（喂饭、洗澡）：走回梯子爬下来
+    if (!r.home && (weak || a.pending || sim.weather(s) === 'rain' || sim.dayTime(s) !== 'night')) { r.home = true; a.inter = null; }
+    const to = r.home ? this.ladder().u : r.tu;
+    if (Math.abs(to - r.u) > 2) {
+      const step = Math.min(Math.abs(to - r.u), (R.walkSpeed * (a.pending?.action && a.fast ? 2 : 1) * dt) / 1000);
+      a.dir = to > r.u ? 1 : -1; r.u += a.dir * step;
+      if (a.action !== 'walk') { a.action = 'walk'; a.t0 = this.now; }
+      return true;
+    }
+    if (r.home) { a.roof = null; a.climb = { t0: this.now, up: false, stay: 0, slot: r.slot }; return true; }
+    if (a.action === 'walk') { a.dir = -1; this.setAction(a, 'sit', r.stay); return true; } // 朝左边的月亮看
+    if (this.now >= a.until) {
+      if (a.action === 'happy') this.setAction(a, 'sit', r.stay / 2); // 被摸完了接着看
+      else if (a.action === 'sit' && !r.slept && Math.random() < R.sleepChance) { r.slept = true; a.inter = { action: 'yawn', t0: this.now, until: this.now + 1200 }; this.setAction(a, 'sleep', between(R.sleep)); }
+      else r.home = true;
+    }
+    return true;
+  }
+
   private scaleOf(a: Actor) { const p = this.game.pet(a.id); return PET_BASE * ASSETS.petScale * CONFIG.growth.stageScale[p ? sim.stageOf(p) : 2]; }
   /** 嘴在世界里离脚底多远（面朝右；朝左时 x 取反） */
   private mouthOffset(sc: number): [number, number] { return [(SPRITE.mouth[0] - SPRITE.cell / 2) * sc, (SPRITE.mouth[1] - SPRITE.cell * 0.9) * sc]; }
@@ -924,6 +1023,9 @@ export class Scene {
   /** food = 吃的是什么（kibble 猫粮在饭碗吃；can 鱼罐头、feast 豪华便当在厨房里找个空地，地上摆出罐头或便当） */
   perform(petId: string, action: ActionName, follow = true, food?: string) {
     const a = this.actors.get(petId); if (!a) return;
+    // 在屋顶上被摸：就在上面开心一下，接着看星星。喂饭、洗澡等：先走回梯子爬下来再去（见 roofStep）
+    if (a.roof && !a.roof.home && action === 'happy') { if (a.sulkUntil > this.now) a.sulkUntil = 0; a.inter = null; this.setAction(a, 'happy', D.pet); return; }
+    if (a.roof || a.climb) follow = false;
     // 待在沙发、床、猫爬架上被摸：不用跳下来
     if (!(action === 'happy' && a.perch && a.perch.kind !== 'tub')) this.release(a);
     a.pending = null; a.want = null; this.stop(a); a.wandUntil = 0; a.inter = null;
@@ -949,6 +1051,9 @@ export class Scene {
 
   focusPet(petId: string) {
     const a = this.actors.get(petId); if (!a) return;
+    // 在屋顶上（或正在爬梯子）：切到屋顶，对准它
+    if (a.roof || a.climb) { this.goRoof(); this.camTarget = Math.max(0, Math.min(this.maxCam(), (a.roof ? topToWorld(a.roof.u) : this.ladder().x) - this.viewW / 2)); return; }
+    if (this.layer === 'roof') { this.scrollToZone(zoneAt(a.x)); return; }
     if (this.viewW < maxZW() * 1.3) this.scrollToZone(zoneAt(a.x));
     else { this.camTarget = Math.max(0, Math.min(this.maxCam(), a.x - this.viewW / 2)); this.vel = 0; }
   }
@@ -985,7 +1090,8 @@ export class Scene {
       const adv = p.trait === 'adventurer'; const winter = sim.season(s) === 'winter';
       if (was && was.kind !== 'tub' && lounge(was.kind, 'sleep', 9000, was.slot)) { /* 已经睡在床、沙发、猫爬架或窗台上了：接着睡，不换地方 */ }
       // 天气好的夜里，偶尔爬到屋顶上看一会儿星星再回来睡（爱冒险的更常去）
-      else if (!rain && zoneIndex('roof') >= 0 && this.now - a.selfPlayAt > SELF_PLAY_COOLDOWN * 3 && Math.random() < (adv ? 0.3 : 0.1) && ['roofA', 'roofB'].some((k) => lounge(k, 'sit', between(D.stargaze)))) { a.selfPlayAt = this.now; }
+      // 概率低，同时最多两只，一只上去之后隔一阵才有下一只（见 CONFIG.roof）
+      else if (!rain && this.wantsRoof(a, adv)) { /* 往阳台的木梯走 */ }
       // 冬天有暖炉：围着暖炉睡
       else if (winter && lounge('heater', 'sleep', 9000)) { /* 暖炉边 */ }
       else if (mine >= 0 && lounge('cattree', 'sleep', 9000, mine)) { /* 睡在自己的位置 */ }
@@ -1039,7 +1145,7 @@ export class Scene {
   /** 两只闲着的宠物凑在一起玩。有玩具球就一起去玩球，没有就在原地闹一会儿。 */
   private tryCompanionPlay() {
     const s = this.game.state;
-    const free = [...this.actors.values()].filter((a) => !a.pending && !a.station && !a.perch && !a.hop && !this.far(a) && a.action === 'idle' && this.now - a.selfPlayAt > SELF_PLAY_COOLDOWN);
+    const free = [...this.actors.values()].filter((a) => !a.pending && !a.station && !a.perch && !a.hop && !a.roof && !a.climb && !this.far(a) && a.action === 'idle' && this.now - a.selfPlayAt > SELF_PLAY_COOLDOWN);
     const ok = free.filter((a) => { const p = this.game.pet(a.id); return p && !sim.isWeak(p) && p.mood >= 30 && p.food >= CONFIG.stats.lowThreshold; });
     if (ok.length < 2 || Math.random() > 0.3) return;
     const a = ok[0]; const b = ok.slice(1).sort((m, n) => Math.abs(m.x - a.x) - Math.abs(n.x - a.x))[0];
@@ -1060,7 +1166,7 @@ export class Scene {
   /** 新买了一件家具：让一两只闲着的宠物走过去看看 */
   private curiosity(kind: string) {
     const sp = this.objSprites.get(kind); if (!sp) return;
-    const idle = [...this.actors.values()].filter((a) => !a.pending && !a.station && !sim.isWeak(this.game.pet(a.id)!)).slice(0, 2);
+    const idle = [...this.actors.values()].filter((a) => !a.pending && !a.station && !a.roof && !a.climb && !sim.isWeak(this.game.pet(a.id)!)).slice(0, 2);
     idle.forEach((a, i) => { this.go(a, sp.x + (i ? 80 : -80), Math.max(sp.y + 8, depthMin() + 10 + i * 12)); a.fast = true; a.pending = { action: 'happy', dur: 2400 }; });
     if (idle.length) this.follow = { id: idle[0].id, until: this.now + 5000 };
   }
@@ -1129,12 +1235,15 @@ export class Scene {
     const g = this.weather.clear();
     const first = zoneIndex('balcony'); if (first < 0) return;
     const rain = env.weather === 'rain';
+    // 雨雪花瓣只落在露天的地方：屋顶那一层里屋顶上面的天空、院子、阳台屋檐下面以外的地方
+    const rx = roofW(), bal = zoneIndex('balcony');
+    const open = (x: number, y: number) => y < 0 ? x >= rx || y < roofWalk(worldToTop(x)).y - H - 14 : zoneAt(x) === bal ? y <= 430 : x >= rx;
     // 下雨：院子和阳台上的雨丝，还有屋里窗玻璃上的雨丝。冬天不下雨，改成雪下得更大
     if (rain && env.season !== 'winter') {
-      const t = this.now / 1000, x0 = zx(first) + 18, w = worldW() - x0, bottom = geo.floorY + 110;
-      for (let i = 0; i < 90; i++) {
-        const x = x0 + ((i * 97.3 + t * 60) % w), y = ((i * 53.7 + t * (520 + (i % 5) * 40)) % bottom);
-        if (zoneAt(x) === first && y > 430) continue;
+      const t = this.now / 1000, w = worldW(), bottom = geo.floorY + 110, top = -H;
+      for (let i = 0; i < 700; i++) {
+        const x = (i * 97.3 + t * 60) % w, y = top + ((i * 53.7 + t * (520 + (i % 5) * 40)) % (bottom - top));
+        if (!open(x, y)) continue;
         g.moveTo(x, y).lineTo(x - 5, y + 20).stroke({ width: 1.6, color: 0xdfeaf2, alpha: 0.75 });
       }
       for (const win of ASSETS.windows) {
@@ -1160,14 +1269,14 @@ export class Scene {
     }
     const kind = env.season === 'spring' ? 'petal' : env.season === 'autumn' ? 'leaf' : env.season === 'winter' ? 'snow' : env.time === 'night' ? 'firefly' : '';
     if (!kind) return;
-    const x0 = zx(first) + 18, x1 = worldW(), w = x1 - x0, top = 40, bottom = geo.floorY + 60; const t = this.now / 1000;
-    for (let i = 0; i < (rain && kind === 'snow' ? 90 : 34); i++) {
+    const x0 = zx(first) + 18, w0 = worldW() - x0, w = worldW(), top = -H + 40, bottom = geo.floorY + 60; const t = this.now / 1000;
+    for (let i = 0; i < (rain && kind === 'snow' ? 700 : 300); i++) {
       const seed = i * 127.1; const speed = kind === 'snow' ? 26 + (i % 5) * 6 : kind === 'firefly' ? 0 : 40 + (i % 7) * 9;
-      let x = x0 + ((seed * 3.7 + Math.sin(t * 0.7 + i) * 30 + t * (kind === 'leaf' ? 14 : 5)) % w + w) % w;
+      let x = ((seed * 3.7 + Math.sin(t * 0.7 + i) * 30 + t * (kind === 'leaf' ? 14 : 5)) % w + w) % w;
       let y = top + ((seed * 1.9 + t * speed) % (bottom - top));
-      if (kind === 'firefly') { x = x0 + ((seed * 3.7) % w) + Math.sin(t * 0.6 + i) * 22; y = geo.floorY - 60 - ((seed * 1.3) % 240) + Math.cos(t * 0.8 + i * 2) * 14; }
-      // 阳台有屋檐：屋檐下面那一块不飘
-      if (zoneAt(x) === first && y > 430) continue;
+      // 萤火虫只在阳台和院子那一带、地面上方飞（数量和原来一样）
+      if (kind === 'firefly') { if (i >= 34) break; x = x0 + ((seed * 3.7) % w0) + Math.sin(t * 0.6 + i) * 22; y = geo.floorY - 60 - ((seed * 1.3) % 240) + Math.cos(t * 0.8 + i * 2) * 14; if (zoneAt(x) === first && y > 430) continue; }
+      else if (!open(x, y)) continue; // 阳台有屋檐：屋檐下面那一块不飘；屋顶下面是屋里
       if (kind === 'snow') g.circle(x, y, 2.5 + (i % 3)).fill({ color: 0xffffff, alpha: 0.9 });
       else if (kind === 'petal') g.ellipse(x, y, 5, 3).fill({ color: 0xf2b8c6, alpha: 0.9 });
       else if (kind === 'leaf') g.ellipse(x, y, 6, 3.5).fill({ color: i % 2 ? 0xe0914f : 0xd9a94a, alpha: 0.9 });
@@ -1190,7 +1299,10 @@ export class Scene {
     if (this.bgMode && !this.bgDrag) this.drawBgEdit();
     if (this.now > this.nextHud) { this.nextHud = this.now + 1000; this.readHud(); }
 
-    // 镜头
+    // 镜头：切层的时候上下抬（布置房间、调整位置时只能在地面）
+    if (this.layer === 'roof' && (this.editMode || this.decorMode || this.bgMode)) this.scrollToZone(Math.max(0, zoneAt(this.camX + this.viewW / 2)));
+    const lt = this.layer === 'roof' ? H : 0;
+    if (this.lift !== lt) { this.lift += (lt - this.lift) * Math.min(1, dt / 140); if (Math.abs(lt - this.lift) < 0.5) this.lift = lt; this.applyCam(); }
     if (this.camTarget !== null) {
       this.camX += (this.camTarget - this.camX) * Math.min(1, dt / 120);
       if (Math.abs(this.camTarget - this.camX) < 0.5) { this.camX = this.camTarget; this.camTarget = null; }
@@ -1216,7 +1328,8 @@ export class Scene {
       const weak = sim.isWeak(p);
       const sc = PET_BASE * ASSETS.petScale * CONFIG.growth.stageScale[sim.stageOf(p)];
       if (a.inter && this.now >= a.inter.until) a.inter = null;
-      if (a.inter && !weak) { /* 正在打哈欠或伸懒腰：做完再说 */ }
+      if (this.roofStep(a, dt, weak)) { /* 在爬梯子或在屋顶上 */ }
+      else if (a.inter && !weak) { /* 正在打哈欠或伸懒腰：做完再说 */ }
       else if (a.hop) {
         // 正在跳上或跳下家具：跳完再做别的
         if (this.now - a.hop.t0 >= HOP_MS) { a.perch = a.hop.up ? { kind: a.hop.kind, slot: a.hop.slot } : null; a.hop = null; }
@@ -1252,6 +1365,9 @@ export class Scene {
         if (a.action !== 'idle') { a.action = 'idle'; a.t0 = this.now; }
       } else if (a.pending && a.want && a.station) {
         a.want = null; // 空出来了，走过去（下一帧开始走）
+      } else if (a.pending?.roof != null) {
+        // 走到梯子底下了：开始往上爬
+        a.climb = { t0: this.now, up: true, stay: a.pending.dur, slot: a.pending.roof }; a.pending = null; a.fast = false; a.want = null;
       } else if (a.pending) {
         a.want = null;
         const st = a.station ? STATIONS[a.station]?.[a.slot] ?? null : null;
@@ -1284,7 +1400,7 @@ export class Scene {
       else if (a.action === 'walk') { a.action = 'idle'; a.t0 = this.now; }
 
       // 画在哪：平时在地板上；在家具上就用家具的落脚点；跳上跳下时沿一条弧线过去
-      let px = a.x, py = a.y, z = a.y; let shown: ActionName = a.action;
+      let px = a.x, py = a.y, z = a.y, tilt = 0; let shown: ActionName = a.action;
       const on = a.hop ?? a.perch; const spot = on ? this.perchSpot(on.kind, on.slot, sc) : null;
       if (a.hop && spot) {
         const t0 = Math.min(1, (this.now - a.hop.t0) / HOP_MS), t = a.hop.up ? t0 : 1 - t0, e = t * t * (3 - 2 * t);
@@ -1293,13 +1409,19 @@ export class Scene {
         z = (a.hop.kind === 'tub' || STATIONS[a.hop.kind]?.[a.hop.slot]?.inside) && t > 0.5 ? spot.z : Math.max(a.y, spot.z); shown = 'jump';
         if (Math.abs(spot.x - a.x) > 6) a.dir = (spot.x > a.x) === a.hop.up ? 1 : -1;
       } else if (a.perch && spot) { px = spot.x; py = spot.y; z = spot.z; }
+      else if (a.climb) {
+        // 爬梯子：贴着梯子从地上升到屋檐（第二张精灵图的爬梯动作做好之前，先用跳跃的四帧循环）
+        const L = this.ladder(), t = Math.min(1, (this.now - a.climb.t0) / CONFIG.roof.climbMs), e = a.climb.up ? t : 1 - t;
+        px = L.x; py = L.y + (L.topY - L.y) * e; z = 9000 + py; shown = 'jump';
+      }
+      else if (a.roof) { const w = roofWalk(a.roof.u); px = topToWorld(a.roof.u); py = w.y - H; z = 9000 + py; tilt = w.tilt; }
       else if (on) { a.perch = null; a.hop = null; } // 家具不在了（收起来了、进了调整模式）：回到地上
       if (spot && this.fronts.has(on!.kind)) inUse.add(on!.kind);
       if (a.inter && !a.hop) shown = a.inter.action;
       // 跳跃的四帧跟着跳的进度走（蹲、蹬、腾空、落地），不是按时间循环
-      const frame = a.hop ? Math.min(3, Math.floor(((this.now - a.hop.t0) / HOP_MS) * 4)) : frameIndex(shown, this.now - (a.inter ? a.inter.t0 : a.t0));
+      const frame = a.hop ? Math.min(3, Math.floor(((this.now - a.hop.t0) / HOP_MS) * 4)) : a.climb ? Math.floor(this.now / 150) % 4 : frameIndex(shown, this.now - (a.inter ? a.inter.t0 : a.t0));
       a.sprite.texture = set.tex[rowFor(set, shown)][frame];
-      a.sprite.scale.set(sc * a.dir, sc);
+      a.sprite.scale.set(sc * a.dir, sc); a.sprite.rotation = a.roof && a.action === 'walk' ? tilt : a.roof ? tilt * 0.5 : 0; // 斜坡上跟着坡度歪
       a.sprite.alpha = weak ? 0.75 : 1;
       a.root.position.set(px, py); a.root.zIndex = z;
 
@@ -1370,7 +1492,7 @@ export class Scene {
     // 镜头跟着刚被照顾的那只走一会儿
     if (this.follow) {
       const a = this.actors.get(this.follow.id);
-      if (!a || this.now > this.follow.until || this.drag.on) this.follow = null;
+      if (!a || this.now > this.follow.until || this.drag.on || this.layer === 'roof' || a.roof || a.climb) this.follow = null;
       else if (this.viewW < maxZW() * 1.3) { const z = zoneAt(a.x); if (z !== this.zone) this.scrollToZone(z); }
       else this.camTarget = Math.max(0, Math.min(this.maxCam(), a.x - this.viewW / 2));
     }

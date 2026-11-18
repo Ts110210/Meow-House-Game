@@ -61,8 +61,21 @@ export const ASSETS = {
     /** 方式二：每个区域一张图，比例 3:5（432×720 或它的倍数）。 */
     zones: {
       door: 'room/door.png', kitchen: 'room/kitchen.png', living: 'room/living.png', bath: 'room/bath.png',
-      bedroom: 'room/bedroom.png', shelf: 'room/shelf.png', balcony: 'room/balcony.png', garden: 'room/garden.png', roof: 'room/roof.png',
+      bedroom: 'room/bedroom.png', shelf: 'room/shelf.png', balcony: 'room/balcony.png', garden: 'room/garden.png',
     } as Record<ZoneId, string>,
+    /** 上面那一层（屋顶和天空）：一张 3456×720 的图，横向 8 等分，每一份正好在下面一个区域的正上方。
+     *  没有这张图就用代码画（屋顶跟着四季、昼夜、天气变；换成图片后是固定的一张，只有整体压暗和雨雪是程序加的）。 */
+    top: 'room/top.png',
+  },
+
+  // ---------- 屋顶（上面那一层）：坐标按上层图 3456×720 算，x 每 432 对应下面一个区域 ----------
+  roof: {
+    /** 屋顶的外轮廓（梯形）：左屋檐、左上角、右上角、右屋檐。右屋檐在阳台的右边（3024 = 7 个区域宽） */
+    outline: [[-30, 724], [380, 430], [2644, 430], [3054, 724]] as [number, number][],
+    /** 猫走的线（脚底）：顺着两边的斜坡和中间的平顶。斜坡上的猫会跟着坡度歪一点 */
+    walk: [[20, 700], [380, 440], [2644, 440], [2994, 700]] as [number, number][],
+    /** 看星星的两个位置（x）：平顶的右端，挨着坐、一起朝左边的月亮看。点「屋顶」落地的那一屏（梯子在右边）正好看得到 */
+    spots: [2592, 2640],
   },
 
   // ---------- 家具和可互动物品：每件一张透明背景的 PNG ----------
@@ -88,6 +101,8 @@ export const ASSETS = {
     basket: { src: 'objects/basket.png', zone: 'bath', x: 370, y: 652, height: 96, label: '洗衣篮', needsOwned: 'basket', frontFrom: 0.3 },
     heater: { src: 'objects/heater.png', zone: 'bedroom', x: 100, y: 656, height: 112, label: '小暖炉', needsOwned: 'heater', light: [0.5, 0.6] },
     autoball: { src: 'objects/autoball.png', zone: 'shelf', x: 250, y: 680, height: 34, label: '自动逗猫球', needsOwned: 'autoball' },
+    // 木梯子：固定家具，从阳台的地上一直搭到屋檐（顶端伸出天花板，进到上面那一层）。猫顺着它上下屋顶
+    ladder: { src: 'objects/ladder.png', zone: 'balcony', x: 368, y: 592, height: 632, label: '木梯子', partOfBackground: true },
     tunnel: { src: 'objects/tunnel.png', zone: 'balcony', x: 170, y: 672, height: 80, label: '猫隧道', needsOwned: 'tunnel', frontFrom: 0 },
     catgrass: { src: 'objects/catgrass.png', zone: 'garden', x: 50, y: 608, height: 64, label: '猫草盆', needsOwned: 'catgrass' },
   } as Record<string, ObjectDef>,
@@ -107,9 +122,8 @@ export const ASSETS = {
   perches: {
     kitchenWindow: { zone: 'kitchen', x: 121, y: 306, label: '厨房窗台' },
     bedroomWindow: { zone: 'bedroom', x: 320, y: 312, label: '卧室窗台' },
-    // 院子里扑蝴蝶的地方、屋顶上看星星的两个位置（这三个是站在地上，不用跳）
+    // 院子里扑蝴蝶的地方（站在地上，不用跳）。屋顶上看星星的位置在上面的 roof.spots
     butterfly: { zone: 'garden', x: 190, y: 600, label: '扑蝴蝶' },
-    roofA: { zone: 'roof', x: 140, y: 626, label: '屋顶看星星' }, roofB: { zone: 'roof', x: 262, y: 660, label: '屋顶看星星' },
   } as Record<string, { zone: ZoneId; x: number; y: number; label: string }>,
 
   // ---------- 屋里的窗户：下雨时在这几块玻璃上画雨丝 ----------

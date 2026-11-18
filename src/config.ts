@@ -18,8 +18,9 @@ export const PALETTE = {
 export const ZONES = [
   { id: 'door', name: '门口' }, { id: 'kitchen', name: '厨房' }, { id: 'living', name: '客厅' },
   { id: 'bath', name: '浴室' }, { id: 'bedroom', name: '卧室' }, { id: 'shelf', name: '收藏柜' },
-  { id: 'balcony', name: '阳台' }, { id: 'garden', name: '院子' }, { id: 'roof', name: '屋顶' },
+  { id: 'balcony', name: '阳台' }, { id: 'garden', name: '院子' },
 ] as const;
+// 屋顶不是一个区域：它是房子上面的一层（从门口一直盖到阳台），点底部的「屋顶」切过去。几何见 assets.config.ts 的 roof
 export type ZoneId = (typeof ZONES)[number]['id'];
 
 export type DestType = 'city' | 'sea' | 'forest' | 'rain' | 'mountain';
@@ -305,6 +306,19 @@ export const CONFIG = {
   },
 
   // ---------- 吃饭的演出 ----------
+  /** 屋顶：晚上偶尔顺着阳台的木梯爬上去看星星，有时就在上面睡了。概率故意设得低，不然一群猫都在外面不回家 */
+  roof: {
+    /** 夜里每次想下一件事时，上屋顶的概率（爱冒险的用后一个） */
+    chance: 0.04, chanceAdventurer: 0.1,
+    /** 屋顶上同时最多几只（包括正在往梯子那边走的） */
+    max: 2,
+    /** 一只上去之后，至少隔多久才会有下一只想上去 */
+    gap: 10 * 60_000,
+    /** 看完星星，接着在屋顶上睡一觉的概率，和睡多久 */
+    sleepChance: 0.3, sleep: [120_000, 300_000] as [number, number],
+    /** 爬一趟梯子多久、在屋顶上走路的速度（每秒多少像素） */
+    climbMs: 2_200, walkSpeed: 80,
+  },
   eating: {
     /** 罐头、便当吃完后，空罐、空盒在地上留多久再消失（毫秒） */
     emptyLinger: 30_000,
@@ -618,7 +632,8 @@ export const SEASON_FINDS: Record<string, { name: string; icon: string; color: s
   (Object.entries(SEASON_EVENTS) as [Season, SeasonEventDef][]).flatMap(([se, ev]) => ev.items.map((it) => [it.id, { name: it.name, icon: it.icon, color: it.color, season: se }])));
 
 /** 瞬间相册：游戏自己抓拍的有趣时刻。title = 相册里显示的标题（{pets} 换成宠物的名字）；zone = 画这张照片用哪个区域当背景 */
-export const MOMENTS: Record<string, { title: string; zone: ZoneId; icon: string }> = {
+/** zone = 照片的背景（'roof' = 屋顶那一层） */
+export const MOMENTS: Record<string, { title: string; zone: ZoneId | 'roof'; icon: string }> = {
   bedFull: { title: '{pets}挤在一张床上睡着了', zone: 'bedroom', icon: '🛏️' },
   treeFull: { title: '猫爬架住满了：{pets}', zone: 'living', icon: '🗼' },
   fishing: { title: '{pets}在鱼塘边伸爪子捞鱼', zone: 'garden', icon: '🎣' },
@@ -691,7 +706,7 @@ export const SKIN_PRICE = { S: 40, M: 70, L: 120 };
 export const SKIN_SIZE: Record<string, 'S' | 'M' | 'L'> = {
   door: 'L', tub: 'L', bed: 'L', sofa: 'L', cabinet: 'L', pond: 'L', counter: 'L', cattree: 'L',
   album: 'M', scratcher: 'M', feeder: 'M', pendantDoor: 'M', pendantShelf: 'M', nightstand: 'M',
-  bowl: 'S', ball: 'S', bedlamp: 'S',
+  bowl: 'S', ball: 'S', bedlamp: 'S', ladder: 'M',
   box: 'S', catgrass: 'S', autoball: 'S', basket: 'M', tunnel: 'M', heater: 'L',
 };
 /** 一件东西的皮肤算哪一档；没有皮肤的东西返回 null。装饰：70 以内小件，180 以内（和里程碑奖励）中件，再贵的大件 */

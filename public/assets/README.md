@@ -10,15 +10,16 @@
 - `strip.png`：一张长图，从左到右是门口、厨房、客厅、浴室、卧室。建议约 3:1（2160×720），但尺寸不用精确：
   图片按高度铺满房间，地板线和 5 个区域的分界线在开发者面板 →「素材替换」→「调整背景」里拖着对齐，
   宠物走的地面、区域的宽度、物品的位置都会跟着走。调好后「导出配置」，把 floor、lines、petScale 抄进 `src/assets.config.ts`。
-- `door.png` `kitchen.png` `living.png` `bath.png` `bedroom.png` `shelf.png` `balcony.png` `garden.png` `roof.png`：每个区域一张，3:5（432×720 的倍数）。
+- `door.png` `kitchen.png` `living.png` `bath.png` `bedroom.png` `shelf.png` `balcony.png` `garden.png`：每个区域一张，3:5（432×720 的倍数）。
 
-收藏柜、阳台、院子、屋顶四个区域不在长图里，需要单独的区域图，否则继续用占位图。
+收藏柜、阳台、院子三个区域不在长图里，需要单独的区域图，否则继续用占位图。
+- `top.png`：房子上面那一层（屋顶和天空），3456×720，横向 8 等分对着下面 8 个区域。屋顶的形状和猫走的线见 `docs/素材模板.md` 第 3 节。没有这张图就用代码画的占位。
 
 ## objects/ 家具和可互动物品（透明背景 PNG，每件一张）
 
 `door.png` `pendantDoor.png` `counter.png` `bowl.png` `feeder.png` `sofa.png` `cattree.png` `scratcher.png` `ball.png` `tub.png`
 `nightstand.png` `bedlamp.png` `bed.png` `cabinet.png` `album.png` `pendantShelf.png` `pond.png`
-`box.png` `basket.png` `heater.png` `autoball.png` `tunnel.png` `catgrass.png`
+`box.png` `basket.png` `heater.png` `autoball.png` `tunnel.png` `catgrass.png` `ladder.png`（木梯子，固定家具，很细很长：从阳台地面搭到屋檐）
 
 每件的显示高度、特别的要求（坐垫高度、遮挡线、发光点）见 `docs/素材模板.md` 第 2 节。
 门、橱柜、沙发、浴缸、床头柜、床、收藏柜、相册墙、鱼塘是固定家具：所在区域换了背景图、而它们没有自己的图片时，占位图自动隐藏，只保留点击区域。

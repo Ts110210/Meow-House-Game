@@ -1,5 +1,5 @@
 // 规则和存档的自动检查。运行：npm test
-import { ZONES, NEIGHBORS, SEASON_EVENTS, SEASON_FINDS, CONFIG, DAY, DECOR, DESTS, FUR_COLORS, GEAR, HOUR, MIN, ROOM_THEMES, SKIN_PRICE, SKIN_SIZE, SKINNABLE, SKINS, SOUVENIRS, decodeLook, encodeLook, skinSize } from '../src/config';
+import { ZONES, MOMENTS, NEIGHBORS, SEASON_EVENTS, SEASON_FINDS, CONFIG, DAY, DECOR, DESTS, FUR_COLORS, GEAR, HOUR, MIN, ROOM_THEMES, SKIN_PRICE, SKIN_SIZE, SKINNABLE, SKINS, SOUVENIRS, decodeLook, encodeLook, skinSize } from '../src/config';
 import { ASSETS } from '../src/assets.config';
 import * as sim from '../src/sim';
 import { diaryPlaceCount, writeDiary } from '../src/diary';
@@ -370,8 +370,18 @@ console.log('季节活动、皮肤的其他来源、瞬间相册');
 
 console.log('新场景和新家具');
 {
-  check('一共 9 个区域，最后一个是屋顶，有自己的背景图路径', ZONES.length === 9 && ZONES[8].id === 'roof' && !!ASSETS.room.zones.roof);
-  check('窗台、扑蝴蝶、屋顶看星星的位置都落在存在的区域里', Object.values(ASSETS.perches).every((p) => ZONES.some((z) => z.id === p.zone)) && ['kitchenWindow', 'bedroomWindow', 'butterfly', 'roofA', 'roofB'].every((k) => !!ASSETS.perches[k]));
+  check('一共 8 个区域，最后一个是院子；屋顶不是区域，是上面一层，有自己的图片路径', ZONES.length === 8 && ZONES[7].id === 'garden' && !ZONES.some((z) => (z.id as string) === 'roof') && !!ASSETS.room.top);
+  check('窗台、扑蝴蝶的位置都落在存在的区域里', Object.values(ASSETS.perches).every((p) => ZONES.some((z) => z.id === p.zone)) && ['kitchenWindow', 'bedroomWindow', 'butterfly'].every((k) => !!ASSETS.perches[k]));
+  {
+    const R = ASSETS.roof, houseW = 7 * CONFIG.room.zoneWidth; const w = R.walk, o = R.outline;
+    check('屋顶盖住门口到阳台（右屋檐在阳台右边），猫走的线从左到右、在屋顶轮廓里面', o[0][0] <= 0 && o[3][0] >= houseW && w.every((p, i) => i === 0 || p[0] > w[i - 1][0]) && w[0][0] >= o[0][0] && w[w.length - 1][0] <= o[3][0]);
+    check('看星星的两个位置在平顶上', R.spots.length === 2 && R.spots.every((x) => x >= w[1][0] && x <= w[2][0]));
+    const L = ASSETS.objects.ladder; const lu = 6 * CONFIG.room.zoneWidth + L.x;
+    check('木梯子在阳台，顶端伸出天花板，正好够到屋顶走的那条线', L.zone === 'balcony' && L.y - L.height < 0 && lu > w[2][0] && lu < w[3][0] && Math.abs((L.y - L.height) - (w[2][1] + (w[3][1] - w[2][1]) * (lu - w[2][0]) / (w[3][0] - w[2][0]) - 720)) < 30);
+    check('木梯子是固定家具，有皮肤可买', !L.needsOwned && sim.skinPrice('ladder') != null);
+    check('上屋顶的概率低、最多两只', CONFIG.roof.chance <= 0.05 && CONFIG.roof.chanceAdventurer <= 0.12 && CONFIG.roof.max === 2 && CONFIG.roof.gap >= 5 * 60_000);
+    check('看星星的瞬间用屋顶那一层当背景', MOMENTS.stargaze.zone === 'roof');
+  }
   check('能钻进去的家具都写了遮挡线', ['tub', 'box', 'basket', 'tunnel'].every((k) => ASSETS.objects[k].frontFrom != null));
   const s = blank(); s.fish = 1000; const p = s.pets[0]; p.mood = 50;
   check('没有猫草盆啃不了', !sim.nibbleGrass(s, p.id));
