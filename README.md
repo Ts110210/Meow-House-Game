@@ -7,6 +7,7 @@ TypeScript + PixiJS，用 Capacitor 打包成安卓 App。美术目前全部是�
 - 安卓安装包：每次推送到 main 都会自动打包，在 [Releases](https://github.com/Ts110210/back-screen-pet/releases) 里下载最新的 `build-N`（覆盖安装，存档保留）
 - 版本号：`0.大版本.小修` 写在 `src/config.ts` 和 `package.json`；安装包另有自动递增的 build 号
 - 存档格式：第 6 版，旧存档打开时自动升级
+- 网页版（iPhone 用 Safari 打开、添加到主屏幕）：发布和设置见 [`docs/网页版发布.md`](docs/网页版发布.md)
 - 接着开发（包括交给另一个 AI 对话）：先读 [`CLAUDE.md`](CLAUDE.md)；出图照 [`docs/素材模板.md`](docs/素材模板.md)，背景整张图的构图参考 [`docs/构图底稿.png`](docs/构图底稿.png)
 
 ## 功能清单
@@ -98,7 +99,7 @@ TypeScript + PixiJS，用 Capacitor 打包成安卓 App。美术目前全部是�
 | 院子里小东西的图标 | 未做 | 邻居留下的和季节活动的 15 种小东西现在用表情符号占位，不同手机显示不一样，和彩铅风不搭。要换成画的占位图标，并加 `finds/<编号>.png` 的图片接口（清单见 `docs/素材模板.md` 第 7 节）。 |
 | 经济平衡 | 未做，价格都是暂定 | 皮肤全部买齐约 17,360 小鱼干，两套房间风格 800；每天净收入约 55–95，加上每日任务（约 75–105）后大约 130–200。要么降价，要么增加收入来源。价格在 `src/config.ts` 的 `SKIN_PRICE`、`ROOM_THEMES`、`GEAR`。 |
 | 真机性能 | **没验证过** | 宠物贴图从 8 行变成 16 行，占用翻倍；5 只猫加邻居加访客同时在场时，要在手机上看会不会卡、发热。最近几批改动都只在电脑上的替身环境里看过画面。 |
-| 网页版（给 iPhone 用） | 未部署，主人决定先不做 | 安卓用 APK 就行，网页版主要是给 iPhone 的 Safari 用。**本地 HTML 文件在 iPhone 上不行**：从「文件」App 打开只会预览、不执行游戏代码，所以必须放到 https 网址上。最上面那个 claude.ai 链接是早期版本，不会更新，主人也不想用 Claude 托管。现成的方案：仓库是公开的，可以免费用 GitHub Pages——在 `.github/workflows/android.yml` 里加一步，把 `npm run build` 的 `dist/` 发布出去（`vite.config.ts` 已经是相对路径），网址会是 `https://ts110210.github.io/back-screen-pet/`，每次推送自动更新；需要主人在仓库 Settings → Pages 把来源设成 GitHub Actions（AI 这边没有权限开）。缺点：拿到网址谁都能打开；中国大陆网络下 github.io 不稳定。iPhone Safari 上的存档、声音、全屏、安全区都还没验证过。另外：电脑上要单文件版，可以从 Releases 的 APK 里取出 `assets/public/` 的 `index.html`、`game.js`、`index.css`，把 CSS 和 JS 内联进 HTML（2026-11-17 做过一次 build-29 的，电脑版 Chrome 能玩）。 |
+| 网页版（给 iPhone 用） | **已接好，等主人做一次性设置** | 每次推送自动发布到 GitHub Pages 和 Cloudflare Pages（后者在中国大陆好打开一些）。要先开 GitHub Pages、在仓库 Secrets 里填 Cloudflare 的两个值，步骤见 `docs/网页版发布.md`。国内能不能稳定打开要请朋友实测；不行的话再考虑国内托管（要备案）或花生壳这类手动上传。 |
 
 ## 更新记录
 

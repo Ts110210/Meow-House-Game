@@ -1,4 +1,5 @@
-# 每次把代码推送到 main，自动：装依赖 → 跑检查 → 打包网页 → 同步到安卓工程 → 打 debug APK → 发布到 Releases。
+# 每次把代码推送到 main，自动：装依赖 → 跑检查 → 打包网页 → 同步到安卓工程 → 打 debug APK → 发布到 Releases；
+# 同时把网页版发布到 GitHub Pages 和 Cloudflare Pages（给 iPhone 和在中国大陆的朋友用，设置见 docs/网页版发布.md）。
 # 也可以在仓库的 Actions 页面手动点「Run workflow」。
 name: 打包安卓 APK
 
@@ -38,6 +39,12 @@ jobs:
 
       - name: 打包网页
         run: npm run build
+
+      - name: 存一份网页版（给下面两个发布网页的步骤用）
+        uses: actions/upload-artifact@v4
+        with:
+          name: web
+          path: dist
 
       - name: 同步到安卓工程
         run: npx cap sync android
@@ -89,3 +96,54 @@ jobs:
             --target "$GITHUB_SHA" \
             --title "喵屋 第 ${BUILD_NUMBER} 次打包" \
             --notes "自动打包的调试版 APK（版本 0.1.${BUILD_NUMBER}）。在手机上点下面的 .apk 文件下载安装；装过旧版的直接覆盖安装，存档会保留。"
+
+  # ---------- 网页版：给 iPhone 用（Safari 打开，「添加到主屏幕」） ----------
+  # GitHub Pages：要先在仓库 Settings → Pages 里把 Source 选成「GitHub Actions」，没开就跳过，不影响打 APK
+  pages:
+    needs: build
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: web
+          path: dist
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+      - id: deploy
+        uses: actions/deploy-pages@v4
+
+  # Cloudflare Pages：在中国大陆比 GitHub 好打开一些。要在仓库 Secrets 里填 CLOUDFLARE_API_TOKEN 和 CLOUDFLARE_ACCOUNT_ID，没填就跳过
+  cloudflare:
+    needs: build
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - name: 没填 Cloudflare 的 Secrets 就跳过
+        id: check
+        run: |
+          if [ -n "$CLOUDFLARE_API_TOKEN" ] && [ -n "$CLOUDFLARE_ACCOUNT_ID" ]; then echo "go=1" >> "$GITHUB_OUTPUT"; else echo "::notice::没有设置 CLOUDFLARE_API_TOKEN / CLOUDFLARE_ACCOUNT_ID，这次不发布到 Cloudflare Pages"; fi
+      - if: steps.check.outputs.go == '1'
+        uses: actions/download-artifact@v4
+        with:
+          name: web
+          path: dist
+      - if: steps.check.outputs.go == '1'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: 发布到 Cloudflare Pages（项目名 meow-house，第一次会自动建）
+        if: steps.check.outputs.go == '1'
+        run: |
+          npx --yes wrangler@3 pages project create meow-house --production-branch main || true
+          npx --yes wrangler@3 pages deploy dist --project-name meow-house --branch main --commit-dirty=true
