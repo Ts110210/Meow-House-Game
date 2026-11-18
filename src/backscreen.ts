@@ -61,7 +61,7 @@ export function drawBackScreen(ctx: CanvasRenderingContext2D, t: number, v: Back
     ctx.font = '30px sans-serif'; if (trip) ctx.fillText(`还有 ${dur(trip.returnAt - s.clock)} 回家`, cx, 340);
   } else if (v.set) {
     const a: ActionName = v.happy ? 'happy' : sim.isWeak(p) ? 'sleep' : 'idle';
-    const size = 400 * CONFIG.growth.stageScale[sim.stageOf(p)];
+    const size = 400 * CONFIG.growth.backScale[sim.stageOf(p)];
     drawFrame(ctx, v.set, a, frameIndex(a, t), cx - size / 2 - 60, 510 - size * 0.9, size);
   }
   // 三个状态小图标

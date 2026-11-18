@@ -65,7 +65,7 @@ export const BACK_MODES: BackMode[] = [
     ctx.globalAlpha = Math.min(1, into * 8, (1 - into) * 8);
     ctx.fillStyle = SOFT; ctx.font = '26px sans-serif'; ctx.fillText('现在，家里……', cx, 64);
     const away = !!p.tripId || !!p.outing || sim.isLost(p);
-    if (set && !away) { const size = 380 * CONFIG.growth.stageScale[sim.stageOf(p)]; drawFrame(ctx, set, d.action, frameIndex(d.action, t), cx - size / 2, 500 - size * 0.9, size); }
+    if (set && !away) { const size = 380 * CONFIG.growth.backScale[sim.stageOf(p)]; drawFrame(ctx, set, d.action, frameIndex(d.action, t), cx - size / 2, 500 - size * 0.9, size); }
     else { ctx.fillStyle = SOFT; ctx.font = 'bold 60px sans-serif'; ctx.fillText(sim.isLost(p) ? '？' : '🧳', cx, 330); }
     ctx.fillStyle = INK; ctx.font = 'bold 40px sans-serif'; ctx.fillText(`${p.name}${d.text}`, cx, 548);
     ctx.globalAlpha = 1;
@@ -90,7 +90,7 @@ export const BACK_MODES: BackMode[] = [
     const p = v.pet && !v.pet.tripId && !v.pet.outing && !sim.isLost(v.pet) ? v.pet : sim.homePets(s)[0]; const set = p ? v.setOf(p) : undefined;
     if (p && set) {
       const act: ActionName = sim.isWeak(p) || night ? 'sleep' : p.food < CONFIG.stats.lowThreshold ? 'beg' : 'sit';
-      const size = 300 * CONFIG.growth.stageScale[sim.stageOf(p)]; drawFrame(ctx, set, act, frameIndex(act, t), a.x + a.w - size - 16, 540 - size * 0.9, size, true);
+      const size = 300 * CONFIG.growth.backScale[sim.stageOf(p)]; drawFrame(ctx, set, act, frameIndex(act, t), a.x + a.w - size - 16, 540 - size * 0.9, size, true);
       ctx.textAlign = 'right'; ctx.fillStyle = night ? '#f6ecc6' : '#fff'; ctx.font = 'bold 26px sans-serif'; ctx.fillText(p.name, a.x + a.w - 30, 578);
     }
   } },
