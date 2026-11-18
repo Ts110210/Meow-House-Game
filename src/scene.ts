@@ -10,7 +10,7 @@ import { renderPostcard } from './art/postcard';
 import { CONFIG, DECOR, PALETTE, SOUVENIRS, SPRITE, VISITORS, ZONES, type ActionName , NEIGHBORS, FIND_KINDS, SEASON_FINDS } from './config';
 import { drawDecor } from './art/decor';
 import type { Game } from './game';
-import { BASE_FY, BASE_ZW, geo, recompute } from './geo';
+import { BASE_FY, BASE_ZW, bg, bgCfg, geo, recompute } from './geo';
 import * as sim from './sim';
 import { extraFrame, frameIndex, rowFor } from './sprites';
 
@@ -83,8 +83,10 @@ const hex = (c: string) => parseInt(c.slice(1), 16);
 // ---------- 屋顶那一层：画在地面这一层的正上方（世界坐标 y 从 -720 到 0） ----------
 // 上层图的坐标（u）每 432 对应下面一个区域；区域宽度变了（背景长图），上层跟着每一段拉伸
 const RF = ASSETS.roof;
-const topToWorld = (u: number) => { const i = Math.max(0, Math.min(N - 1, Math.floor(u / BASE_ZW))); return zx(i) + (u - i * BASE_ZW) * (zw(i) / BASE_ZW); };
-const worldToTop = (x: number) => { const i = zoneAt(x); return i * BASE_ZW + (x - zx(i)) * (BASE_ZW / zw(i)); };
+/** 有整张图时上下两层用同一套横向对齐（线性）；否则上层每 432 对应一个区域 */
+const TOP_W = 8 * BASE_ZW;
+const topToWorld = (u: number) => { if (bg.full && geo.strip) return geo.strip.x + (u / TOP_W) * geo.strip.w; const i = Math.max(0, Math.min(N - 1, Math.floor(u / BASE_ZW))); return zx(i) + (u - i * BASE_ZW) * (zw(i) / BASE_ZW); };
+const worldToTop = (x: number) => { if (bg.full && geo.strip) return ((x - geo.strip.x) / geo.strip.w) * TOP_W; const i = zoneAt(x); return i * BASE_ZW + (x - zx(i)) * (BASE_ZW / zw(i)); };
 /** 屋顶上 u 这个位置，猫的脚底在上层图里的高度，和那一段的坡度（弧度，画的时候猫跟着歪） */
 function roofWalk(u: number): { y: number; tilt: number } {
   const w = RF.walk; u = Math.max(w[0][0], Math.min(w[w.length - 1][0], u));
@@ -219,7 +221,7 @@ export class Scene {
   private tex(src: HTMLCanvasElement) { const t = Texture.from(src); this.textures.push(t); return t; }
 
   private zoneHasImage(i: number) {
-    return !!this.roomPic(`room.zone.${ZONES[i].id}`) || (!!this.roomPic('room.strip') && i < ASSETS.room.strip.coverZones);
+    return bg.full || !!this.roomPic(`room.zone.${ZONES[i].id}`) || (!!this.roomPic('room.strip') && i < ASSETS.room.strip.coverZones);
   }
   /** 现在这套房间风格的背景图；这一套没有图片时用默认那一套的 */
   private room() { return sim.roomOf(this.game.state); }
@@ -232,27 +234,39 @@ export class Scene {
     this.clearObjects();
     this.textures.forEach((t) => t.destroy(true)); this.textures = []; this.objSprites.clear(); this.objArt.clear(); this.objSig = '';
 
-    const strip = this.roomPic('room.strip'); const room = this.room(); this.roomSig = room;
+    const room = this.room(); this.roomSig = room;
+    // 整张图：切成上下两半，下半张当长图（盖住 8 个区域），上半张当上面一层
+    const full = this.roomPic('room.full'); bg.full = !!full; this.fullHalves = full ? this.halves(full) : null;
+    const strip = this.activeStrip();
     recompute(strip);
     const env = this.env(); this.envSig = this.envKey(env);
-    const cover = Math.min(N, ASSETS.room.strip.coverZones);
+    const cover = Math.min(N, bgCfg().coverZones);
     this.stripSprite = strip ? new Sprite(this.tex(strip)) : null;
     if (this.stripSprite) this.bgLayer.addChild(this.stripSprite);
     this.zoneSprites = ZONES.map((z, i) => {
-      const img = this.roomPic(`room.zone.${z.id}`);
+      const img = bg.full ? null : this.roomPic(`room.zone.${z.id}`);
       if (!img && strip && i < cover) return null;
       const sp = new Sprite(this.tex(img ?? drawZone(z.id, i, env, room))); this.bgLayer.addChild(sp);
       return { sp, code: !img };
     });
     // 上面那一层：有上层图就切成 8 段（每段在一个区域的正上方），没有就用代码画
-    const top = this.roomPic('room.top'); this.topCode = !top;
-    this.topSprites = ZONES.map((_, i) => { const sp = new Sprite(this.tex(top ? this.topPiece(top, i) : drawTop(i * BASE_ZW, BASE_ZW, env, room))); this.bgLayer.addChild(sp); return sp; });
+    const top = this.roomPic('room.top'); this.topCode = !top && !this.fullHalves;
+    if (this.fullHalves) { const sp = new Sprite(this.tex(this.fullHalves.top)); this.bgLayer.addChild(sp); this.topSprites = [sp]; }
+    else this.topSprites = ZONES.map((_, i) => { const sp = new Sprite(this.tex(top ? this.topPiece(top, i) : drawTop(i * BASE_ZW, BASE_ZW, env, room))); this.bgLayer.addChild(sp); return sp; });
     this.placeArt();
     this.rebuildObjects();
     if (this.names.length) this.applyCam();
     if (this.bgMode) this.setBgMode(true);
   }
 
+  private fullHalves: { top: HTMLCanvasElement; bottom: HTMLCanvasElement } | null = null;
+  /** 整张图切成上下两半 */
+  private halves(img: HTMLCanvasElement | HTMLImageElement) {
+    const h = Math.round(img.height / 2); const cut = (y: number) => { const cv = document.createElement('canvas'); cv.width = img.width; cv.height = h; cv.getContext('2d')!.drawImage(img, 0, y, img.width, h, 0, 0, img.width, h); return cv; };
+    return { top: cut(0), bottom: cut(img.height - h) };
+  }
+  /** 现在当「长图」用的那张：整张图的下半张，或者长图 */
+  private activeStrip() { return this.fullHalves?.bottom ?? this.roomPic('room.strip'); }
   /** 上层图的第 i 段（横向 8 等分） */
   private topPiece(img: HTMLCanvasElement | HTMLImageElement, i: number): HTMLCanvasElement {
     const cw = img.width / N, cv = document.createElement('canvas'); cv.width = Math.round(cw); cv.height = img.height;
@@ -301,7 +315,9 @@ export class Scene {
       });
     }
     if (this.stripSprite && geo.strip) { this.stripSprite.position.set(geo.strip.x, 0); this.stripSprite.width = geo.strip.w; this.stripSprite.height = H; }
-    this.topSprites.forEach((sp, i) => { sp.position.set(zx(i), -H); sp.width = zw(i); sp.height = H; });
+    // 整张图的上半张和下半张用同一套横向位置；否则上层每一段在对应区域的正上方
+    if (this.fullHalves && geo.strip) { const sp = this.topSprites[0]; if (sp) { sp.position.set(geo.strip.x, -H); sp.width = geo.strip.w; sp.height = H; } }
+    else this.topSprites.forEach((sp, i) => { sp.position.set(zx(i), -H); sp.width = zw(i); sp.height = H; });
     this.zoneSprites.forEach((z, i) => {
       if (!z) return;
       // 代码画的占位区域：整体上下挪，让它的地板线和背景图的对齐
@@ -315,7 +331,7 @@ export class Scene {
 
   /** 地板线或分界线变了：重新算一遍，所有东西跟着走 */
   private applyGeometry() {
-    recompute(this.roomPic('room.strip'));
+    recompute(this.activeStrip());
     this.placeArt(); this.placeObjects();
     for (const a of this.actors.values()) { a.x = clampX(a.x); a.tx = clampX(a.tx); a.y = clampY(a.y); a.ty = clampY(a.ty); }
     this.applyCam();
@@ -361,8 +377,8 @@ export class Scene {
       const pos = objPos(def); const zi = pos.zi;
       // 院子的大树跟着季节换图（图片名 tree-spring.png 这样），别的按皮肤
       const skin = def.seasonal ? sim.season(s) : sim.skinOf(s, kind); const img = this.assets.getSkinned(`object.${kind}`, skin);
-      // 背景图里已经画了的东西（门、浴缸、床、收藏柜、相册墙、鱼塘）：没有自己的图片时只留点击区域
-      const hidden = !img && !!def.partOfBackground && this.zoneHasImage(zi);
+      // 背景只画墙和地板（2026-11-18 起），家具永远单独画：没有图片就用占位图
+      const hidden = false;
       const artKey = `${kind}@${skin}`; if (!this.objArt.has(artKey)) this.objArt.set(artKey, drawObject(kind, skin));
       const src = img ?? (hidden ? null : this.objArt.get(artKey)!);
       const sp = new Sprite(src ? this.tex(src) : Texture.WHITE);
@@ -466,7 +482,7 @@ export class Scene {
 
   // ---------- 调整背景：拖地板线和区域分界线 ----------
 
-  hasStrip() { return !!this.roomPic('room.strip'); }
+  hasStrip() { return !!this.roomPic('room.full') || !!this.roomPic('room.strip'); }
 
   setBgMode(on: boolean) {
     this.bgMode = on && this.hasStrip(); this.bgDrag = null;
@@ -475,12 +491,12 @@ export class Scene {
     if (!this.bgMode) { this.objSig = ''; this.rebuildObjects(); return; }
     this.bgLines = new Graphics(); this.bgLines.eventMode = 'none'; this.bgLayerEdit.addChild(this.bgLines);
     // 0..n-1 = 分界线，最后一个 = 地板线（放在最上面，交叉的地方优先拖地板线）
-    const n = ASSETS.room.strip.lines.length;
+    const n = bgCfg().lines.length;
     for (let i = 0; i <= n; i++) {
       const h = new Graphics(); h.eventMode = 'static'; h.cursor = i === n ? 'ns-resize' : 'ew-resize';
       h.on('pointerdown', (e) => {
         e.stopPropagation();
-        this.bgDrag = { which: i, gx: e.global.x, gy: e.global.y, orig: i === n ? ASSETS.room.strip.floor : ASSETS.room.strip.lines[i], cam: this.camX };
+        this.bgDrag = { which: i, gx: e.global.x, gy: e.global.y, orig: i === n ? bgCfg().floor : bgCfg().lines[i], cam: this.camX };
       });
       this.bgLayerEdit.addChild(h); this.bgHandles.push(h);
     }
@@ -490,7 +506,7 @@ export class Scene {
 
   private drawBgEdit() {
     if (!this.bgMode || !geo.strip) return;
-    const k = 1 / this.scale; const cfg = ASSETS.room.strip; const n = cfg.lines.length;
+    const k = 1 / this.scale; const cfg = bgCfg(); const n = cfg.lines.length;
     const midY = (this.app.screen.height * 0.4 - this.world.y) * k, midX = (this.app.screen.width * 0.5 - this.world.x) * k;
     const g = this.bgLines.clear(); const blue = 0x3a7bd5, coral = hex(PALETTE.coral);
     cfg.lines.forEach((f, i) => {
@@ -506,7 +522,7 @@ export class Scene {
   }
 
   private bgMove(e: FederatedPointerEvent) {
-    const d = this.bgDrag!; const cfg = ASSETS.room.strip; const n = cfg.lines.length; if (!geo.strip) return;
+    const d = this.bgDrag!; const cfg = bgCfg(); const n = cfg.lines.length; if (!geo.strip) return;
     if (d.which === n) cfg.floor = Math.max(0.3, Math.min(0.97, d.orig + (e.global.y - d.gy) / this.scale / H));
     else {
       const lo = d.which === 0 ? 0 : cfg.lines[d.which - 1] + 0.03, hi = d.which === n - 1 ? 1 : cfg.lines[d.which + 1] - 0.03;

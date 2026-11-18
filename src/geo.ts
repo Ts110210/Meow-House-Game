@@ -7,6 +7,10 @@ import { CONFIG, ZONES } from './config';
 
 export const BASE_ZW = CONFIG.room.zoneWidth, ROOM_H = CONFIG.room.height, BASE_FY = CONFIG.room.floorY;
 
+/** 现在用的是整张图（room.full）还是长图（room.strip）：两者各有自己的地板线和分界线 */
+export const bg = { full: false };
+export const bgCfg = (): { coverZones: number; floor: number; lines: number[] } => (bg.full ? ASSETS.room.full : ASSETS.room.strip);
+
 export const geo = {
   floorY: BASE_FY,
   /** 每个区域左边的位置，最后一个数是整个房间的宽度 */
@@ -16,7 +20,7 @@ export const geo = {
 };
 
 export function recompute(strip?: { width: number; height: number } | null) {
-  const n = ZONES.length; const cfg = ASSETS.room.strip; const cover = Math.min(n, cfg.coverZones);
+  const n = ZONES.length; const cfg = bgCfg(); const cover = Math.min(n, cfg.coverZones);
   const b = [0];
   if (strip) {
     const W = strip.width * (ROOM_H / strip.height); const L = cfg.lines;

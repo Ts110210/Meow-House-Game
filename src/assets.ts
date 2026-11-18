@@ -15,6 +15,7 @@ export class AssetStore {
   slots(): Slot[] {
     const out: Slot[] = [];
     out.push({ key: 'room.strip', group: '房间背景', name: `长图（盖住左边 ${ASSETS.room.strip.coverZones} 个区域）`, src: ASSETS.room.strip.src, hint: '约 3:1，建议 2160×720', kind: 'room' });
+    out.push({ key: 'room.full', group: '房间背景', name: '整张图（上下两层：屋顶和天空、8 个区域）', src: ASSETS.room.full.src, hint: '3456×1440，有它就不用别的背景图；按 docs/构图底稿.png 的构图生成', kind: 'room' });
     out.push({ key: 'room.top', group: '房间背景', name: '上面一层（屋顶和天空）', src: ASSETS.room.top, hint: '3456×720，横向 8 等分对着下面 8 个区域', kind: 'room' });
     for (const z of ZONES) out.push({ key: `room.zone.${z.id}`, group: '房间背景', name: `${z.name}（单独一张）`, src: ASSETS.room.zones[z.id], hint: '3:5，建议 432×720 的倍数', kind: 'room' });
     for (const [k, d] of Object.entries(ASSETS.objects)) {
@@ -31,6 +32,7 @@ export class AssetStore {
     const withId = (src: string, id: string) => src.replace(/\.png$/, `-${id}.png`);
     for (const r of ROOM_THEMES.slice(1)) {
       out.push({ key: `room.strip@${r.id}`, group: `房间风格 · ${r.name}`, name: '长图', src: withId(ASSETS.room.strip.src, r.id), hint: '和默认的长图一样的尺寸和布局（地板线、分界线共用）', kind: 'room' });
+      out.push({ key: `room.full@${r.id}`, group: `房间风格 · ${r.name}`, name: '整张图', src: withId(ASSETS.room.full.src, r.id), hint: '和默认的整张图一样大、一样的构图', kind: 'room' });
       out.push({ key: `room.top@${r.id}`, group: `房间风格 · ${r.name}`, name: '上面一层（屋顶和天空）', src: withId(ASSETS.room.top, r.id), hint: '和默认的那张一样大', kind: 'room' });
       for (const z of ZONES) out.push({ key: `room.zone.${z.id}@${r.id}`, group: `房间风格 · ${r.name}`, name: `${z.name}（单独一张）`, src: withId(ASSETS.room.zones[z.id], r.id), hint: '3:5，和默认的那张一样大', kind: 'room' });
     }

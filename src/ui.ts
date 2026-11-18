@@ -12,6 +12,7 @@ import { BACK_MODES } from './backscreenModes';
 import { ASSETS } from './assets.config';
 import { renderMoment } from './art/moment';
 import { exportLayout, isChanged, resetBackground, resetObjects, saveLayout } from './layout';
+import { bgCfg } from './geo';
 import { composeSheet, splitStrip, type Assembled, type StripPart } from './assemble';
 import { canvasToBlob, saveBlob, saveMessage } from './platform/download';
 import { lookFromPhoto } from './lookFromPhoto';
@@ -1175,7 +1176,7 @@ export class UI {
   // ---------- 调整背景：地板线和区域分界线 ----------
 
   startBgEdit() {
-    if (!this.scene.hasStrip()) { this.toast('先在「素材替换」里上传背景长图'); return; }
+    if (!this.scene.hasStrip()) { this.toast('先在「素材替换」里上传背景长图或整张图'); return; }
     this.close();
     this.editInfo = h('span', { class: 'soft' });
     const pct = h('span', { class: 'soft' }, `${Math.round(ASSETS.petScale * 100)}%`);
@@ -1197,7 +1198,7 @@ export class UI {
   /** 场景里拖线时调用；done = 松手了，存一下 */
   bgChanged(done: boolean) {
     if (done) saveLayout();
-    const s = ASSETS.room.strip;
+    const s = bgCfg();
     if (this.editInfo) this.editInfo.textContent = `红线 = 地板线，蓝线 = 区域分界线，拖圆点或线都行。地板线 ${(s.floor * 100).toFixed(1)}%`;
   }
 
