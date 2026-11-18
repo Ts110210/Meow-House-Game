@@ -54,7 +54,8 @@ export interface Visitor {
 }
 
 /** 一件装饰。x、y 是区域里的位置（和家具一样的坐标） */
-export interface Decor { id: string; kind: string; zone: string | null; x: number; y: number }
+/** starter = 开局自带的（不算在「最多买几件」里） */
+export interface Decor { id: string; kind: string; zone: string | null; x: number; y: number; starter?: boolean }
 
 export interface Trip {
   id: string;

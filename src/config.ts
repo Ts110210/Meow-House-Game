@@ -131,6 +131,7 @@ export const CONFIG = {
     maxPerKind: 4,
     /** 每个区域最多摆几件 */
     maxPerZone: 8,
+    // 开局自带的装饰（摆在哪见 assets.config.ts 的 starterDecor）不算在「最多买几件」里
   },
 
   // ---------- 访客 ----------
@@ -676,6 +677,13 @@ export const DECOR: Record<string, DecorDef> = {
   plant: { name: '小盆栽', icon: '🪴', price: 80, height: 90, layer: 'stand', desc: '一小盆绿叶' },
   rug: { name: '编织地毯', icon: '🧶', price: 120, height: 64, layer: 'floor', desc: '椭圆的大地毯' },
   painting: { name: '风景挂画', icon: '🖼️', price: 150, height: 120, layer: 'wall', desc: '远山和太阳' },
+  // 开局自带的几件（从背景里拆出来的），商店里也有卖
+  bigrug: { name: '大地毯', icon: '🟦', price: 160, height: 66, layer: 'floor', desc: '椭圆的大地毯，门口和客厅铺的就是它' },
+  midrug: { name: '中地毯', icon: '🟩', price: 100, height: 48, layer: 'floor', desc: '中等大小的椭圆地毯' },
+  leafpic: { name: '叶子小画', icon: '🌱', price: 60, height: 96, layer: 'wall', desc: '一枝叶子的小画' },
+  sunpic: { name: '太阳小画', icon: '🌞', price: 60, height: 64, layer: 'wall', desc: '一颗太阳的小画' },
+  duopic: { name: '两幅组合画', icon: '🖼️', price: 150, height: 156, layer: 'wall', desc: '远山和小鱼，上下挂在一起' },
+  triopic: { name: '三幅组合画', icon: '🖼️', price: 220, height: 182, layer: 'wall', desc: '远山、太阳和小鱼，三幅挂成一组' },
   lamp: { name: '落地灯', icon: '💡', price: 80, height: 250, layer: 'stand', desc: '摆在地上，天黑了会亮', light: [0.5, 0.14] },
   sidelamp: { name: '小落地灯', icon: '🕯️', price: 60, height: 200, layer: 'stand', desc: '细细的一盏，放沙发旁边正好', light: [0.5, 0.12] },
   nightlight: { name: '小夜灯', icon: '🌙', price: 180, height: 70, layer: 'stand', desc: '天黑了会亮', light: [0.5, 0.4] },
@@ -717,6 +725,8 @@ export const SKIN_SIZE: Record<string, 'S' | 'M' | 'L'> = {
   door: 'L', tub: 'L', bed: 'L', sofa: 'L', cabinet: 'L', pond: 'L', counter: 'L', cattree: 'L',
   album: 'M', scratcher: 'M', feeder: 'M', pendantDoor: 'M', pendantShelf: 'M', nightstand: 'M',
   bowl: 'S', ball: 'S', bedlamp: 'S', ladder: 'M',
+  // 从背景里拆出来的固定家具（院子的树跟着季节换，没有皮肤）
+  kitchenWindow: 'M', bedroomWindow: 'M', fence: 'M', hooks: 'S', umbrella: 'S', kitchenShelf: 'S', mirror: 'S', bathShelf: 'S', towel: 'S', shelfRack: 'S', chair: 'S',
   box: 'S', catgrass: 'S', autoball: 'S', basket: 'M', tunnel: 'M', heater: 'L',
 };
 /** 一件东西的皮肤算哪一档；没有皮肤的东西返回 null。装饰：70 以内小件，180 以内（和里程碑奖励）中件，再贵的大件 */

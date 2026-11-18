@@ -102,9 +102,11 @@ function plant(s: Sketch, x: number, y: number, size: number, pot: string, leave
   s.poly([[x - size * 0.26, y - size * 0.36], [x + size * 0.26, y - size * 0.36], [x + size * 0.2, y], [x - size * 0.2, y]], { fill: pot });
 }
 
-function windowPane(s: Sketch, x: number, y: number, w: number, h: number, glass: string, curtain: string | null) {
-  s.rect(x - 6, y - 6, w + 12, h + 12, { fill: P.white, width: 2 });
-  s.rect(x, y, w, h, { fill: glass, width: 1.2 });
+/** 窗框、窗台和窗帘。玻璃那一块不画（透明），窗外的天空由 drawWindowView 另外画在后面 */
+function windowFrame(s: Sketch, x: number, y: number, w: number, h: number, curtain: string | null) {
+  s.rect(x - 6, y - 6, w + 12, 6, { fill: P.white, width: 1.4 }); s.rect(x - 6, y + h, w + 12, 6, { fill: P.white, width: 1.4 });
+  s.rect(x - 6, y, 6, h, { fill: P.white, width: 1.4 }); s.rect(x + w, y, 6, h, { fill: P.white, width: 1.4 });
+  s.rect(x + w / 2 - 2, y, 4, h, { fill: P.white, stroke: false, hatch: 0 }); s.rect(x, y + h / 2 - 2, w, 4, { fill: P.white, stroke: false, hatch: 0 });
   s.line(x + w / 2, y, x + w / 2, y + h, P.ink, 1.3, 0.6); s.line(x, y + h / 2, x + w, y + h / 2, P.ink, 1.3, 0.6);
   s.rect(x - 12, y + h + 6, w + 24, 8, { fill: P.white, width: 1.4 });
   if (curtain) {
@@ -117,72 +119,38 @@ function windowPane(s: Sketch, x: number, y: number, w: number, h: number, glass
   }
 }
 
+/** 窗外：天空，夜里星星和月牙，白天太阳和远处的一抹山。w、h = 玻璃的大小 */
+export function drawWindowView(w: number, h: number, env: Env, seed = 1): HTMLCanvasElement {
+  const old = ENV; ENV = env;
+  const [cv, ctx] = makeCanvas(Math.max(8, Math.round(w)), Math.max(8, Math.round(h)), 1.5); const s = new Sketch(ctx, 700 + seed);
+  try {
+    s.rect(0, 0, w, h, { fill: lighten(skyColor(), ENV.time === 'night' ? 0 : 0.25), stroke: false, hatch: 0.5 });
+    if (ENV.time === 'night') { if (!rainy()) { stars(s, 4, 4, w - 8, h - 8, 10); moon(s, w * 0.75, h * 0.3, 14); } }
+    else { if (!rainy()) s.ellipse(w * 0.75, h * 0.3, 15, 15, { fill: ENV.time === 'dusk' ? '#F0A46A' : '#F4E3A6', width: 1.1 }); s.ellipse(w * 0.6, h * 0.85, w * 0.28, h * 0.15, { fill: sea().hill2, width: 1 }); }
+  } finally { ENV = old; }
+  return cv;
+}
+
 function shelf(s: Sketch, x: number, y: number, w: number) {
   s.rect(x, y, w, 9, { fill: P.wood });
   s.poly([[x + 12, y + 9], [x + 22, y + 9], [x + 12, y + 24]], { fill: P.woodDark, width: 1.2 }); s.poly([[x + w - 12, y + 9], [x + w - 22, y + 9], [x + w - 12, y + 24]], { fill: P.woodDark, width: 1.2 });
 }
 
 const ZONE_ART: Record<ZoneId, (s: Sketch) => void> = {
-  door(s) {
-    frame(s, 28, 236, 78, 96, P.sage, 'leaf');
-    // 挂钩、围巾和帽子
-    s.rect(322, 268, 96, 10, { fill: P.wood, r: 3 });
-    for (const x of [340, 372, 404]) s.ellipse(x, 284, 4, 4, { fill: P.woodDark, width: 1 });
-    s.poly([[364, 286], [382, 286], [386, 372], [374, 380], [362, 372]], { fill: P.coral }); s.line(364, 356, 386, 356, P.ink, 1, 0.5);
-    s.poly([[324, 300], [356, 300], [350, 286], [330, 286]], { fill: P.mustard }); s.rect(318, 298, 44, 7, { fill: P.mustard, r: 3 });
-    // 伞桶
-    s.poly([[36, 470], [92, 470], [86, 546], [42, 546]], { fill: P.mist });
-    s.curve([[58, 472], [54, 420], [46, 410]], P.coral, 4); s.curve([[74, 472], [80, 430]], P.woodDark, 3);
-    // 地垫
-    s.ellipse(216, 630, 132, 20, { fill: P.mist });
-    s.ellipse(216, 630, 100, 12, { fill: lighten(P.mist, 0.3), width: 1 });
-  },
-  kitchen(s) {
-    windowPane(s, 46, 174, 150, 124, lighten(skyColor(), ENV.time === 'night' ? 0 : 0.25), P.mustard);
-    if (rainy() && ENV.time === 'night') { /* 下雨的夜里窗外一片黑 */ } else if (ENV.time === 'night') { stars(s, 50, 178, 142, 116, 9); moon(s, 160, 208, 13); } else s.ellipse(150, 268, 34, 22, { fill: sea().hill2, width: 1 });
-    // 置物架和瓶瓶罐罐（窗台空着：猫会跳上去看外面）
-    shelf(s, 238, 224, 168);
-    s.rect(250, 190, 26, 34, { fill: P.coral, r: 4 }); s.rect(284, 198, 22, 26, { fill: P.white, r: 4 }); s.rect(314, 184, 28, 40, { fill: P.sage, r: 4 }); s.ellipse(374, 210, 16, 14, { fill: P.mist });
-    shelf(s, 238, 316, 168);
-    s.rect(252, 292, 44, 24, { fill: P.mustard, r: 5 }); s.ellipse(330, 302, 16, 14, { fill: P.white }); s.rect(362, 286, 24, 30, { fill: P.coral, r: 4 });
-    // 橱柜是单独的家具（见下面的 counter）
-    // 地上的小垫子
-    s.ellipse(330, 650, 84, 14, { fill: lighten(P.sage, 0.15) });
-  },
-  living(s) {
-    frame(s, 44, 176, 130, 104, P.mist, 'hill'); frame(s, 190, 200, 76, 92, P.coral, 'sun'); frame(s, 196, 306, 64, 52, P.mustard, 'fish');
-    // 地毯
-    s.ellipse(210, 646, 176, 30, { fill: P.mist }); s.ellipse(210, 646, 140, 20, { fill: lighten(P.mist, 0.3), width: 1 });
-    // 沙发、猫爬架是单独的家具；右边的墙空着留给猫爬架。落地灯是可以自己摆的装饰
-  },
+  // 屋里的区域只剩墙和地板：窗户、置物架、镜子、毛巾架、挂钩、伞桶都是单独的固定家具；地毯、挂画、盆栽是开局自带的装饰
+  door(_s) {},
+  kitchen(_s) {},
+  living(_s) {},
   bath(s) {
-    // 下半墙的瓷砖
+    // 下半墙的瓷砖（算墙的一部分）
     s.rect(6, 320, W - 12, 226, { fill: lighten(P.mist, 0.42), stroke: false, hatch: 0.6 });
     s.rect(6, 310, W - 12, 12, { fill: P.mist, stroke: false }); s.line(6, 310, W - 6, 310, P.ink, 1.3, 0.6);
     for (let y = 366; y < 546; y += 46) s.line(6, y, W - 6, y, '#FFFFFF', 2, 0.85);
     for (let x = 52; x < W - 10; x += 47) s.line(x, 322, x, 546, '#FFFFFF', 2, 0.85);
-    // 圆镜子、小架子、毛巾
-    s.ellipse(112, 226, 60, 60, { fill: P.mustard }); s.ellipse(112, 226, 50, 50, { fill: P.glass, width: 1.2 }); s.curve([[84, 214], [100, 194]], '#FFFFFF', 3, 0.8);
-    shelf(s, 210, 232, 96); s.rect(222, 196, 20, 36, { fill: P.coral, r: 5 }); s.rect(250, 206, 18, 26, { fill: P.sage, r: 5 }); s.ellipse(286, 220, 10, 12, { fill: P.white });
-    s.line(326, 176, 414, 176, P.woodDark, 3); s.rect(338, 178, 56, 84, { fill: P.coral, r: 4 }); s.line(338, 242, 394, 242, P.white, 2.5, 0.8);
-    plant(s, 372, 546, 44, P.white, 6);
-    s.ellipse(216, 660, 120, 18, { fill: lighten(P.sage, 0.1) });
   },
-  bedroom(s) {
-    windowPane(s, 250, 174, 140, 130, lighten(skyColor(), ENV.time === 'night' ? 0 : 0.25), P.coral);
-    if (ENV.time === 'night' && !rainy()) { stars(s, 254, 178, 132, 122, 10); moon(s, 350, 214, 15); }
-    else if (ENV.time !== 'night') { if (!rainy()) s.ellipse(350, 214, 15, 15, { fill: ENV.time === 'dusk' ? '#F0A46A' : '#F4E3A6', width: 1.1 }); s.ellipse(300, 284, 40, 18, { fill: sea().hill2, width: 1 }); }
-    frame(s, 64, 200, 110, 82, P.sage, 'hill'); frame(s, 80, 300, 70, 56, P.mist, 'fish');
-    // 床头柜和床头灯是单独的家具
-    s.ellipse(250, 652, 150, 22, { fill: lighten(P.coral, 0.35) });
-  },
-  shelf(s) {
-    shelf(s, 236, 420, 170); plant(s, 276, 420, 30, P.mustard, 5); s.rect(316, 388, 30, 32, { fill: P.mist, r: 4 }); s.rect(354, 380, 34, 40, { fill: P.sage, r: 4 });
-    plant(s, 318, 546, 70, P.coral, 8);
-    s.ellipse(320, 650, 92, 15, { fill: lighten(P.mustard, 0.2) });
-    frame(s, 44, 170, 80, 64, P.mustard, 'sun');
-  },
-  // 阳台：没有墙，直接看到外面。栏杆、花盆、一把小椅子。
+  bedroom(_s) {},
+  shelf(_s) {},
+  // 阳台：没有墙，直接看到外面。栏杆和远处的树（花盆、小椅子是单独的）
   balcony(s) {
     const c = sea();
     s.rect(6, 0, W - 12, 546, { fill: skyColor(), stroke: false, hatch: 0.5 });
@@ -195,23 +163,17 @@ const ZONE_ART: Record<ZoneId, (s: Sketch) => void> = {
     // 栏杆
     for (let x = 34; x < W - 20; x += 34) s.rect(x, 430, 8, 116, { fill: P.white, width: 1.2 });
     s.rect(16, 418, W - 32, 14, { fill: P.white, width: 1.4 });
-    // 花盆和小椅子
-    plant(s, 62, 546, 44, P.coral, 6); plant(s, 118, 546, 30, P.mustard, 5);
-    s.rect(290, 470, 80, 12, { fill: P.mist, r: 4 }); s.rect(296, 482, 8, 64, { fill: P.woodDark, width: 1.2 }); s.rect(356, 482, 8, 64, { fill: P.woodDark, width: 1.2 }); s.rect(356, 420, 8, 56, { fill: P.woodDark, width: 1.2 }); s.rect(350, 418, 20, 40, { fill: P.mist, r: 4 });
+    // 花盆是开局自带的装饰，小椅子是固定家具
     if (ENV.season === 'winter') { s.ellipse(216, 420, 190, 6, { fill: '#FFFFFF', stroke: false, hatch: 0 }); }
   },
-  // 院子：完全在室外。天空、远山、一棵大树、篱笆、草地；鱼塘是单独的物品。
-  // 屋顶：一大片天，远处是别人家的屋顶，脚下是瓦片。夜里上来看星星
+  // 院子：完全在室外。天空、远山、草地；大树、栅栏、鱼塘是单独的物品。
   garden(s) {
     const c = sea();
     s.rect(0, 0, W, 560, { fill: skyColor(), stroke: false, hatch: 0.5 });
     skyThings(s, 0, 70, W);
     s.poly([[0, 450], [110, 356], [200, 416], [300, 340], [W, 440], [W, 560], [0, 560]] as Pt[], { fill: c.hill });
     s.poly([[0, 470], [150, 420], [280, 452], [W, 424], [W, 560], [0, 560]] as Pt[], { fill: c.hill2 });
-    // 篱笆
-    for (let x = 14; x < W; x += 40) s.poly([[x, 560], [x, 492], [x + 9, 480], [x + 18, 492], [x + 18, 560]], { fill: P.white, width: 1.2 });
-    s.rect(0, 510, W, 8, { fill: P.white, width: 1.1 }); s.rect(0, 538, W, 8, { fill: P.white, width: 1.1 });
-    tree(s, 92, 552, 300);
+    // 栅栏和大树是单独的固定家具
     // 草地（盖住木地板）
     s.rect(0, FY, W, H - FY, { fill: c.ground, stroke: false, hatch: 0.6 }); s.line(0, FY, W, FY, P.ink, 1.4, 0.5);
     for (let i = 0; i < 22; i++) { const x = s.r() * W, y = FY + 10 + s.r() * (H - FY - 16); s.curve([[x, y], [x + 3, y - 9]], ENV.season === 'winter' ? '#C9D3DA' : darken(P.sage, 0.15), 1.4, 0.7); }
@@ -295,6 +257,57 @@ const OBJECT_ART: Record<string, { w: number; h: number; draw: (s: Sketch) => vo
     s.rect(13, 13, 150, 379, { fill: P.wood, r: 3 });
     s.rect(30, 36, 116, 130, { fill: lighten(P.wood, 0.2), r: 4, width: 1.3 }); s.rect(30, 192, 116, 172, { fill: lighten(P.wood, 0.2), r: 4, width: 1.3 });
     s.ellipse(142, 210, 9, 9, { fill: P.mustard });
+  } },
+  // ---- 从背景里拆出来的固定家具：坐标沿用原来画在背景里的位置，先平移到图片自己的左上角 ----
+  hooks: { w: 104, h: 116, draw(s) {
+    s.ctx.translate(-316, -266);
+    s.rect(322, 268, 96, 10, { fill: P.wood, r: 3 });
+    for (const x of [340, 372, 404]) s.ellipse(x, 284, 4, 4, { fill: P.woodDark, width: 1 });
+    s.poly([[364, 286], [382, 286], [386, 372], [374, 380], [362, 372]], { fill: P.coral }); s.line(364, 356, 386, 356, P.ink, 1, 0.5);
+    s.poly([[324, 300], [356, 300], [350, 286], [330, 286]], { fill: P.mustard }); s.rect(318, 298, 44, 7, { fill: P.mustard, r: 3 });
+  } },
+  umbrella: { w: 60, h: 136, draw(s) {
+    s.ctx.translate(-34, -410);
+    s.poly([[36, 470], [92, 470], [86, 546], [42, 546]], { fill: P.mist });
+    s.curve([[58, 472], [54, 420], [46, 412]], P.coral, 4); s.curve([[74, 472], [80, 430]], P.woodDark, 3);
+  } },
+  kitchenWindow: { w: 188, h: 156, draw(s) { s.ctx.translate(-28, -156); windowFrame(s, 46, 174, 150, 124, P.mustard); } },
+  bedroomWindow: { w: 178, h: 162, draw(s) { s.ctx.translate(-232, -156); windowFrame(s, 250, 174, 140, 130, P.coral); } },
+  kitchenShelf: { w: 172, h: 160, draw(s) {
+    s.ctx.translate(-236, -182);
+    shelf(s, 238, 224, 168);
+    s.rect(250, 190, 26, 34, { fill: P.coral, r: 4 }); s.rect(284, 198, 22, 26, { fill: P.white, r: 4 }); s.rect(314, 184, 28, 40, { fill: P.sage, r: 4 }); s.ellipse(374, 210, 16, 14, { fill: P.mist });
+    shelf(s, 238, 316, 168);
+    s.rect(252, 292, 44, 24, { fill: P.mustard, r: 5 }); s.ellipse(330, 302, 16, 14, { fill: P.white }); s.rect(362, 286, 24, 30, { fill: P.coral, r: 4 });
+  } },
+  mirror: { w: 124, h: 124, draw(s) {
+    s.ctx.translate(-50, -164);
+    s.ellipse(112, 226, 60, 60, { fill: P.mustard }); s.ellipse(112, 226, 50, 50, { fill: P.glass, width: 1.2 }); s.curve([[84, 214], [100, 194]], '#FFFFFF', 3, 0.8);
+  } },
+  bathShelf: { w: 100, h: 64, draw(s) {
+    s.ctx.translate(-208, -194);
+    shelf(s, 210, 232, 96); s.rect(222, 196, 20, 36, { fill: P.coral, r: 5 }); s.rect(250, 206, 18, 26, { fill: P.sage, r: 5 }); s.ellipse(286, 220, 10, 12, { fill: P.white });
+  } },
+  towel: { w: 92, h: 92, draw(s) {
+    s.ctx.translate(-324, -172);
+    s.line(326, 176, 414, 176, P.woodDark, 3); s.rect(338, 178, 56, 84, { fill: P.coral, r: 4 }); s.line(338, 242, 394, 242, P.white, 2.5, 0.8);
+  } },
+  shelfRack: { w: 174, h: 76, draw(s) {
+    s.ctx.translate(-234, -370);
+    shelf(s, 236, 420, 170); plant(s, 276, 420, 30, P.mustard, 5); s.rect(316, 388, 30, 32, { fill: P.mist, r: 4 }); s.rect(354, 380, 34, 40, { fill: P.sage, r: 4 });
+  } },
+  // 阳台的小椅子：猫会跳上去，坐垫在图片高度的 59% 处
+  chair: { w: 84, h: 132, draw(s) {
+    s.ctx.translate(-288, -416);
+    s.rect(296, 482, 8, 64, { fill: P.woodDark, width: 1.2 }); s.rect(356, 482, 8, 64, { fill: P.woodDark, width: 1.2 }); s.rect(356, 420, 8, 56, { fill: P.woodDark, width: 1.2 });
+    s.rect(290, 470, 80, 12, { fill: P.mist, r: 4 }); s.rect(350, 418, 20, 40, { fill: P.mist, r: 4 });
+  } },
+  // 院子的大树：跟着季节换样子（春天开花、秋天黄叶、冬天光秃秃挂着雪），没有皮肤
+  tree: { w: 296, h: 356, draw(s) { s.ctx.translate(56, -196); tree(s, 92, 552, 300); } },
+  fence: { w: 432, h: 82, draw(s) {
+    s.ctx.translate(0, -478);
+    for (let x = 14; x < W; x += 40) s.poly([[x, 560], [x, 492], [x + 9, 480], [x + 18, 492], [x + 18, 560]], { fill: P.white, width: 1.2 });
+    s.rect(0, 510, W, 8, { fill: P.white, width: 1.1 }); s.rect(0, 538, W, 8, { fill: P.white, width: 1.1 });
   } },
   // 木梯子：两根竖杆，十几根横档。很细很长（顶端伸出阳台的天花板，搭到屋檐上）
   ladder: { w: 84, h: 632, draw(s) {
@@ -422,11 +435,15 @@ const OBJECT_ART: Record<string, { w: number; h: number; draw: (s: Sketch) => vo
 };
 
 /** skin = 皮肤（不写 = 默认款）。占位图的各款皮肤造型一样，只换配色 */
+/** 院子的大树这类跟着季节换的东西：skin 那个位置传的是季节 */
+export const SEASONAL_ART = ['tree'];
 export function drawObject(kind: string, skin?: string): HTMLCanvasElement | null {
   const def = OBJECT_ART[kind]; if (!def) return null;
   const [cv, ctx] = makeCanvas(def.w, def.h, 2);
-  P = skinPalette(skin);
-  try { def.draw(new Sketch(ctx, 300 + kind.length * 31 + kind.charCodeAt(0))); } finally { P = PALETTE; }
+  const seasonal = SEASONAL_ART.includes(kind); const old = ENV;
+  if (seasonal) ENV = { ...ENV, season: (['spring', 'summer', 'autumn', 'winter'] as string[]).includes(skin ?? '') ? (skin as Season) : ENV.season };
+  P = seasonal ? PALETTE : skinPalette(skin);
+  try { def.draw(new Sketch(ctx, 300 + kind.length * 31 + kind.charCodeAt(0))); } finally { P = PALETTE; ENV = old; }
   return cv;
 }
 

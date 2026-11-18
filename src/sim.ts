@@ -1,7 +1,8 @@
 // 游戏规则。这个文件不碰画面，只改存档数据，方便单独测试。
 import { writeDiary } from './diary';
 import { CONFIG, DAY, SEX_IDS, type Sex, MOMENTS, NEIGHBORS, FIND_KINDS, SEASON_FINDS, SEASON_EVENTS, SEASON_IDS, SKINS, DEFAULT_SKIN, SKIN_PRICE, skinSize, ROOM_THEMES, DEFAULT_ROOM, DESTS, FOODS, FRY, FUR_COLORS, GEAR, GOODS, HOUR, MIN, SOUVENIRS, TOOLS, TREAT, type DayTime, type Season, type StatKey, decodeLook, TRAIT_IDS, type Trait, VISITORS, type VisitorWho, SPECIAL_DECOR, DECOR, ZONES } from './config';
-import type { Find, Moment, GameEvent, GameState, Pet, Postcard, RepeatKey, Result, Trip, Visitor, Weather } from './types';
+import { ASSETS } from './assets.config';
+import type { Decor, Find, Moment, GameEvent, GameState, Pet, Postcard, RepeatKey, Result, Trip, Visitor, Weather } from './types';
 
 const T = CONFIG.traits;
 const clamp = (v: number, lo = 0, hi = 100) => Math.max(lo, Math.min(hi, v));
@@ -22,12 +23,13 @@ export function newPet(name: string, spriteId: string, clock: number, trait: Tra
 
 export function newState(now: number): GameState {
   const s: GameState = {
-    v: 6, createdAt: now, seasonStart: now, settings: { notify: true, showSeason: false, seasonMode: 'cycle' }, clock: now, lastReal: now, fish: CONFIG.startFish, slots: 1,
+    v: 7, createdAt: now, seasonStart: now, settings: { notify: true, showSeason: false, seasonMode: 'cycle' }, clock: now, lastReal: now, fish: CONFIG.startFish, slots: 1,
     pets: [], trips: [], postcards: [], souvenirs: {}, inv: { ...CONFIG.startItems }, owned: {},
     pond: Array(CONFIG.pond.slots).fill(null), lastCheckin: '', pendingReturns: [], friends: {}, variants: {}, milestones: [], decor: [], visitors: [], visitorQuota: 0, visitorDay: '', lastVisitorAt: 0, errand: null, display: { souvenirs: [], postcards: [] }, cattree: [null, null, null], hood: { now: null, bonds: {}, day: '', quota: 0, last: 0, stories: [] }, seasonal: { key: '', got: {}, done: false, last: 0, day: '', quota: 0 }, seasonalClaimed: [], moments: [], favor: {}, favorClaimed: [], finds: [], keepsakes: {}, skins: {}, skinsOwned: {}, room: DEFAULT_ROOM, roomsOwned: [],
     dev: { enabled: false, background: false, time: 'auto', season: 'auto', weather: 'auto', speed: 1, growth: 1, decay: { food: 1, mood: 1, clean: 1 } },
   };
   s.pets.push(newPet(CONFIG.startPet.name, `default:${CONFIG.startPet.color}`, now));
+  s.decor.push(...starterDecor());
   return s;
 }
 
@@ -320,7 +322,9 @@ export function claimMilestone(s: GameState, id: string): Result {
 
 // ---------- 房间装饰 ----------
 
-export const decorCount = (s: GameState, kind: string) => s.decor.filter((d) => d.kind === kind).length;
+export const decorCount = (s: GameState, kind: string) => s.decor.filter((d) => d.kind === kind && !d.starter).length;
+/** 开局自带的装饰（原来画在背景里的地毯、挂画、盆栽），摆在原来的位置 */
+export const starterDecor = (): Decor[] => ASSETS.starterDecor.map((d) => ({ id: newId('decor'), kind: d.kind, zone: d.zone, x: d.x, y: d.y, starter: true }));
 export const storedDecor = (s: GameState) => s.decor.filter((d) => d.zone === null);
 export function buyDecor(s: GameState, kind: string): Result {
   const def = DECOR[kind];

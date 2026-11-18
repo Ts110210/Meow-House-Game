@@ -8,8 +8,9 @@
 import { MOMENTS, SEASON_IDS, NEIGHBORS, FIND_KINDS, SEASON_FINDS, CONFIG, DESTS, FOODS, SOUVENIRS, TRAIT_IDS, SEX_IDS, type Sex, VISITORS, ZONES, DECOR, SKINS, DEFAULT_SKIN, ROOM_THEMES, DEFAULT_ROOM, skinSize } from './config';
 import { kv } from './platform/storage';
 import type { GameState, Pet, Postcard, Trip } from './types';
+import { starterDecor } from './sim';
 
-export const SAVE_VERSION = 6;
+export const SAVE_VERSION = 7;
 const MAIN = 'pet-game-save-v1'; // 键名不跟版本走，这样旧存档一直读得到
 const BACKUP = 'pet-game-save-backup';
 const BEFORE_MIGRATION = 'pet-game-save-before-migration';
@@ -43,6 +44,9 @@ const MIGRATIONS: Record<number, (s: Raw) => Raw> = {
   // v5 → v6：设置里多了季节的显示开关和模式；家具皮肤、房间风格、猫爬架的位置；背景里的灯和沙发变成了单独的家具。
   // 新字段的默认值都在 repair() 里补，这里只改版本号
   5: (s) => { s.v = 6; return s; },
+  // v6 → v7：背景里画的地毯、挂画、盆栽拆出来变成开局自带的装饰：旧存档补上一份，摆在原来的位置。
+  // 公猫母猫和成年大小在 repair() 里补
+  6: (s) => { s.decor = [...(Array.isArray(s.decor) ? s.decor : []), ...starterDecor()]; s.v = 7; return s; },
 };
 
 const num = (v: any, d: number, lo = -Infinity, hi = Infinity) => (typeof v === 'number' && isFinite(v) ? Math.max(lo, Math.min(hi, v)) : d);
@@ -115,7 +119,7 @@ export function repair(raw: Raw, now = Date.now()): GameState {
       for (const c of postcards) if (c.season && c.time) { const k = `${c.season}-${c.time}`; const list = (out[c.destId] ??= []); if (!list.includes(k)) list.push(k); }
       return out; })(),
     milestones: arr(raw.milestones).filter((id) => CONFIG.milestones.some((m) => m.id === id)),
-    decor: arr(raw.decor).filter((d) => d && typeof d.id === 'string' && typeof d.kind === 'string' && !!DECOR[d.kind]).map((d) => ({ id: d.id, kind: d.kind, zone: typeof d.zone === 'string' && ZONES.some((z) => z.id === d.zone) ? d.zone : null, x: num(d.x, 0), y: num(d.y, 0) })),
+    decor: arr(raw.decor).filter((d) => d && typeof d.id === 'string' && typeof d.kind === 'string' && !!DECOR[d.kind]).map((d) => ({ id: d.id, kind: d.kind, zone: typeof d.zone === 'string' && ZONES.some((z) => z.id === d.zone) ? d.zone : null, x: num(d.x, 0), y: num(d.y, 0), ...(d.starter ? { starter: true } : {}) })),
     visitors: arr(raw.visitors).filter((v) => v && typeof v.id === 'string' && v.who in VISITORS && ['gift', 'trade', 'errand'].includes(v.kind) && (v.kind !== 'errand' || DESTS.some((d) => d.id === v.destId)))
       .map((v) => ({ id: v.id, who: v.who, kind: v.kind, arrivedAt: num(v.arrivedAt, clock), leaveAt: num(v.leaveAt, clock), ...(typeof v.fish === 'number' ? { fish: v.fish } : {}), ...(typeof v.item === 'string' ? { item: v.item } : {}), ...(typeof v.wants === 'string' ? { wants: v.wants } : {}), ...(typeof v.gives === 'string' ? { gives: v.gives } : {}), ...(typeof v.destId === 'string' ? { destId: v.destId } : {}) })),
     visitorQuota: num(raw.visitorQuota, 0, 0, 2), visitorDay: str(raw.visitorDay, ''), lastVisitorAt: num(raw.lastVisitorAt, 0),

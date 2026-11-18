@@ -6,9 +6,27 @@ import { makeCanvas, Sketch } from './sketch';
 let P: typeof PALETTE = PALETTE;
 const lighten = (hex: string, t: number) => { const n = parseInt(hex.slice(1), 16); const f = (v: number) => Math.round(v + (255 - v) * t); return `rgb(${f(n >> 16)},${f((n >> 8) & 255)},${f(n & 255)})`; };
 
+/** 带白边的小画框，里面画一样东西（和原来背景里的挂画一样） */
+function frame(s: Sketch, x: number, y: number, w: number, h: number, color: string, motif: 'hill' | 'sun' | 'leaf' | 'fish') {
+  s.rect(x, y, w, h, { fill: P.white, stroke: P.woodDark, width: 2.2 });
+  s.rect(x + 7, y + 7, w - 14, h - 14, { fill: lighten(color, 0.35), width: 1.1 });
+  const cx = x + w / 2, by = y + h - 9;
+  if (motif === 'hill') { s.poly([[x + 9, by], [cx - 6, y + h * 0.45], [cx + 8, by - 8], [x + w - 16, y + h * 0.55], [x + w - 9, by]], { fill: color, width: 1.1 }); s.ellipse(x + w - 22, y + 22, 7, 7, { fill: P.mustard, width: 1 }); }
+  if (motif === 'sun') s.ellipse(cx, y + h / 2, w * 0.2, w * 0.2, { fill: color, width: 1.1 });
+  if (motif === 'leaf') { s.curve([[cx, by], [cx + 2, y + 16]], P.woodDark, 1.3); for (let i = 0; i < 4; i++) s.leaf(cx + 1, by - 10 - i * (h - 44) / 4, 16, i % 2 ? -0.5 : Math.PI + 0.5, color); }
+  if (motif === 'fish') { s.ellipse(cx - 3, y + h / 2, w * 0.24, h * 0.14, { fill: color, width: 1.1 }); s.poly([[cx + w * 0.2, y + h / 2], [cx + w * 0.32, y + h / 2 - 9], [cx + w * 0.32, y + h / 2 + 9]], { fill: color, width: 1.1 }); }
+}
+
 const ART: Record<string, { w: number; h: number; draw(s: Sketch): void }> = {
   rug: { w: 300, h: 70, draw(s) { s.ellipse(150, 36, 146, 30, { fill: P.coral }); s.ellipse(150, 36, 112, 21, { fill: '#F1C9B8' }); s.ellipse(150, 36, 70, 12, { fill: P.mustard }); } },
   mat: { w: 150, h: 44, draw(s) { s.ellipse(75, 23, 72, 19, { fill: P.mist }); s.ellipse(75, 23, 44, 11, { fill: '#D6E1EA' }); } },
+  // 开局自带的（原来画在背景里的）：大地毯、中地毯、几幅小画
+  bigrug: { w: 360, h: 66, draw(s) { s.ellipse(180, 33, 176, 30, { fill: P.mist }); s.ellipse(180, 33, 140, 20, { fill: lighten(P.mist, 0.3), width: 1 }); } },
+  midrug: { w: 270, h: 48, draw(s) { s.ellipse(135, 24, 132, 22, { fill: P.sage }); s.ellipse(135, 24, 98, 14, { fill: lighten(P.sage, 0.3), width: 1 }); } },
+  leafpic: { w: 80, h: 98, draw(s) { frame(s, 1, 1, 78, 96, P.sage, 'leaf'); } },
+  sunpic: { w: 82, h: 66, draw(s) { frame(s, 1, 1, 80, 64, P.mustard, 'sun'); } },
+  duopic: { w: 112, h: 158, draw(s) { s.ctx.translate(-63, -199); frame(s, 64, 200, 110, 82, P.sage, 'hill'); frame(s, 80, 300, 70, 56, P.mist, 'fish'); } },
+  triopic: { w: 224, h: 184, draw(s) { s.ctx.translate(-43, -175); frame(s, 44, 176, 130, 104, P.mist, 'hill'); frame(s, 190, 200, 76, 92, P.coral, 'sun'); frame(s, 196, 306, 64, 52, P.mustard, 'fish'); } },
   painting: { w: 150, h: 120, draw(s) {
     s.rect(4, 4, 142, 112, { fill: P.woodDark, r: 4 }); s.rect(14, 14, 122, 92, { fill: '#DCE8EE' });
     s.poly([[14, 106], [50, 52], [78, 84], [100, 62], [136, 106]], { fill: P.sage }); s.ellipse(108, 36, 12, 12, { fill: P.mustard });

@@ -1,6 +1,6 @@
 // 素材加载器。每个素材位按这个顺序找图：页面里上传的 → public/assets/ 里的文件 → 没有（用代码画的占位图）。
 import { ASSETS } from './assets.config';
-import { DESTS, FUR_COLORS, ZONES, DECOR, SKINS, ROOM_THEMES } from './config';
+import { DESTS, FUR_COLORS, SEASON_NAMES, ZONES, DECOR, SKINS, ROOM_THEMES } from './config';
 import { blobs } from './platform/storage';
 import { fileToDataUrl, knockOutWhite, loadImage } from './sprites';
 
@@ -17,7 +17,11 @@ export class AssetStore {
     out.push({ key: 'room.strip', group: '房间背景', name: `长图（盖住左边 ${ASSETS.room.strip.coverZones} 个区域）`, src: ASSETS.room.strip.src, hint: '约 3:1，建议 2160×720', kind: 'room' });
     out.push({ key: 'room.top', group: '房间背景', name: '上面一层（屋顶和天空）', src: ASSETS.room.top, hint: '3456×720，横向 8 等分对着下面 8 个区域', kind: 'room' });
     for (const z of ZONES) out.push({ key: `room.zone.${z.id}`, group: '房间背景', name: `${z.name}（单独一张）`, src: ASSETS.room.zones[z.id], hint: '3:5，建议 432×720 的倍数', kind: 'room' });
-    for (const [k, d] of Object.entries(ASSETS.objects)) out.push({ key: `object.${k}`, group: '家具和物品', name: d.label, src: d.src, hint: `透明背景 PNG，显示高度 ${d.height}`, kind: 'object' });
+    for (const [k, d] of Object.entries(ASSETS.objects)) {
+      // 跟着季节换图的（院子的树）：四季各一张，没有默认那张
+      if (d.seasonal) { for (const [sid, sn] of Object.entries(SEASON_NAMES)) out.push({ key: `object.${k}@${sid}`, group: '家具和物品', name: `${d.label}（${sn}）`, src: d.src.replace(/\.png$/, `-${sid}.png`), hint: `透明背景 PNG，显示高度 ${d.height}`, kind: 'object' }); continue; }
+      out.push({ key: `object.${k}`, group: '家具和物品', name: d.label, src: d.src, hint: `透明背景 PNG，显示高度 ${d.height}`, kind: 'object' });
+    }
     for (const [k, src] of Object.entries(ASSETS.decor)) out.push({ key: `decor.${k}`, group: '装饰', name: DECOR[k]?.name ?? k, src, hint: `透明背景 PNG，底边贴地，显示高度 ${DECOR[k]?.height ?? 80}`, kind: 'object' });
     for (const [k, d] of Object.entries(ASSETS.props)) out.push({ key: `prop.${k}`, group: '吃饭时摆在地上的', name: d.label, src: d.src, hint: `透明背景 PNG，底边贴地，显示高度 ${d.height}`, kind: 'object' });
     for (const [k, src] of Object.entries(ASSETS.pets)) out.push({ key: `pet.${k}`, group: '默认宠物精灵图', name: FUR_COLORS[k]?.name ?? k, src, hint: '4 列，每格 256×256，每行一个动作', kind: 'pet' });
@@ -30,7 +34,7 @@ export class AssetStore {
       for (const z of ZONES) out.push({ key: `room.zone.${z.id}@${r.id}`, group: `房间风格 · ${r.name}`, name: `${z.name}（单独一张）`, src: withId(ASSETS.room.zones[z.id], r.id), hint: '3:5，和默认的那张一样大', kind: 'room' });
     }
     for (const k of SKINS.slice(1)) {
-      for (const [o, d] of Object.entries(ASSETS.objects)) out.push({ key: `object.${o}@${k.id}`, group: `皮肤 · ${k.name}`, name: d.label, src: withId(d.src, k.id), hint: '和默认款一样的大小和轮廓，底边贴地', kind: 'object' });
+      for (const [o, d] of Object.entries(ASSETS.objects)) if (!d.seasonal) out.push({ key: `object.${o}@${k.id}`, group: `皮肤 · ${k.name}`, name: d.label, src: withId(d.src, k.id), hint: '和默认款一样的大小和轮廓，底边贴地', kind: 'object' });
       for (const [o, src] of Object.entries(ASSETS.decor)) out.push({ key: `decor.${o}@${k.id}`, group: `皮肤 · ${k.name}`, name: DECOR[o]?.name ?? o, src: withId(src, k.id), hint: '和默认款一样的大小和轮廓，底边贴地', kind: 'object' });
     }
     for (const d of DESTS) out.push({ key: `postcard.${d.id}`, group: '明信片背景', name: d.name, src: ASSETS.postcards[d.id], hint: '3:2，建议 1200×800', kind: 'postcard' });

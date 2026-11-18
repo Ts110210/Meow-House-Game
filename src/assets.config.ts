@@ -32,6 +32,12 @@ export interface ObjectDef {
   light?: [number, number];
   /** 吃饭时嘴要对准的那一块（0–1，相对图片：左、上、右、下）。饭碗 = 碗口，自动喂食机 = 出粮口。和图片的范围框不是一回事 */
   mouth?: [number, number, number, number];
+  /** 挂在墙上的固定家具（窗户、置物架、镜子、毛巾架、挂钩）：排在地上所有东西的后面 */
+  wall?: boolean;
+  /** 窗户的玻璃（0–1，相对图片：左、上、右、下）。图片里这一块要挖空（透明），程序在后面画窗外的天空、雨丝 */
+  glass?: [number, number, number, number];
+  /** 跟着季节换图（院子的树）：图片文件名 = 默认名加 -spring / -summer / -autumn / -winter，没有皮肤 */
+  seasonal?: boolean;
 }
 
 /** 吃饭时临时摆在地上的东西（罐头、便当，和吃完的空罐、空盒）。height = 显示多高；mouth = 嘴要对准的点（0–1，相对图片） */
@@ -101,6 +107,19 @@ export const ASSETS = {
     basket: { src: 'objects/basket.png', zone: 'bath', x: 347, y: 637, height: 96, label: '洗衣篮', needsOwned: 'basket', frontFrom: 0.3 },
     heater: { src: 'objects/heater.png', zone: 'bedroom', x: 238, y: 656, height: 129, label: '小暖炉', needsOwned: 'heater', light: [0.5, 0.6] },
     autoball: { src: 'objects/autoball.png', zone: 'shelf', x: 161, y: 681, height: 34, label: '自动逗猫球', needsOwned: 'autoball' },
+    // ---- 从背景里拆出来的固定家具（2026-11-18）：背景只剩墙、地板和窗外的远景 ----
+    hooks: { src: 'objects/hooks.png', zone: 'door', x: 368, y: 382, height: 116, label: '挂钩', wall: true },
+    umbrella: { src: 'objects/umbrella.png', zone: 'door', x: 64, y: 588, height: 136, label: '伞桶' },
+    kitchenWindow: { src: 'objects/kitchenWindow.png', zone: 'kitchen', x: 122, y: 312, height: 156, label: '厨房的窗户', wall: true, glass: [0.096, 0.115, 0.894, 0.91] },
+    kitchenShelf: { src: 'objects/kitchenShelf.png', zone: 'kitchen', x: 322, y: 342, height: 160, label: '置物架', wall: true },
+    mirror: { src: 'objects/mirror.png', zone: 'bath', x: 112, y: 288, height: 124, label: '镜子', wall: true },
+    bathShelf: { src: 'objects/bathShelf.png', zone: 'bath', x: 258, y: 258, height: 64, label: '肥皂架', wall: true },
+    towel: { src: 'objects/towel.png', zone: 'bath', x: 370, y: 264, height: 92, label: '毛巾架', wall: true },
+    bedroomWindow: { src: 'objects/bedroomWindow.png', zone: 'bedroom', x: 321, y: 318, height: 162, label: '卧室的窗户', wall: true, glass: [0.101, 0.111, 0.888, 0.914] },
+    shelfRack: { src: 'objects/shelfRack.png', zone: 'shelf', x: 321, y: 446, height: 76, label: '装饰架', wall: true },
+    chair: { src: 'objects/chair.png', zone: 'balcony', x: 286, y: 580, height: 132, label: '阳台的椅子' },
+    tree: { src: 'objects/tree.png', zone: 'garden', x: 92, y: 552, height: 356, label: '大树', seasonal: true },
+    fence: { src: 'objects/fence.png', zone: 'garden', x: 216, y: 560, height: 82, label: '栅栏' },
     // 木梯子：固定家具，从阳台的地上一直搭到屋檐（顶端伸出天花板，进到上面那一层）。猫顺着它上下屋顶
     ladder: { src: 'objects/ladder.png', zone: 'balcony', x: 368, y: 598, height: 632, label: '木梯子', partOfBackground: true },
     tunnel: { src: 'objects/tunnel.png', zone: 'balcony', x: 156, y: 666, height: 80, label: '猫隧道', needsOwned: 'tunnel', frontFrom: 0 },
@@ -119,19 +138,25 @@ export const ASSETS = {
 
   // ---------- 不是家具的落脚点：窗台。猫会跳上去看外面 ----------
   // x = 离所在区域左边多远（按 432 宽的区域算），y = 窗台的高度（按地板线在 560 算）。换了背景图、窗户位置变了，改这里。
+  // 窗台已经跟着窗户（固定家具 kitchenWindow、bedroomWindow）走，不在这里了
   perches: {
-    kitchenWindow: { zone: 'kitchen', x: 121, y: 306, label: '厨房窗台' },
-    bedroomWindow: { zone: 'bedroom', x: 320, y: 312, label: '卧室窗台' },
     // 院子里扑蝴蝶的地方（站在地上，不用跳）。屋顶上看星星的位置在上面的 roof.spots
     butterfly: { zone: 'garden', x: 190, y: 600, label: '扑蝴蝶' },
   } as Record<string, { zone: ZoneId; x: number; y: number; label: string }>,
 
-  // ---------- 屋里的窗户：下雨时在这几块玻璃上画雨丝 ----------
-  // x、y = 玻璃左上角，w、h = 玻璃的大小（按 432 宽的区域、地板线在 560 算）。换了背景图、窗户位置变了，改这里。
-  windows: [
-    { zone: 'kitchen', x: 46, y: 174, w: 150, h: 124 },
-    { zone: 'bedroom', x: 250, y: 174, w: 140, h: 130 },
-  ] as { zone: ZoneId; x: number; y: number; w: number; h: number }[],
+  // 下雨时画雨丝的窗玻璃：现在用窗户（固定家具）的 glass
+
+  // ---------- 开局自带的装饰：原来画在背景里的地毯、挂画、盆栽，拆出来变成可以挪、可以收起来的装饰 ----------
+  // x = 中心离区域左边多远，y = 底边（和自己摆的装饰一样）。新存档一开始就有；旧存档读档时补上一次
+  starterDecor: [
+    { kind: 'leafpic', zone: 'door', x: 67, y: 332 }, { kind: 'bigrug', zone: 'door', x: 216, y: 663 },
+    { kind: 'mat', zone: 'kitchen', x: 330, y: 668 },
+    { kind: 'triopic', zone: 'living', x: 155, y: 358 }, { kind: 'bigrug', zone: 'living', x: 210, y: 679 },
+    { kind: 'midrug', zone: 'bath', x: 216, y: 684 },
+    { kind: 'duopic', zone: 'bedroom', x: 119, y: 356 }, { kind: 'midrug', zone: 'bedroom', x: 250, y: 680 },
+    { kind: 'sunpic', zone: 'shelf', x: 84, y: 234 }, { kind: 'plant', zone: 'shelf', x: 318, y: 582 }, { kind: 'midrug', zone: 'shelf', x: 320, y: 676 },
+    { kind: 'plant', zone: 'balcony', x: 62, y: 578 }, { kind: 'plant', zone: 'balcony', x: 118, y: 582 },
+  ] as { kind: string; zone: ZoneId; x: number; y: number }[],
 
   // ---------- 默认宠物的精灵图（上传规范：4 列，每格 256×256，每行一个动作） ----------
   pets: {
@@ -145,6 +170,7 @@ export const ASSETS = {
     cushion: 'decor/cushion.png', mat: 'decor/mat.png', poster: 'decor/poster.png', plant: 'decor/plant.png', rug: 'decor/rug.png', painting: 'decor/painting.png',
     vase: 'decor/vase.png', jar: 'decor/jar.png', wreath: 'decor/wreath.png', snowman: 'decor/snowman.png',
     bell: 'decor/bell.png', lantern: 'decor/lantern.png', parcel: 'decor/parcel.png',
+    bigrug: 'decor/bigrug.png', midrug: 'decor/midrug.png', leafpic: 'decor/leafpic.png', sunpic: 'decor/sunpic.png', duopic: 'decor/duopic.png', triopic: 'decor/triopic.png',
     lamp: 'decor/lamp.png', sidelamp: 'decor/sidelamp.png', nightlight: 'decor/nightlight.png', bigplant: 'decor/bigplant.png', shelf: 'decor/shelf.png', globe: 'decor/globe.png', goldframe: 'decor/goldframe.png', trophy: 'decor/trophy.png',
   } as Record<string, string>,
   postcards: {

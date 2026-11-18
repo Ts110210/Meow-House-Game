@@ -19,7 +19,9 @@
 
 `door.png` `pendantDoor.png` `counter.png` `bowl.png` `feeder.png` `sofa.png` `cattree.png` `scratcher.png` `ball.png` `tub.png`
 `nightstand.png` `bedlamp.png` `bed.png` `cabinet.png` `album.png` `pendantShelf.png` `pond.png`
-`box.png` `basket.png` `heater.png` `autoball.png` `tunnel.png` `catgrass.png` `ladder.png`（木梯子，固定家具，很细很长：从阳台地面搭到屋檐）
+`box.png` `basket.png` `heater.png` `autoball.png` `tunnel.png` `catgrass.png` `ladder.png`
+`hooks.png` `umbrella.png` `kitchenWindow.png` `bedroomWindow.png` `kitchenShelf.png` `mirror.png` `bathShelf.png` `towel.png` `shelfRack.png` `chair.png` `fence.png`（从背景里拆出来的固定家具；窗户的玻璃要挖空）
+`tree-spring.png` `tree-summer.png` `tree-autumn.png` `tree-winter.png`（院子的大树，四季各一张，没有皮肤）（木梯子，固定家具，很细很长：从阳台地面搭到屋檐）
 
 每件的显示高度、特别的要求（坐垫高度、遮挡线、发光点）见 `docs/素材模板.md` 第 2 节。
 门、橱柜、沙发、浴缸、床头柜、床、收藏柜、相册墙、鱼塘是固定家具：所在区域换了背景图、而它们没有自己的图片时，占位图自动隐藏，只保留点击区域。
@@ -31,6 +33,7 @@
 
 ## decor/ 房间装饰（透明背景 PNG）
 
+`bigrug.png` `midrug.png` `leafpic.png` `sunpic.png` `duopic.png` `triopic.png`（开局自带的地毯和挂画）
 `cushion.png` `mat.png` `poster.png` `plant.png` `rug.png` `painting.png` `lamp.png` `sidelamp.png` `nightlight.png` `bigplant.png` `shelf.png`
 奖励（商店不卖）：`globe.png` `goldframe.png` `trophy.png` `bell.png` `lantern.png` `parcel.png` `vase.png` `jar.png` `wreath.png` `snowman.png`
 

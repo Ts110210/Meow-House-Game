@@ -8,7 +8,8 @@ import { buildExport, migrate, parseImport, repair, SAVE_VERSION } from '../src/
 let failed = 0;
 function check(name: string, ok: boolean, detail = '') { console.log(`${ok ? '  通过' : '✗ 失败'}  ${name}${ok ? '' : '  ' + detail}`); if (!ok) failed++; }
 /** 新存档，第一只宠物固定成「爱冒险」（它不影响状态下降），这样每次跑结果都一样 */
-const blank = (now = T0) => { const s = sim.newState(now); s.pets[0].trait = 'adventurer'; return s; };
+// 开局自带的装饰清掉，下面算装饰件数的测试从零开始（开局自带的另外测）
+const blank = (now = T0) => { const s = sim.newState(now); s.pets[0].trait = 'adventurer'; s.decor = []; return s; };
 const near = (a: number, b: number, eps = 1e-6) => Math.abs(a - b) < eps;
 const T0 = new Date(2026, 0, 1, 9, 0, 0).getTime();
 
@@ -210,6 +211,19 @@ console.log('图鉴和里程碑');
   check('旧存档：相册里已有的明信片会补记进图鉴', repair(old, T0).variants.bali?.[0] === 'winter-night');
 }
 
+console.log('开局自带的装饰');
+{
+  const s = sim.newState(T0); const st = s.decor.filter((d) => d.starter);
+  check('新存档一开始就摆好了地毯、挂画、盆栽（原来画在背景里的那些）', st.length === ASSETS.starterDecor.length && st.every((d) => !!DECOR[d.kind] && !!d.zone));
+  check('门口和客厅是大地毯，浴室、卧室、收藏柜是中地毯，厨房是小圆垫', ['door', 'living'].every((z) => st.some((d) => d.zone === z && d.kind === 'bigrug')) && ['bath', 'bedroom', 'shelf'].every((z) => st.some((d) => d.zone === z && d.kind === 'midrug')) && st.some((d) => d.zone === 'kitchen' && d.kind === 'mat'));
+  s.fish = 10000; const n = sim.decorCount(s, 'plant');
+  check('开局自带的不算在「最多买几件」里', n === 0 && [1, 2, 3, 4].every(() => sim.buyDecor(s, 'plant').ok) && !sim.buyDecor(s, 'plant').ok);
+  check('大地毯、中地毯、几幅小画商店里也有卖', ['bigrug', 'midrug', 'leafpic', 'sunpic', 'duopic', 'triopic'].every((k) => DECOR[k] && !DECOR[k].special && DECOR[k].price > 0));
+  const old = JSON.parse(JSON.stringify(sim.newState(T0))); old.v = 6; old.decor = [{ id: 'd1', kind: 'lamp', zone: 'living', x: 300, y: 640 }];
+  const m1 = migrate(old, T0); const r = m1.ok ? m1.state : null; const m2 = r ? migrate(JSON.parse(JSON.stringify(r)), T0) : null;
+  check('旧存档读档时补上一份开局自带的，原来摆的不动；再读一次不会重复补', !!r && r.decor.length === 1 + ASSETS.starterDecor.length && r.decor[0].kind === 'lamp' && r.decor.filter((d) => d.starter).length === ASSETS.starterDecor.length && !!m2?.ok && m2.state.decor.length === r.decor.length);
+}
+
 console.log('房间装饰');
 {
   const s = blank(); s.fish = 1000;
@@ -263,7 +277,7 @@ console.log('家具、皮肤和房间风格');
   check('每件「家里的东西」要么是场景里的家具，要么是逗猫棒这样的道具', GEAR.every((g) => g.id === 'wand' || ASSETS.objects[g.id]?.needsOwned === g.id));
   check('背景里的灯都变成了要买的东西：两盏吊灯、床头灯会发光，落地灯是能摆的装饰', ['pendantDoor', 'pendantShelf', 'bedlamp'].every((k) => !!ASSETS.objects[k].light && GEAR.some((g) => g.id === k)) && ['lamp', 'sidelamp'].every((k) => DECOR[k].layer === 'stand' && !!DECOR[k].light) && !ASSETS.objects.lamp);
   check('有 5 套皮肤，第一套是默认款', SKINS.length === 5 && SKINS[0].id === 'wood' && Object.keys(SKINS[0].palette).length === 0);
-  check('所有固定家具、「家里的东西」里的家具和所有装饰都有皮肤，名字不冲突', Object.keys(ASSETS.objects).every((k) => !!SKIN_SIZE[k]) && Object.keys(DECOR).every((k) => skinSize(k) !== null) && new Set(SKINNABLE).size === SKINNABLE.length);
+  check('所有固定家具（院子的树跟着季节换，不算）、「家里的东西」里的家具和所有装饰都有皮肤，名字不冲突', Object.entries(ASSETS.objects).every(([k, d]) => d.seasonal ? !SKIN_SIZE[k] : !!SKIN_SIZE[k]) && Object.keys(DECOR).every((k) => skinSize(k) !== null) && new Set(SKINNABLE).size === SKINNABLE.length);
   check('每款皮肤、每张图片都配了路径', Object.keys(ASSETS.objects).every((k) => !!ASSETS.objects[k].src) && Object.keys(DECOR).every((k) => !!ASSETS.decor[k]));
   const s = blank(); s.fish = 200;
   check('默认款不用买；固定家具一开始就能换皮肤', sim.skinOf(s, 'bed') === 'wood' && sim.ownsSkin(s, 'bed', 'wood') && !sim.ownsSkin(s, 'bed', 'mint'));
@@ -393,7 +407,8 @@ console.log('季节活动、皮肤的其他来源、瞬间相册');
 console.log('新场景和新家具');
 {
   check('一共 8 个区域，最后一个是院子；屋顶不是区域，是上面一层，有自己的图片路径', ZONES.length === 8 && ZONES[7].id === 'garden' && !ZONES.some((z) => (z.id as string) === 'roof') && !!ASSETS.room.top);
-  check('窗台、扑蝴蝶的位置都落在存在的区域里', Object.values(ASSETS.perches).every((p) => ZONES.some((z) => z.id === p.zone)) && ['kitchenWindow', 'bedroomWindow', 'butterfly'].every((k) => !!ASSETS.perches[k]));
+  check('扑蝴蝶的位置落在存在的区域里；窗台跟着窗户（固定家具）走，窗户有玻璃', Object.values(ASSETS.perches).every((p) => ZONES.some((z) => z.id === p.zone)) && !!ASSETS.perches.butterfly && ['kitchenWindow', 'bedroomWindow'].every((k) => !ASSETS.perches[k] && !!ASSETS.objects[k]?.glass && ASSETS.objects[k].wall));
+  check('从背景里拆出来的固定家具都在，墙上的标了 wall', ['hooks', 'kitchenShelf', 'mirror', 'bathShelf', 'towel', 'shelfRack'].every((k) => ASSETS.objects[k]?.wall && !ASSETS.objects[k].needsOwned) && ['umbrella', 'chair', 'tree', 'fence'].every((k) => !!ASSETS.objects[k] && !ASSETS.objects[k].wall) && !!ASSETS.objects.tree.seasonal);
   {
     const R = ASSETS.roof, houseW = 7 * CONFIG.room.zoneWidth; const w = R.walk, o = R.outline;
     check('屋顶盖住门口到阳台（右屋檐在阳台右边），猫走的线从左到右、在屋顶轮廓里面', o[0][0] <= 0 && o[3][0] >= houseW && w.every((p, i) => i === 0 || p[0] > w[i - 1][0]) && w[0][0] >= o[0][0] && w[w.length - 1][0] <= o[3][0]);

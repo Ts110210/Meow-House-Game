@@ -5,7 +5,7 @@ import 'pixi.js/unsafe-eval';
 import { Application, Circle, Container, Graphics, Rectangle, Sprite, Text, Texture, type FederatedPointerEvent } from 'pixi.js';
 import { ASSETS, type ObjectDef } from './assets.config';
 import type { AssetStore } from './assets';
-import { drawObject, drawTop, drawZone, groundColor, objectAspect, roomPalette, skyFor, type Env } from './art/room';
+import { drawObject, drawTop, drawWindowView, drawZone, groundColor, objectAspect, roomPalette, skyFor, type Env } from './art/room';
 import { renderPostcard } from './art/postcard';
 import { CONFIG, DECOR, PALETTE, SOUVENIRS, SPRITE, VISITORS, ZONES, type ActionName , NEIGHBORS, FIND_KINDS, SEASON_FINDS } from './config';
 import { drawDecor } from './art/decor';
@@ -14,7 +14,7 @@ import { BASE_FY, BASE_ZW, geo, recompute } from './geo';
 import * as sim from './sim';
 import { frameIndex, rowFor } from './sprites';
 
-export type ObjectKind = 'neighbor' | 'find' | 'ladder' | 'door' | 'bowl' | 'tub' | 'bed' | 'cabinet' | 'album' | 'pond' | 'scratcher' | 'feeder' | 'ball' | 'sofa' | 'counter' | 'nightstand' | 'bedlamp' | 'pendantDoor' | 'pendantShelf' | 'cattree' | 'npc' | 'visitor';
+export type ObjectKind = 'neighbor' | 'find' | 'ladder' | 'hooks' | 'umbrella' | 'kitchenWindow' | 'bedroomWindow' | 'kitchenShelf' | 'mirror' | 'bathShelf' | 'towel' | 'shelfRack' | 'chair' | 'tree' | 'fence' | 'door' | 'bowl' | 'tub' | 'bed' | 'cabinet' | 'album' | 'pond' | 'scratcher' | 'feeder' | 'ball' | 'sofa' | 'counter' | 'nightstand' | 'bedlamp' | 'pendantDoor' | 'pendantShelf' | 'cattree' | 'npc' | 'visitor';
 
 /** 家具的位置：每件家具能同时容纳几只、各自在哪、脸朝哪边。
  *  有位置才过去，位置满了就不去挤，所以不会重叠，也不会互相打断。
@@ -33,8 +33,9 @@ const STATIONS: Record<string, Station[]> = {
   bed: [{ dx: -62, dir: 1, perch: [-0.22, 0.5] }, { dx: 20, dir: 1, perch: [0.06, 0.5] }, { dx: 98, dir: -1, perch: [0.34, 0.5] }], // 床上能睡三只
   sofa: [{ dx: -64, dir: 1, perch: [-0.25, 0.33] }, { dx: 36, dir: -1, perch: [0.13, 0.33] }], // 沙发上两只
   cattree: [{ dx: -40, dir: 1, perch: [-0.24, 0.862] }, { dx: 46, dir: -1, perch: [0.25, 0.547] }, { dx: -30, dir: 1, perch: [-0.2, 0.232] }], // 猫爬架：顶层、中层、底层
-  kitchenWindow: [{ dx: 0, dir: 1, perch: [0, 0] }], // 窗台：一次一只，看外面
-  bedroomWindow: [{ dx: 0, dir: -1, perch: [0, 0] }],
+  kitchenWindow: [{ dx: 0, dir: 1, perch: [0, 0.05] }], // 窗台（窗户图片最下面那一条）：一次一只，看外面
+  bedroomWindow: [{ dx: 0, dir: -1, perch: [0, 0.05] }],
+  chair: [{ dx: -70, dir: 1, perch: [-0.05, 0.59] }], // 阳台的小椅子：一次一只，趴着睡或者蹲着看外面
   scratcher: [{ dx: -50, dir: 1, at: -0.03 }], // 猫抓板一次一只
   ball: [{ dx: -46, dir: 1, at: -0.1 }, { dx: 46, dir: -1, at: -0.1 }], // 玩具球可以两只一起玩
   box: [{ dx: -78, dir: 1, perch: [0, 0.05], inside: true }], // 纸箱里一只，只露出脑袋
@@ -51,7 +52,7 @@ const STATIONS: Record<string, Station[]> = {
 /** 猫会自己跳上去待着的地方（猫爬架另算：可以指定谁待在哪一层） */
 /** 露天的区域：下雨时宠物不去 */
 const OUTDOOR: string[] = ['balcony', 'garden'];
-const LOUNGE = ['sofa', 'bed', 'kitchenWindow', 'bedroomWindow', 'cattree', 'box', 'basket', 'tunnel', 'counter', 'cabinet'];
+const LOUNGE = ['sofa', 'bed', 'kitchenWindow', 'bedroomWindow', 'chair', 'cattree', 'box', 'basket', 'tunnel', 'counter', 'cabinet'];
 /** 钻进去只露出脑袋的那几样：在里面只会待着或者睡，不舔毛 */
 const HIDEY = ['box', 'basket', 'tunnel'];
 /** 跳上、跳下家具的过渡动画要多久（毫秒） */
@@ -147,6 +148,8 @@ export class Scene {
   private textures: Texture[] = [];
   private weather = new Graphics(); private shade = new Graphics(); private frontLayer = new Container();
   /** 能钻进去的家具的「前面一层」：有宠物在里面时才显示，盖在宠物身上 */
+  /** 窗外的风景：每扇窗户后面一张，win = 窗户本身（拖动调整时跟着走） */
+  private windowViews: { box: Container; sp: Sprite; rain: Graphics; win: Sprite; glass: [number, number, number, number]; sig: string }[] = [];
   private fronts = new Map<string, Sprite>(); private npc: Sprite | null = null; private visitorSprites = new Map<string, Sprite>(); private fishes: Graphics[] = [];
   private floats: { t: Text; t0: number }[] = [];
   private follow: { id: string; until: number } | null = null;
@@ -345,18 +348,19 @@ export class Scene {
 
   private rebuildObjects() {
     const s = this.game.state;
-    const sig = JSON.stringify([this.editMode, this.decorMode, s.decor, s.owned, s.skins, s.finds.map((f) => f.id), sim.shownSouvenirs(s), sim.shownPostcards(s).map((c) => c.id), s.pets.map((p) => p.spriteId), sim.lostPets(s).length, s.pets.some((p) => p.searchUntil !== null), s.visitors.map((v) => v.id), s.pond.map((p, i) => (p == null ? 0 : sim.pondReady(s, i) ? 2 : 1))]);
+    const sig = JSON.stringify([this.editMode, this.decorMode, sim.season(s), s.decor, s.owned, s.skins, s.finds.map((f) => f.id), sim.shownSouvenirs(s), sim.shownPostcards(s).map((c) => c.id), s.pets.map((p) => p.spriteId), sim.lostPets(s).length, s.pets.some((p) => p.searchUntil !== null), s.visitors.map((v) => v.id), s.pond.map((p, i) => (p == null ? 0 : sim.pondReady(s, i) ? 2 : 1))]);
     if (sig === this.objSig) return;
     this.objSig = sig;
     this.clearObjects(); this.objSprites.clear(); this.editBoxes.clear(); this.findSprites = [];
-    this.fronts.clear(); this.npc = null; this.visitorSprites.clear(); this.decorSprites.clear(); this.fishes = [];
+    this.fronts.clear(); this.windowViews = []; this.npc = null; this.visitorSprites.clear(); this.decorSprites.clear(); this.fishes = [];
 
     // 装饰：墙上的和地上铺的永远在最后面；摆在地上的和家具、宠物一起按脚底的位置排前后
     if (!this.editMode) s.decor.forEach((d, i) => { const sp = this.makeDecor(d); if (!sp) return; const layer = DECOR[d.kind].layer; this.addSorted(sp, layer === 'wall' ? -3000 + i : layer === 'floor' ? -2000 + sp.y / 10 : sp.y); });
     for (const [kind, def] of Object.entries(ASSETS.objects) as [ObjectKind, ObjectDef][]) {
       if (def.needsOwned && !s.owned[def.needsOwned] && !this.editMode) continue;
       const pos = objPos(def); const zi = pos.zi;
-      const skin = sim.skinOf(s, kind); const img = this.assets.getSkinned(`object.${kind}`, skin);
+      // 院子的大树跟着季节换图（图片名 tree-spring.png 这样），别的按皮肤
+      const skin = def.seasonal ? sim.season(s) : sim.skinOf(s, kind); const img = this.assets.getSkinned(`object.${kind}`, skin);
       // 背景图里已经画了的东西（门、浴缸、床、收藏柜、相册墙、鱼塘）：没有自己的图片时只留点击区域
       const hidden = !img && !!def.partOfBackground && this.zoneHasImage(zi);
       const artKey = `${kind}@${skin}`; if (!this.objArt.has(artKey)) this.objArt.set(artKey, drawObject(kind, skin));
@@ -377,6 +381,8 @@ export class Scene {
       }
       if (kind === 'ball' && this.ballX !== null && !this.editMode) { sp.x = this.ballX; sp.y = this.ballY ?? sp.y; }
       this.addSorted(sp, pos.y); this.objSprites.set(kind, sp);
+      // 窗户：玻璃是透明的，后面放一张窗外的风景（跟着昼夜、天气重画）
+      if (def.glass) { const box = new Container(); const v = new Sprite(Texture.EMPTY); const rain = new Graphics(); box.addChild(v, rain); box.eventMode = 'none'; this.addSorted(box, pos.y - 0.5); this.windowViews.push({ box, sp: v, rain, win: sp, glass: def.glass, sig: '' }); }
       if (this.editMode) continue;
 
       const left = sp.x - sp.width / 2, top = sp.y - sp.height;
@@ -806,7 +812,7 @@ export class Scene {
   /** 这只宠物此刻在做什么（给背屏的「小剧场」用）。不在家就是 null */
   doingOf(petId: string): { action: ActionName; text: string } | null {
     const a = this.actors.get(petId); if (!a) return null;
-    const where: Record<string, string> = { bed: '床上', sofa: '沙发上', cattree: '猫爬架上', kitchenWindow: '厨房的窗台上', bedroomWindow: '卧室的窗台上', box: '纸箱里', basket: '洗衣篮里', tunnel: '隧道里', counter: '橱柜台面上', cabinet: '收藏柜顶上', tub: '浴缸里' };
+    const where: Record<string, string> = { bed: '床上', sofa: '沙发上', cattree: '猫爬架上', kitchenWindow: '厨房的窗台上', bedroomWindow: '卧室的窗台上', chair: '阳台的椅子上', box: '纸箱里', basket: '洗衣篮里', tunnel: '隧道里', counter: '橱柜台面上', cabinet: '收藏柜顶上', tub: '浴缸里' };
     const act = a.inter?.action ?? (a.hop ? 'jump' : a.action); const at = a.perch ? where[a.perch.kind] ?? '' : '';
     const text = a.climb ? (a.climb.up ? '在爬梯子上屋顶' : '在爬梯子下来') : a.roof ? (act === 'sleep' ? '在屋顶上睡觉' : act === 'sit' ? '在屋顶上看星星' : act === 'walk' ? '在屋顶上走' : '在屋顶上') : a.sulkUntil > this.now ? '在闹脾气' : act === 'sleep' ? `在${at || '地上'}睡觉` : act === 'fish' ? (a.station === 'pond' ? '在鱼塘边捞鱼' : '在院子里扑蝴蝶') : act === 'scratch' ? '在抓猫抓板' : act === 'eat' ? (a.station === 'catgrass' ? '在啃猫草' : '在吃饭') : act === 'bath' ? '在泡澡'
       : act === 'groom' ? '在和同伴蹭来蹭去' : act === 'play' ? '在玩' : act === 'lick' ? '在舔毛' : act === 'beg' ? '站起来讨吃的' : act === 'yawn' ? '打了个哈欠' : act === 'stretch' ? '在伸懒腰' : act === 'jump' ? '跳了一下'
@@ -1138,7 +1144,7 @@ export class Scene {
         const pool = rain ? inside : trait === 'adventurer' && Math.random() < 0.5 && out.length ? out : ZONES.map((_, i) => i);
         const z = Math.random() < (trait === 'adventurer' ? 0.2 : 0.45) ? 2 : pool[Math.floor(Math.random() * pool.length)];
         this.go(a, zx(z) + zw(z) * (0.14 + Math.random() * 0.72), depthMin() + Math.random() * (depthMax() - depthMin()));
-      } else if (r < 0.6 && [...LOUNGE].sort(() => Math.random() - 0.5).some((k) => lounge(k, k.endsWith('Window') ? 'sit' : HIDEY.includes(k) ? (Math.random() < 0.5 ? 'idle' : 'sleep') : k === 'counter' || k === 'cabinet' ? (Math.random() < 0.5 ? 'sit' : 'idle') : rest(), between(D.perch)))) { /* 跳到沙发、床、窗台、猫爬架、台面、柜顶上，或者钻进纸箱、洗衣篮、隧道里待一会儿 */ }
+      } else if (r < 0.6 && LOUNGE.filter((k) => !(rain && k === 'chair')).sort(() => Math.random() - 0.5).some((k) => lounge(k, k.endsWith('Window') ? 'sit' : HIDEY.includes(k) ? (Math.random() < 0.5 ? 'idle' : 'sleep') : k === 'counter' || k === 'cabinet' ? (Math.random() < 0.5 ? 'sit' : 'idle') : rest(), between(D.perch)))) { /* 跳到沙发、床、窗台、猫爬架、台面、柜顶上，或者钻进纸箱、洗衣篮、隧道里待一会儿 */ }
       else if (r < 0.68) this.setAction(a, 'sleep', 5000 + Math.random() * 4000);
       else this.setAction(a, 'idle', 2000 + Math.random() * 3500);
     }
@@ -1233,6 +1239,26 @@ export class Scene {
   }
 
   /** 室外（阳台和院子）飘的东西：春天花瓣、秋天落叶、冬天雪；夏天的夜里有萤火虫 */
+  /** 窗外的风景摆在玻璃后面：窗户挪了跟着挪，昼夜、天气、季节变了重画 */
+  private syncWindowViews(env: Env) {
+    for (const v of this.windowViews) {
+      const w = v.win; const [a, b, c, d] = v.glass; const gw = w.width * (c - a), gh = w.height * (d - b);
+      v.box.position.set(w.x - w.width / 2 + a * w.width, w.y - w.height + b * w.height);
+      const sig = `${this.envKey(env)}|${Math.round(gw)}x${Math.round(gh)}`;
+      if (sig !== v.sig) { v.sig = sig; const old = v.sp.texture; v.sp.texture = this.tex(drawWindowView(gw, gh, env, Math.round(w.x))); if (old !== Texture.EMPTY) { this.textures = this.textures.filter((t) => t !== old); old.destroy(true); } }
+      v.sp.width = gw; v.sp.height = gh; v.box.visible = w.visible && w.alpha > 0;
+      // 下雨（冬天是下雪，不画雨丝）：玻璃上的雨丝
+      const g = v.rain.clear();
+      if (env.weather === 'rain' && env.season !== 'winter') {
+        const t = this.now / 1000;
+        for (let i = 0; i < 12; i++) {
+          const x = (i * 37.1 + t * 14) % gw, y = (i * 29.3 + t * (190 + (i % 4) * 30)) % Math.max(1, gh - 16);
+          g.moveTo(x, y).lineTo(x - 2, y + 13).stroke({ width: 1.4, color: 0xe6f0f6, alpha: 0.8 });
+        }
+      }
+    }
+  }
+
   private drawWeather(env: Env) {
     const g = this.weather.clear();
     const first = zoneIndex('balcony'); if (first < 0) return;
@@ -1248,13 +1274,7 @@ export class Scene {
         if (!open(x, y)) continue;
         g.moveTo(x, y).lineTo(x - 5, y + 20).stroke({ width: 1.6, color: 0xdfeaf2, alpha: 0.75 });
       }
-      for (const win of ASSETS.windows) {
-        const zi = zoneIndex(win.zone); if (zi < 0 || !this.zoneSprites[zi]) continue; const k = zw(zi) / BASE_ZW, oy = geo.floorY - BASE_FY;
-        for (let i = 0; i < 12; i++) {
-          const x = zx(zi) + (win.x + ((i * 37.1 + t * 14) % win.w)) * k, y = oy + win.y + ((i * 29.3 + t * (190 + (i % 4) * 30)) % (win.h - 16));
-          g.moveTo(x, y).lineTo(x - 2, y + 13).stroke({ width: 1.4, color: 0xe6f0f6, alpha: 0.8 });
-        }
-      }
+      // 窗玻璃上的雨丝跟着窗户画（syncWindowViews）
       return;
     }
     // 春夏晴天的白天：院子里有两只蝴蝶（夏天其中一只是蜻蜓，在鱼塘上面转）
@@ -1489,6 +1509,7 @@ export class Scene {
       ballSp.zIndex = this.ballY ?? base.y;
     }
     this.drawGlow(env);
+    this.syncWindowViews(env);
     this.drawDebug();
 
     // 镜头跟着刚被照顾的那只走一会儿

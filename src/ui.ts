@@ -352,14 +352,15 @@ export class UI {
       } });
   }
   private momentCanvas(m: Moment): HTMLCanvasElement {
-    const s = this.game.state; const key = `${m.id}|${JSON.stringify(s.skins)}|${s.room}|${this.game.avatarRev}`;
+    const s = this.game.state; const key = `${m.id}|${JSON.stringify(s.skins)}|${s.room}|${this.game.avatarRev}|${JSON.stringify(s.decor.filter((d) => d.zone === MOMENTS[m.kind]?.zone))}`;
     let cv = this.momentCache.get(key);
     if (!cv) {
       const guest = m.extra && NEIGHBORS[m.extra] ? this.game.sprites.get(NEIGHBORS[m.extra].look) : undefined;
       // 照片里的猫按它现在的大小画（宠物不在了就按一般成年猫），邻居按它自己的大小
       const sizes = m.petIds.map((id) => { const p = s.pets.find((x) => x.id === id); return p ? sim.bodySize(p) : 0.85; });
       if (m.extra && NEIGHBORS[m.extra]) sizes.push(NEIGHBORS[m.extra].size);
-      cv = renderMoment(m, m.sprites.map((id) => this.game.sprites.get(id)), { guest, sizes, skin: (k) => sim.skinOf(s, k), room: sim.roomOf(s) });
+      const zone = MOMENTS[m.kind]?.zone; const decor = s.decor.filter((d) => d.zone === zone);
+      cv = renderMoment(m, m.sprites.map((id) => this.game.sprites.get(id)), { guest, sizes, decor, skin: (k) => sim.skinOf(s, k), room: sim.roomOf(s) });
       if (this.momentCache.size > 80) this.momentCache.clear(); this.momentCache.set(key, cv);
     }
     return cv;
