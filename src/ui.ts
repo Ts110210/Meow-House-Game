@@ -237,6 +237,8 @@ export class UI {
       this.body = h('div', { class: 'sheet-body' });
       const title = h('h2');
       const panel = h('div', { class: 'sheet' }, h('div', { class: 'sheet-head' }, title, h('button', { class: 'x', 'aria-label': '关闭', onclick: () => this.close() }, '×')), this.body);
+      // 面板刚弹出来的一小会儿，面板里的点击一律不算（在按钮自己的处理之前就拦下来），防止点猫、点家具的第二下落到滑上来的按钮上
+      panel.addEventListener('click', (e) => { if (performance.now() - this.openedAt < CONFIG.ui.tapGuardMs) { e.stopPropagation(); e.preventDefault(); } }, true);
       // 面板刚弹出来的一瞬间不接受「点外面关闭」：不然点家具的那一下手指抬起来，会被当成点了外面，面板一闪就没了
       this.scrim = h('div', { class: 'scrim', onclick: (e: Event) => { if (e.target === this.scrim && performance.now() - this.openedAt > 400) this.close(); } }, panel);
       this.root.append(this.scrim);
