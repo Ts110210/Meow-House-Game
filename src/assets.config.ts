@@ -154,8 +154,8 @@ export const ASSETS = {
     { kind: 'triopic', zone: 'living', x: 155, y: 358 }, { kind: 'bigrug', zone: 'living', x: 210, y: 679 },
     { kind: 'midrug', zone: 'bath', x: 216, y: 684 },
     { kind: 'duopic', zone: 'bedroom', x: 119, y: 356 }, { kind: 'midrug', zone: 'bedroom', x: 250, y: 680 },
-    { kind: 'sunpic', zone: 'shelf', x: 84, y: 234 }, { kind: 'plant', zone: 'shelf', x: 318, y: 582 }, { kind: 'midrug', zone: 'shelf', x: 320, y: 676 },
-    { kind: 'plant', zone: 'balcony', x: 62, y: 578 }, { kind: 'plant', zone: 'balcony', x: 118, y: 582 },
+    { kind: 'sunpic', zone: 'shelf', x: 84, y: 234 }, { kind: 'plant', zone: 'shelf', x: 318, y: 582 }, { kind: 'midrug', zone: 'shelf', x: 216, y: 676 },
+    { kind: 'plant', zone: 'balcony', x: 52, y: 578 }, { kind: 'plant', zone: 'balcony', x: 132, y: 582 },
   ] as { kind: string; zone: ZoneId; x: number; y: number }[],
 
   // ---------- 默认宠物的精灵图（上传规范：4 列，每格 256×256，每行一个动作） ----------

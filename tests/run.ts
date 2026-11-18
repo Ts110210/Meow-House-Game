@@ -224,6 +224,25 @@ console.log('开局自带的装饰');
   check('旧存档读档时补上一份开局自带的，原来摆的不动；再读一次不会重复补', !!r && r.decor.length === 1 + ASSETS.starterDecor.length && r.decor[0].kind === 'lamp' && r.decor.filter((d) => d.starter).length === ASSETS.starterDecor.length && !!m2?.ok && m2.state.decor.length === r.decor.length);
 }
 
+console.log('装饰的摆放规则');
+{
+  const world = (extra: Partial<sim.PlaceWorld> = {}): sim.PlaceWorld => ({ zoneW: 432, floorY: 560, height: 720, wall: [{ x0: 28, y0: 156, x1: 216, y1: 312, label: '厨房的窗户' }], foot: [{ x0: 40, y0: 539, x1: 200, y1: 573, label: '橱柜' }], keepClear: [{ x0: 100, y0: 560, x1: 330, y1: 640, label: '门前的路' }], ...extra });
+  const P = (k: string, z: string, x: number, y: number, w: number, h: number, wd = world()) => sim.decorProblem(k, z, x, y, w, h, wd);
+  check('挂画不能挂到窗户上', /窗户/.test(P('painting', 'kitchen', 122, 300, 150, 120) ?? ''));
+  check('挂画挂在空墙上可以', P('painting', 'kitchen', 330, 500, 150, 120) === null);
+  check('挂画不能超出墙（碰到天花板、踢脚线或者跨到别的房间）', !!P('painting', 'kitchen', 330, 100, 150, 120) && !!P('painting', 'kitchen', 330, 556, 150, 120) && !!P('painting', 'kitchen', 400, 400, 150, 120));
+  check('阳台和院子没有墙，挂不了画', !!P('painting', 'balcony', 200, 300, 150, 120) && !!P('poster', 'garden', 200, 300, 84, 84));
+  check('院子里什么装饰都不能摆', !!P('plant', 'garden', 200, 650, 80, 90) && !!P('rug', 'garden', 200, 700, 300, 64));
+  check('阳台只能摆户外也合适的（盆栽、灯笼、雪人…），书架、落地灯、地毯不行', P('plant', 'balcony', 300, 700, 80, 90, world({ keepClear: [], foot: [] })) === null && !!P('shelf', 'balcony', 300, 700, 130, 190) && !!P('lamp', 'balcony', 300, 700, 96, 250) && !!P('rug', 'balcony', 216, 700, 300, 64));
+  check('摆地上的：脚底和家具叠在一起不行（塞到橱柜后面）', /橱柜/.test(P('shelf', 'kitchen', 120, 570, 130, 190, world({ keepClear: [] })) ?? ''));
+  check('摆地上的：在家具前面、脚底不叠就可以', P('shelf', 'kitchen', 120, 660, 130, 190, world({ keepClear: [] })) === null);
+  check('摆地上的：不能挡门前的路、猫的站位', /门前的路/.test(P('plant', 'kitchen', 216, 600, 80, 90) ?? ''));
+  check('地毯要整块铺在这个房间的地板上（不能伸到别的房间、不能翻到墙上）', !!P('rug', 'kitchen', 380, 700, 300, 64) && !!P('rug', 'kitchen', 216, 600, 300, 64) && P('rug', 'kitchen', 216, 700, 300, 64) === null);
+  check('地毯可以压在家具下面', P('rug', 'kitchen', 150, 640, 300, 64) === null);
+  const s = blank(); s.fish = 1000; sim.buyDecor(s, 'painting'); const id = s.decor[0].id;
+  check('放不下的时候不摆，说出原因', !sim.placeDecor(s, id, 'kitchen', 122, 300, world(), [150, 120]).ok && s.decor[0].zone === null && sim.placeDecor(s, id, 'kitchen', 330, 500, world(), [150, 120]).ok);
+}
+
 console.log('房间装饰');
 {
   const s = blank(); s.fish = 1000;

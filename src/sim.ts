@@ -335,10 +335,49 @@ export function buyDecor(s: GameState, kind: string): Result {
   return { ok: true, msg: `买到了${def.name}。到菜单的「布置房间」里摆出来` };
 }
 /** 摆到某个区域的某个位置（已经摆着的就是挪动；可以挪到别的区域） */
-export function placeDecor(s: GameState, id: string, zone: string, x: number, y: number): Result {
+/** 摆放规则用的一个方框（区域里的坐标：x 从区域左边算，y 是整个房间的高度） */
+export interface PlaceBox { x0: number; y0: number; x1: number; y1: number; label: string }
+/** 这个区域现在的样子：墙上的东西、地上家具的脚底、要留空的地方，和别的装饰（画面那边量好传进来） */
+export interface PlaceWorld {
+  zoneW: number; floorY: number; height: number;
+  /** 墙上的固定家具（窗户、置物架、镜子、门、相册墙、吊灯…）和墙上别的装饰 */
+  wall: PlaceBox[];
+  /** 地上家具的脚底和地上别的装饰的脚底 */
+  foot: PlaceBox[];
+  /** 不能挡住的地方：门前的路、猫用家具时要站的地方 */
+  keepClear: PlaceBox[];
+}
+const hit = (a: PlaceBox, b: PlaceBox) => a.x0 < b.x1 && b.x0 < a.x1 && a.y0 < b.y1 && b.y0 < a.y1;
+/** 一件装饰摆在区域里的 (x, y)（x = 中心，y = 底边），图片宽 w、高 h：放得下返回 null，放不下返回原因。
+ *  墙上的：整幅在墙上，不和墙上别的东西叠；铺地上的：整块在这个房间的地板上；摆地上的：脚底不和家具、别的装饰叠，不挡路和猫的站位 */
+export function decorProblem(kind: string, zone: string, x: number, y: number, w: number, h: number, world?: PlaceWorld): string | null {
+  const def = DECOR[kind]; const C = CONFIG.decor; if (!def) return '找不到这件装饰';
+  if (C.noDecorZones.includes(zone)) return '院子里先不能摆装饰（以后有院子专用的）';
+  if (zone === 'balcony' && (def.layer !== 'stand' || !C.outdoorOK.includes(kind))) return `${def.name}只能摆在屋里`;
+  if (def.layer === 'wall' && C.noWallZones.includes(zone)) return '这里没有墙，挂不了';
+  if (!world) return null;
+  const { zoneW, floorY, height } = world;
+  if (def.layer === 'wall') {
+    const box = { x0: x - w / 2, y0: y - h, x1: x + w / 2, y1: y, label: '' };
+    if (box.x0 < 4 || box.x1 > zoneW - 4 || box.y0 < C.wallTop || box.y1 > floorY - C.wallBottom) return `${def.name}要整幅挂在这个房间的墙上`;
+    const o = world.wall.find((b) => hit(box, b)); return o ? `会和${o.label}叠在一起` : null;
+  }
+  if (def.layer === 'floor') {
+    if (x - w / 2 < 0 || x + w / 2 > zoneW || y - h < floorY + 2 || y > height) return `${def.name}要整块铺在这个房间的地板上`;
+    return null;
+  }
+  const foot = { x0: x - w * 0.4, y0: y - C.footDepth, x1: x + w * 0.4, y1: y, label: '' };
+  if (foot.x0 < 0 || foot.x1 > zoneW || y < floorY + 8 || y > height - 4) return `${def.name}要摆在这个房间的地板上`;
+  const o = world.foot.find((b) => hit(foot, b)); if (o) return `会和${o.label}叠在一起`;
+  const k = world.keepClear.find((b) => hit(foot, b)); return k ? `会挡住${k.label}` : null;
+}
+
+/** world = 这个区域现在的样子（画面那边量好传进来）；不传就只查区域能不能摆这一种 */
+export function placeDecor(s: GameState, id: string, zone: string, x: number, y: number, world?: PlaceWorld, size?: [number, number]): Result {
   const d = s.decor.find((it) => it.id === id);
   if (!d || !DECOR[d.kind]) return { ok: false, msg: '找不到这件装饰' };
   if (!ZONES.some((z) => z.id === zone)) return { ok: false, msg: '没有这个区域' };
+  const why = decorProblem(d.kind, zone, x, y, size?.[0] ?? 0, size?.[1] ?? DECOR[d.kind].height, world); if (why) return { ok: false, msg: why };
   if (d.zone !== zone && s.decor.filter((it) => it.zone === zone).length >= CONFIG.decor.maxPerZone) return { ok: false, msg: `这个区域最多摆 ${CONFIG.decor.maxPerZone} 件` };
   d.zone = zone; d.x = Math.round(x); d.y = Math.round(y);
   return { ok: true };

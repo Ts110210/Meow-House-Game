@@ -1140,7 +1140,9 @@ export class UI {
         ? this.pickRow('皮肤', `skin:${target}`, SKINS.map((k) => ({ id: k.id, name: k.name, on: sim.skinOf(s, target) === k.id, owned: sim.ownsSkin(s, target, k.id), price })), (id) => sim.setSkin(this.game.state, target, id))
         : this.pickRow('房间风格', 'room', ROOM_THEMES.map((r) => ({ id: r.id, name: `${r.icon} ${r.name}`, on: sim.roomOf(s) === r.id, owned: sim.ownsRoom(s, r.id), price: r.price })), (id) => (sim.ownsRoom(this.game.state, id) ? sim.setRoom(this.game.state, id) : sim.buyRoom(this.game.state, id))),
       h('div', { class: 'decor-tray' }, kinds.length ? kinds.map((k) => h('button', { class: 'chip', onclick: () => {
-        const it = stored.find((d) => d.kind === k)!; const spot = this.scene.defaultDecorSpot(k);
+        // 在现在看着的这个房间里找一个放得下的位置（不和家具、别的装饰叠，不挡路）
+        const it = stored.find((d) => d.kind === k)!; const spot = this.scene.findDecorSpot(it.id, k);
+        if (!spot) { this.toast(`这个房间放不下${DECOR[k].name}了，换个房间试试`); sfx('error'); return; }
         const r = this.game.act((st) => sim.placeDecor(st, it.id, spot.zone, spot.x, spot.y));
         if (!r.ok) { this.say(r); sfx('error'); return; }
         sfx('open'); this.scene.selectDecor(it.id); this.renderDecorBar();
@@ -1401,7 +1403,7 @@ export class UI {
           h('button', { class: 'chip', onclick: () => { for (const nid of Object.keys(NEIGHBORS)) s.hood.bonds[nid] = CONFIG.neighbors.friendAt; this.game.changed(); this.toast('三只邻居都成了朋友'); } }, '都变成朋友')),
         h('h3', null, '范围框'),
         h('button', { class: 'btn block' + (d.debugBoxes ? ' on' : ''), onclick: () => { d.debugBoxes = !d.debugBoxes; this.cardCache.clear(); this.game.changed(); if (d.debugBoxes) { this.close(); this.toast('范围框已打开：蓝=物品，绿=站位，橙=遮挡线，红=宠物，紫=地板'); } } }, `显示范围框：${d.debugBoxes ? '开' : '关'}`),
-        h('p', { class: 'soft' }, '蓝框 = 物品的图片范围（也是点击范围）；绿点 = 宠物用这件家具时站的位置；橙线 = 遮挡线，线以下盖在宠物前面；黄点 = 发光的位置；红框 = 宠物的图片范围，红点 = 脚底；紫线 = 地板线和每只宠物走的线。明信片上会标出所有落脚点。'),
+        h('p', { class: 'soft' }, '蓝框 = 物品的图片范围（也是点击范围）；绿点 = 宠物用这件家具时站的位置；橙线 = 遮挡线，线以下盖在宠物前面；黄点 = 发光的位置；红框 = 宠物的图片范围，红点 = 脚底；紫线 = 地板线和每只宠物走的线。明信片上会标出所有落脚点。；棕色块 = 家具和地上装饰的脚底（摆装饰时不能叠）；红色块 = 门前的路和猫用家具时站的地方（摆装饰时不能挡）'),
         h('h3', null, '通知'),
         h('div', { class: 'grid2' },
           h('button', { class: 'btn', onclick: async () => { const err = await testNotification(0); this.toast(err || '已经发出一条，看屏幕上方有没有弹出来'); this.loadNotifyStatus(); } }, '马上发一条'),

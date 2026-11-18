@@ -675,6 +675,67 @@ export class Scene {
     const layer = DECOR[kind]?.layer; const band = H - geo.floorY; const jitter = (Math.random() - 0.5) * 80;
     return { zone: ZONES[zi].id, x: Math.max(40, Math.min(zw(zi) - 40, centre - zx(zi) + jitter)), y: layer === 'wall' ? geo.floorY - 250 : layer === 'floor' ? geo.floorY + band * 0.62 : geo.floorY + band * 0.12 };
   }
+  // ---------- 装饰的摆放规则：量出这个区域现在的样子，交给 sim.decorProblem 判断 ----------
+
+  /** 一件装饰画出来多大（还没摆出来的也能算） */
+  private decorSize(kind: string): [number, number] {
+    const def = DECOR[kind]; const skin = sim.skinOf(this.game.state, kind); const artKey = `${kind}@${skin}`;
+    if (!this.decorArt.has(artKey)) this.decorArt.set(artKey, drawDecor(kind, skin));
+    const src = this.assets.getSkinned(`decor.${kind}`, skin) ?? this.decorArt.get(artKey); const h = def?.height ?? 80;
+    return [src ? (h * src.width) / src.height : h, h];
+  }
+  /** 第 zi 个区域现在的样子：墙上的东西、地上家具和装饰的脚底、要留空的地方（不算 skipId 这件装饰） */
+  private placeWorld(zi: number, skipId?: string): sim.PlaceWorld {
+    const s = this.game.state, C = CONFIG.decor, x0 = zx(zi), fy = geo.floorY;
+    const wall: sim.PlaceBox[] = [], foot: sim.PlaceBox[] = [], keepClear: sim.PlaceBox[] = [];
+    const WALLISH = ['door', 'album', 'pendantDoor', 'pendantShelf'];
+    for (const [kind, sp] of this.objSprites) {
+      const def = ASSETS.objects[kind]; if (!def || zoneIndex(def.zone) !== zi || !sp.visible) continue;
+      const l = sp.x - sp.width / 2 - x0, r = sp.x + sp.width / 2 - x0, label = def.label.split(' · ')[0];
+      if (def.wall || WALLISH.includes(kind)) wall.push({ x0: l, y0: sp.y - sp.height, x1: r, y1: sp.y, label });
+      if (kind === 'door') keepClear.push({ x0: l - C.doorPath[0], y0: fy, x1: r + C.doorPath[0], y1: fy + C.doorPath[1], label: '门前的路' });
+      else if (!def.wall && !WALLISH.includes(kind) && kind !== 'ball' && kind !== 'autoball' && sp.y >= fy) foot.push({ x0: sp.x - sp.width * 0.45 - x0, y0: sp.y - C.furnitureDepth, x1: sp.x + sp.width * 0.45 - x0, y1: sp.y, label });
+      // 猫用这件家具时站的地方（起跳、吃饭、抓板、追球…）
+      (STATIONS[kind] ?? []).forEach((_, i) => { const f = this.floorSpot(kind, i); if (f) keepClear.push({ x0: f[0] - C.keepClear[0] - x0, y0: f[1] - C.keepClear[1], x1: f[0] + C.keepClear[0] - x0, y1: f[1] + C.keepClear[1], label: `${label}旁边猫要站的地方` }); });
+    }
+    for (const d of s.decor) {
+      if (d.id === skipId || d.zone !== ZONES[zi].id) continue; const def = DECOR[d.kind]; if (!def) continue;
+      const sp = this.decorSprites.get(d.id); const [w, h] = sp ? [sp.width, sp.height] : this.decorSize(d.kind);
+      if (def.layer === 'wall') wall.push({ x0: d.x - w / 2, y0: d.y - h, x1: d.x + w / 2, y1: d.y, label: def.name });
+      else if (def.layer === 'stand') foot.push({ x0: d.x - w * 0.4, y0: d.y - C.footDepth, x1: d.x + w * 0.4, y1: d.y, label: def.name });
+    }
+    return { zoneW: zw(zi), floorY: fy, height: H, wall, foot, keepClear };
+  }
+  /** 这件装饰摆在世界坐标 (wx, wy) 行不行：行返回区域和区域里的位置，不行返回原因 */
+  private checkDecor(id: string, kind: string, wx: number, wy: number): { ok: true; zone: string; x: number; y: number } | { ok: false; msg: string } {
+    let zi = 0; for (let i = 0; i < N; i++) if (wx >= zx(i)) zi = i;
+    const [w, h] = this.decorSize(kind); const x = wx - zx(zi);
+    const why = sim.decorProblem(kind, ZONES[zi].id, x, wy, w, h, this.placeWorld(zi, id));
+    return why ? { ok: false, msg: why } : { ok: true, zone: ZONES[zi].id, x, y: wy };
+  }
+  /** 从收纳里摆出来：先试现在看着的这个区域的默认位置，不行就在这个区域里找最近的空位；找不到返回 null */
+  findDecorSpot(id: string, kind: string): { zone: string; x: number; y: number } | null {
+    const want = this.defaultDecorSpot(kind); const zi = zoneIndex(want.zone); const ok = (x: number, y: number) => this.checkDecor(id, kind, zx(zi) + x, y).ok;
+    if (ok(want.x, want.y)) return want;
+    const [w, h] = this.decorSize(kind); const layer = DECOR[kind]?.layer; const fy = geo.floorY;
+    const [ylo, yhi] = layer === 'wall' ? [h + CONFIG.decor.wallTop, fy - CONFIG.decor.wallBottom] : layer === 'floor' ? [fy + h + 2, H] : [fy + 8, H - 4];
+    let best: { x: number; y: number; d: number } | null = null;
+    for (let y = ylo; y <= yhi; y += 10) for (let x = w / 2; x <= zw(zi) - w / 2; x += 12) {
+      const dd = Math.hypot(x - want.x, (y - want.y) * 1.5); if (best && dd >= best.d) continue;
+      if (ok(x, y)) best = { x, y, d: dd };
+    }
+    return best ? { zone: want.zone, x: Math.round(best.x), y: Math.round(best.y) } : null;
+  }
+  /** 读档后检查一遍：位置不合规的装饰（旧版本摆的、家具挪过的）收起来，返回收了几件 */
+  private decorChecked = false;
+  private tidyDecor() {
+    const s = this.game.state; const bad = s.decor.filter((d) => d.zone && ZONES.some((z) => z.id === d.zone) && !this.checkDecor(d.id, d.kind, zx(zoneIndex(d.zone)) + d.x, d.y).ok);
+    if (!bad.length) return;
+    this.game.act((st) => { for (const d of bad) sim.storeDecor(st, d.id); return { ok: true }; });
+    this.hooks.onDecor?.(null, `有 ${bad.length} 件装饰的位置和家具冲突（挂到了窗户上、叠在家具后面之类），先收起来了，可以在「布置房间」里重新摆`);
+  }
+  private decorBad = '';
+
   private decorDown(e: FederatedPointerEvent, id: string) {
     if (!this.decorMode) return;
     e.stopPropagation(); const sp = this.decorSprites.get(id)!;
@@ -688,19 +749,22 @@ export class Scene {
     // 墙上的只能在墙上，地上的只能在地板上
     const [lo, hi] = layer === 'wall' ? [sp.height + 70, geo.floorY - 6] : layer === 'floor' ? [geo.floorY + sp.height * 0.7, H - 8] : [geo.floorY - 4, H - 30];
     sp.x = Math.max(20, Math.min(worldW() - 20, d.x + dx)); sp.y = Math.max(lo, Math.min(hi, d.y + dy));
+    const c = this.checkDecor(d.id, kind, sp.x, sp.y); this.decorBad = c.ok ? '' : c.msg; // 放不下：框变红
     this.drawDecorBox();
   }
   private decorUp() {
     const d = this.decorDrag!; this.decorDrag = null; const sp = this.decorSprites.get(d.id); if (!sp || !d.moved) return;
-    let zi = 0; for (let i = 0; i < N; i++) if (sp.x >= zx(i)) zi = i;
-    const r = this.game.act((st) => sim.placeDecor(st, d.id, ZONES[zi].id, sp.x - zx(zi), sp.y));
-    if (!r.ok) { sp.position.set(d.x, d.y); this.hooks.onDecor?.(d.id, r.msg); }
+    const kind = this.game.state.decor.find((x) => x.id === d.id)?.kind ?? '';
+    const c = this.checkDecor(d.id, kind, sp.x, sp.y); this.decorBad = '';
+    const r = c.ok ? this.game.act((st) => sim.placeDecor(st, d.id, c.zone, c.x, c.y)) : { ok: false, msg: c.msg };
+    if (!r.ok) { sp.position.set(d.x, d.y); this.hooks.onDecor?.(d.id, r.msg); } // 放不下：回到原来的位置，说一下原因
     this.drawDecorBox();
   }
   private drawDecorBox() {
     const g = this.decorBox.clear(); const sp = this.decorSelected ? this.decorSprites.get(this.decorSelected) : this.furnSelected ? this.objSprites.get(this.furnSelected) : null;
     if (!this.decorMode || !sp) return;
-    g.roundRect(sp.x - sp.width / 2 - 6, sp.y - sp.height - 6, sp.width + 12, sp.height + 12, 10).stroke({ width: 3, color: hex(PALETTE.coral) });
+    g.roundRect(sp.x - sp.width / 2 - 6, sp.y - sp.height - 6, sp.width + 12, sp.height + 12, 10).stroke({ width: 3, color: this.decorDrag && this.decorBad ? 0xd9443a : hex(PALETTE.coral) });
+    if (this.decorDrag && this.decorBad) g.roundRect(sp.x - sp.width / 2 - 6, sp.y - sp.height - 6, sp.width + 12, sp.height + 12, 10).fill({ color: 0xd9443a, alpha: 0.18 });
   }
 
   private tap(fn: () => void) { return () => { if (!this.drag.moved) fn(); }; }
@@ -1198,9 +1262,18 @@ export class Scene {
    *  蓝框 = 物品的图片范围（也是点击范围）；绿点 = 宠物用这件家具时站的位置，短线是脸朝的方向；
    *  橙线 = 遮挡线（线以下盖在宠物前面）；黄点 = 发光的位置；红框 = 宠物的图片范围（也是点击范围），红点 = 脚底；
    *  紫线 = 地板线和各只宠物走的那条线。 */
+  private placeCache: { at: number; worlds: sim.PlaceWorld[] } | null = null;
   private drawDebug() {
     const on = this.game.state.dev.enabled && !!this.game.state.dev.debugBoxes && !this.editMode;
     const g = this.debug.clear(); const used = new Set<string>();
+    // 摆放规则用的框：棕色 = 家具和装饰的脚底，红色 = 要留空的地方（门前的路、猫的站位）。半秒量一次
+    if (on) {
+      if (!this.placeCache || this.now - this.placeCache.at > 500) this.placeCache = { at: this.now, worlds: ZONES.map((_, i) => this.placeWorld(i)) };
+      this.placeCache.worlds.forEach((w, i) => {
+        for (const b of w.foot) g.rect(zx(i) + b.x0, b.y0, b.x1 - b.x0, b.y1 - b.y0).fill({ color: 0x8a5a3c, alpha: 0.25 }).stroke({ width: 1.5, color: 0x8a5a3c, alpha: 0.8 });
+        for (const b of w.keepClear) g.rect(zx(i) + b.x0, b.y0, b.x1 - b.x0, b.y1 - b.y0).fill({ color: 0xd9443a, alpha: 0.15 }).stroke({ width: 1.5, color: 0xd9443a, alpha: 0.7 });
+      });
+    }
     const label = (key: string, text: string, x: number, y: number, color: number) => {
       let t = this.debugLabels.get(key);
       if (!t) { t = new Text({ text, style: { fontFamily: 'system-ui, sans-serif', fontSize: 22, fill: color, fontWeight: '700', stroke: { color: 0xffffff, width: 5 } } }); t.eventMode = 'none'; this.world.addChild(t); this.debugLabels.set(key, t); }
@@ -1496,6 +1569,7 @@ export class Scene {
     });
 
     this.updateGuest(dt); this.watchMoments(); this.updateDishes();
+    if (!this.decorChecked && this.objSprites.size && this.now > 1500 && !this.editMode) { this.decorChecked = true; this.tidyDecor(); }
     for (const [kind, front] of this.fronts) front.visible = inUse.has(kind);
     this.rollAutoBall(dt);
 

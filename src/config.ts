@@ -132,6 +132,23 @@ export const CONFIG = {
     /** 每个区域最多摆几件 */
     maxPerZone: 8,
     // 开局自带的装饰（摆在哪见 assets.config.ts 的 starterDecor）不算在「最多买几件」里
+    // ---- 摆放规则（见 sim.decorProblem）----
+    /** 不能摆装饰的区域（院子以后有专门的户外装饰） */
+    noDecorZones: ['garden'] as string[],
+    /** 没有实体墙、挂不了画的区域 */
+    noWallZones: ['balcony', 'garden'] as string[],
+    /** 阳台上能摆的（户外也合适的东西）；别的只能摆在屋里 */
+    outdoorOK: ['plant', 'bigplant', 'lantern', 'snowman', 'jar', 'vase'] as string[],
+    /** 墙上能挂的范围：离天花板至少多远、离地板线至少多远（踢脚线） */
+    wallTop: 12, wallBottom: 14,
+    /** 摆在地上的装饰脚底占多深（前后方向），宽度是图片宽的 80% */
+    footDepth: 22,
+    /** 家具脚底占多深，宽度是图片宽的 90% */
+    furnitureDepth: 34,
+    /** 猫用家具时站的地方（起跳、吃饭、抓板…）周围留多大的空地：左右、前后各多少 */
+    keepClear: [40, 14] as [number, number],
+    /** 门前留一条路：门两边各多出多少、从地板线往前多深 */
+    doorPath: [10, 80] as [number, number],
   },
 
   // ---------- 访客 ----------
