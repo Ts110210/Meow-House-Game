@@ -1,4 +1,4 @@
-package com.chen.backscreenpet;
+package com.uermm.meow;
 
 import android.content.ContentResolver;
 import android.content.ContentValues;

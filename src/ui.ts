@@ -987,7 +987,7 @@ export class UI {
         } }, this.resetArmed ? '再点一次，确认清空全部存档' : '清空存档，重新开始')),
         h('div', { class: 'ver', onclick: () => {
           if (++this.verTaps >= 5) { this.verTaps = 0; s.dev.enabled = !s.dev.enabled; this.game.changed(); this.toast(s.dev.enabled ? '开发者模式已打开' : '开发者模式已关闭'); }
-        } }, `背屏宠物小游戏 ${CONFIG.version}`)];
+        } }, `uermm meow ${CONFIG.version}`)];
     } });
   }
 

@@ -2,7 +2,7 @@
 # 把背屏原型的窗口挪到小米背屏（Mac / Linux）。手机要用数据线连着电脑，并且开着 USB 调试。
 # 用法：sh prototypes/back-screen/send-to-back.sh        挪到背屏
 #       sh prototypes/back-screen/send-to-back.sh home   挪回主屏并关掉
-PKG=com.chen.backscreenpet
+PKG=com.uermm.meow
 ACT=$PKG/.BackScreenActivity
 REAR=1   # 背屏的显示编号。不确定的话运行：adb shell dumpsys display | grep mDisplayId
 

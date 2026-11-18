@@ -8,16 +8,16 @@ import { fileURLToPath } from 'node:url';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, '..', '..');
-const javaDir = join(root, 'android', 'app', 'src', 'main', 'java', 'com', 'chen', 'backscreenpet');
+const javaDir = join(root, 'android', 'app', 'src', 'main', 'java', 'com', 'uermm', 'meow');
 const javaFile = join(javaDir, 'BackScreenActivity.java');
 const manifestFile = join(root, 'android', 'app', 'src', 'main', 'AndroidManifest.xml');
 const BEGIN = '        <!-- 背屏原型：开始 -->', END = '        <!-- 背屏原型：结束 -->';
 const BLOCK = `${BEGIN}
         <activity
             android:name=".BackScreenActivity"
-            android:label="背屏宠物（背屏）"
+            android:label="uermm meow（背屏）"
             android:theme="@style/AppTheme.NoActionBar"
-            android:taskAffinity="com.chen.backscreenpet.back"
+            android:taskAffinity="com.uermm.meow.back"
             android:launchMode="singleTask"
             android:resizeableActivity="true"
             android:excludeFromRecents="true"

@@ -1,10 +1,10 @@
 apply plugin: 'com.android.application'
 
 android {
-    namespace = "com.chen.backscreenpet"
+    namespace = "com.uermm.meow"
     compileSdk = rootProject.ext.compileSdkVersion
     defaultConfig {
-        applicationId "com.chen.backscreenpet"
+        applicationId "com.uermm.meow"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         // 自动打包时版本号跟着第几次打包走；自己打包时是 1

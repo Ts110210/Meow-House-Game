@@ -14,6 +14,11 @@
 - 美术全是代码画的占位图。**每加一样看得见的东西（家具、动作、特效、小物件），都要同步更新 `docs/素材模板.md`**，主人靠它准备正式素材。
 - 每做完一项，在 README 的「更新记录」最上面加一行（时间 UTC+8、build 号 = 这次推送的 Actions 运行编号、做了什么）。
 
+## 名字
+
+游戏叫 **uermm meow**（2026-11-18 改的，原来叫「背屏宠物」）。应用编号 `com.uermm.meow`（原来 `com.chen.backscreenpet`），安卓代码在 `android/app/src/main/java/com/uermm/meow/`。
+GitHub 仓库名还是 `back-screen-pet`，没改。存档的内部键名（`pet-game-…`）也没改。
+
 ## 现在做到哪
 
 v0.7.0，存档格式第 8 版。README 的「功能清单」是完整的现状。最近一批（2026-11-17）加的是：
