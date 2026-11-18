@@ -1525,7 +1525,7 @@ export class UI {
           h('button', { class: 'chip', onclick: () => { sim.homePets(s).forEach((p) => { p.food = 0.5; }); this.game.changed(); } }, '饱食降到快归零'),
           h('button', { class: 'chip', onclick: () => { s.lastCheckin = ''; this.game.changed(); } }, '重置今日签到')),
         h('h3', null, '任务'), h('div', { class: 'seg' },
-          h('button', { class: 'chip', onclick: () => { s.quests = sim.newQuests(false); this.game.changed(); this.toast('新手引导从头开始'); } }, '重新开始新手引导'),
+          h('button', { class: 'chip', onclick: () => { s.quests = sim.newQuests(false); s.tutorial = 0; this.game.changed(); this.close(); this.startTutorial(); } }, '重新开始新手引导（连同第一次打开的聚光灯）'),
           h('button', { class: 'chip', onclick: () => { s.quests.guideDone = true; s.quests.day = ''; this.game.changed(); this.toast('换了一批今天的任务'); } }, '跳过引导 / 重新抽今天的任务')),
         h('h3', null, '成长阶段（直接设成某个阶段，看体型）'),
         ...sim.alivePets(s).map((p) => h('div', { class: 'seg', style: 'margin-bottom:6px;align-items:center' },
