@@ -616,7 +616,7 @@ export function openDoorToVisitors(s: GameState): GameEvent[] {
     let r = Math.random(); s.visitorQuota = 0;
     for (let n = 0; n < V.perDayChance.length; n++) { r -= V.perDayChance[n]; if (r <= 0) { s.visitorQuota = n; break; } }
   }
-  if (s.visitorQuota <= 0 || s.visitors.length > 0 || s.clock - s.lastVisitorAt < V.gap) return [];
+  if (s.visitorQuota <= 0 || s.visitors.length > 0 || s.clock - s.lastVisitorAt < V.gap || s.clock - s.createdAt < V.firstAfter) return [];
   s.visitorQuota--; s.lastVisitorAt = s.clock;
   const v = makeVisitor(s); s.visitors.push(v);
   return [{ type: 'visitor', visitorId: v.id }];

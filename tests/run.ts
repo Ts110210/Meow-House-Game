@@ -153,13 +153,16 @@ console.log('性格和友情');
 console.log('访客');
 {
   const V = CONFIG.visitors; const counts = [0, 0, 0]; const kinds: Record<string, number> = {};
-  for (let i = 0; i < 3000; i++) { const s = blank(); sim.openDoorToVisitors(s); counts[s.visitorQuota + s.visitors.length]++; for (const v of s.visitors) kinds[v.kind] = (kinds[v.kind] ?? 0) + 1; }
+  /** 已经玩了一天以上的存档（第一天不来访客） */
+  const aged = () => { const s = blank(); s.createdAt -= V.firstAfter; return s; };
+  { const s = blank(); s.visitorDay = sim.dayKey(s.clock); s.visitorQuota = 2; check('开始玩的第一天不来访客', sim.openDoorToVisitors(s).length === 0 && s.visitors.length === 0 && s.visitorQuota === 2); }
+  for (let i = 0; i < 3000; i++) { const s = aged(); sim.openDoorToVisitors(s); counts[s.visitorQuota + s.visitors.length]++; for (const v of s.visitors) kinds[v.kind] = (kinds[v.kind] ?? 0) + 1; }
   check('每天来 0–2 个，比例大约 25% / 50% / 25%', Math.abs(counts[0] / 3000 - 0.25) < 0.04 && Math.abs(counts[1] / 3000 - 0.5) < 0.04 && Math.abs(counts[2] / 3000 - 0.25) < 0.04, counts.join());
   check('三类事都会出现', ['gift', 'trade', 'errand'].every((k) => kinds[k] > 100), JSON.stringify(kinds));
   const real = Math.random;
   try {
     Math.random = () => 0.99; // 今天来 2 个
-    const s = blank(); const e1 = sim.openDoorToVisitors(s);
+    const s = aged(); const e1 = sim.openDoorToVisitors(s);
     check('打开游戏时出现在门口，一次只来一个', e1.length === 1 && s.visitors.length === 1 && s.visitorQuota === 1);
     check('门口有人时不会再来', sim.openDoorToVisitors(s).length === 0);
     const ev = sim.advance(s, V.stay + MIN);
