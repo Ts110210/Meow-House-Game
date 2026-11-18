@@ -642,15 +642,15 @@ export const VISITORS: Record<VisitorWho, { name: string; look: string; hello: s
 
 /** 住在附近的三只邻居猫。会自己来串门，和家里的宠物玩一会儿、蹭口饭再走；熟了之后宠物也可以去它家回访。
  *  look = 用捏猫系统画的占位样子；notes = 它留下的脚印纸条上写的话；stories = 宠物去它家回来讲的小见闻（{pet} 换成宠物的名字） */
-export interface NeighborDef { name: string; home: string; look: string; desc: string; hello: string; notes: string[]; stories: string[]; /** 公母和大小（按最初设计算） */ sex: Sex; size: number }
+export interface NeighborDef { name: string; home: string; look: string; desc: string; hello: string; notes: string[]; stories: string[]; /** 公母和大小（按最初设计算） */ sex: Sex; size: number; /** 从哪来：roof = 从左边的屋檐过来、顺着阳台的木梯下来；fence = 从院子的栅栏进出 */ route: 'roof' | 'fence' }
 export const NEIGHBORS: Record<string, NeighborDef> = {
-  mochi: { sex: 'f', size: 0.84, name: '麻薯', home: '隔壁奶茶店', look: 'look:solid|#F6F1E7|#E9DFCB|#4A4550|#6FA8DC|1', desc: '隔壁奶茶店的白猫，慢吞吞的，最爱蹭饭和晒太阳', hello: '喵——（慢慢地走了进来）',
+  mochi: { route: 'fence', sex: 'f', size: 0.84, name: '麻薯', home: '隔壁奶茶店', look: 'look:solid|#F6F1E7|#E9DFCB|#4A4550|#6FA8DC|1', desc: '隔壁奶茶店的白猫，慢吞吞的，最爱蹭饭和晒太阳', hello: '喵——（慢慢地走了进来）',
     notes: ['今天的太阳很好，谢谢你家的地板。', '饭很好吃。下次还来。', '我把最舒服的位置留给你们了。'],
     stories: ['{pet}在奶茶店的柜台上趴了一下午，回来身上有一股奶香。', '麻薯带{pet}看了后门的那只大纸箱，两只挤在里面睡了一觉。', '{pet}学会了在收银机旁边装招财猫。'] },
-  dahei: { sex: 'm', size: 0.9, name: '大黑', home: '巷子口', look: 'look:solid|#3C3A40|#5A5660|#4A4550|#E3B341|0', desc: '巷子口的黑猫，胆子大，爱追着跑、爱打闹', hello: '喵！（从院子的栅栏上跳了下来）',
+  dahei: { route: 'roof', sex: 'm', size: 0.9, name: '大黑', home: '巷子口', look: 'look:solid|#3C3A40|#5A5660|#4A4550|#E3B341|0', desc: '巷子口的黑猫，胆子大，爱追着跑、爱打闹', hello: '喵！（从屋顶上顺着梯子溜了下来）',
     notes: ['你们家的球不错。', '巷子口新来了一只麻雀，改天带你们去看。', '下次比谁跑得快。'],
     stories: ['大黑带{pet}爬上了巷子口的矮墙，在上面看了很久的自行车。', '{pet}跟着大黑追了一路落叶，回来累得直喘。', '{pet}和大黑在巷子里发现了一个会滚的瓶盖。'] },
-  huajuan: { sex: 'f', size: 0.81, name: '花卷', home: '楼上', look: 'look:calico|#FBF8F2|#E29A4B|#4A4550|#8DAA4E|0', desc: '楼上的三花，爱干净，见了谁都想给它舔舔毛', hello: '喵～（先把爪子舔干净才进门）',
+  huajuan: { route: 'roof', sex: 'f', size: 0.81, name: '花卷', home: '楼上', look: 'look:calico|#FBF8F2|#E29A4B|#4A4550|#8DAA4E|0', desc: '楼上的三花，爱干净，见了谁都想给它舔舔毛', hello: '喵～（先把爪子舔干净才进门）',
     notes: ['你家那只的耳朵后面，我帮它舔干净了。', '窗台上的花开了，给你们带了一朵。', '记得天天梳毛哦。'],
     stories: ['花卷把{pet}从头到尾巴舔了一遍，回来毛都是顺的。', '{pet}在楼上的窗台看见了自己家的院子。', '花卷教了{pet}怎么把爪子洗得最干净。'] },
 };

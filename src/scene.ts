@@ -914,7 +914,9 @@ export class Scene {
   }
 
   // ---------- 邻居猫：来串门的那只 ----------
-  private guest: { id: string; root: Container; sprite: Sprite; x: number; y: number; tx: number; ty: number; dir: 1 | -1; action: ActionName; t0: number; until: number; step: 'enter' | 'meet' | 'snack' | 'roam' | 'leave'; buddy: string | null; did: number } | null = null;
+  private guest: { id: string; root: Container; sprite: Sprite; x: number; y: number; tx: number; ty: number; dir: 1 | -1; action: ActionName; t0: number; until: number; step: 'enter' | 'meet' | 'snack' | 'roam' | 'leave'; buddy: string | null; did: number;
+    /** 走屋顶那条路的（大黑、花卷）：在屋顶上走（u = 上层图里的位置，tu = 要去哪），或者在爬梯子 */
+    roof?: { u: number; tu: number } | null; climb?: { t0: number; up: boolean } | null } | null = null;
   /** 邻居的做派：麻薯爱蹭饭和打盹，大黑爱打闹，花卷见谁都舔 */
   private static GUEST_STYLE: Record<string, { meet: [ActionName, ActionName]; rest: ActionName }> = {
     mochi: { meet: ['groom', 'groom'], rest: 'sleep' }, dahei: { meet: ['play', 'play'], rest: 'sit' }, huajuan: { meet: ['groom', 'happy'], rest: 'lick' },
@@ -932,6 +934,8 @@ export class Scene {
       // 从院子最右边走进来（刚打开游戏时它已经来了一阵，就直接出现在客厅）
       const fresh = s.clock - now.arrivedAt < 20_000;
       g = this.guest = { id: now.id, root, sprite, x: fresh ? exitX : SPOT.living + 60, y: depthMin() + 30, tx: SPOT.living + 60, ty: depthMin() + 40, dir: -1, action: 'walk', t0: this.now, until: 0, step: 'enter', buddy: null, did: 0 };
+      // 大黑、花卷：从左边的屋檐（别人家的屋顶那边）出现，走过屋顶，顺着阳台的木梯下来
+      if (fresh && NEIGHBORS[now.id]?.route === 'roof') { const L = this.ladder(); g.x = L.x; g.y = L.y; g.roof = { u: RF.walk[0][0], tu: L.u }; g.dir = 1; }
       (g as any).tag = tag;
     }
     if (!g) return;
@@ -939,15 +943,29 @@ export class Scene {
     const set = this.game.sprites.get(NEIGHBORS[g.id]?.look ?? ''); if (!set) return;
     const style = Scene.GUEST_STYLE[g.id] ?? Scene.GUEST_STYLE.dahei;
     const goTo = (x: number, y: number) => { g!.tx = clampX(x); g!.ty = Math.min(clampY(y), this.depthLimit(g!.tx)); };
-    // 该走了（串门时间到了，或者存档里已经没有它了）：往院子外面走，走到头就消失
-    if ((!now || now.id !== g.id) && g.step !== 'leave') { g.step = 'leave'; g.tx = exitX; g.ty = depthMin() + 24; g.until = 0; }
+    const viaRoof = NEIGHBORS[g.id]?.route === 'roof';
+    // 该走了（串门时间到了，或者存档里已经没有它了）：麻薯往院子外面走，走到头就消失；大黑、花卷走到梯子底下，爬上屋顶，从左边的屋檐走掉
+    if ((!now || now.id !== g.id) && g.step !== 'leave') { g.step = 'leave'; const L = this.ladder(); if (viaRoof && g.roof) g.roof.tu = RF.walk[0][0]; else if (viaRoof && !g.climb) { g.tx = L.x; g.ty = L.y; } else if (!viaRoof) { g.tx = exitX; g.ty = depthMin() + 24; } g.until = 0; }
     const far = Math.abs(g.tx - g.x) > 4 || Math.abs(g.ty - g.y) > 4;
-    if (far) {
+    let rx: number | null = null, ry = 0, tilt = 0, climbing = false;
+    if (g.climb) {
+      // 爬梯子：爬完了，上去的接着在屋顶上往左走，下来的往客厅走
+      const L = this.ladder(), t = Math.min(1, (this.now - g.climb.t0) / CONFIG.roof.climbMs), e = g.climb.up ? t : 1 - t;
+      rx = L.x; ry = L.y + (L.topY - L.y) * e; climbing = true;
+      if (t >= 1) { if (g.climb.up) g.roof = { u: L.u, tu: RF.walk[0][0] }; else { g.x = L.x; g.y = L.y; if (g.step === 'enter') { g.tx = SPOT.living + 60; g.ty = depthMin() + 40; } } g.climb = null; }
+    } else if (g.roof) {
+      const r = g.roof, d = r.tu - r.u;
+      if (Math.abs(d) > 2) { g.dir = d > 0 ? 1 : -1; r.u += g.dir * Math.min(Math.abs(d), CONFIG.roof.walkSpeed * 2.2 * (dt / 1000)); if (g.action !== 'walk') { g.action = 'walk'; g.t0 = this.now; } }
+      else if (g.step === 'leave') { g.root.destroy({ children: true }); this.guest = null; return; } // 走到左边的屋檐：回别人家去了
+      else { g.roof = null; g.climb = { t0: this.now, up: false }; }
+      if (g.roof) { const w = roofWalk(r.u); rx = topToWorld(r.u); ry = w.y - H; tilt = w.tilt; }
+    } else if (far) {
       const dx = g.tx - g.x, dy = g.ty - g.y, dist = Math.hypot(dx, dy); if (Math.abs(dx) > 2) g.dir = dx > 0 ? 1 : -1;
       const step = Math.min(dist, (g.step === 'leave' || g.step === 'enter' ? 170 : 105) * (dt / 1000));
       g.x += (dx / dist) * step; g.y += (dy / dist) * step; if (g.step !== 'leave') g.y = Math.min(g.y, this.depthLimit(g.x));
       if (g.action !== 'walk') { g.action = 'walk'; g.t0 = this.now; }
     } else if (g.step === 'leave') {
+      if (viaRoof) { g.climb = { t0: this.now, up: true }; return; } // 到梯子底下了：往上爬
       g.root.destroy({ children: true }); this.guest = null; return;
     } else if (g.until === 0) {
       // 走到了：开始做这一步的事
@@ -973,8 +991,9 @@ export class Scene {
       else { g.step = 'roam'; const z = 1 + Math.floor(Math.random() * 4); goTo(zx(z) + zw(z) * (0.2 + Math.random() * 0.6), depthMin() + 10 + Math.random() * (depthMax() - depthMin() - 10)); }
     }
     const sc = PET_BASE * ASSETS.petScale * (NEIGHBORS[g.id]?.size ?? 0.85);
-    g.sprite.texture = set.tex[rowFor(set, g.action)][frameIndex(g.action, this.now - g.t0)];
-    g.sprite.scale.set(sc * g.dir, sc); g.root.position.set(g.x, g.y); g.root.zIndex = g.y;
+    g.sprite.texture = (climbing ? extraFrame(set, 'climb', this.now) ?? set.tex[rowFor(set, 'jump')][Math.floor(this.now / 150) % 4] : null) ?? set.tex[rowFor(set, g.action)][frameIndex(g.action, this.now - g.t0)];
+    g.sprite.scale.set(sc * g.dir, sc); g.sprite.rotation = g.roof && g.action === 'walk' ? tilt : 0;
+    if (rx !== null) { g.root.position.set(rx, ry); g.root.zIndex = 9000 + ry; } else { g.root.position.set(g.x, g.y); g.root.zIndex = g.y; }
     (g as any).tag.position.set(0, -256 * sc * 0.8);
   }
   private go(a: Actor, x: number, y: number = this.homeY(a.lane)) { a.tx = clampX(x); a.ty = Math.min(clampY(y), this.depthLimit(a.tx)); }

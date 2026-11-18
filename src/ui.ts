@@ -82,7 +82,7 @@ export class UI {
       if (e.type === 'letter') { if (!this.sheet) this.showReturns(); else this.toast('路上寄来了一张明信片'); sfx('door'); }
       if (e.type === 'visitor') { const v = game.state.visitors.find((x) => x.id === e.visitorId); if (v) { this.toast(`门口来了客人：${VISITORS[v.who].name}`); sfx('door'); } }
       if (e.type === 'visitorLeft') this.toast(`${VISITORS[e.who].name}等了很久，自己走了`);
-      if (e.type === 'neighbor') { this.toast(`${NEIGHBORS[e.id]?.name ?? '邻居'}来串门了（从院子那边进来）`); sfx('door'); meow('short'); }
+      if (e.type === 'neighbor') { this.toast(`${NEIGHBORS[e.id]?.name ?? '邻居'}来串门了（${NEIGHBORS[e.id]?.route === 'roof' ? '从屋顶那边过来' : '从院子那边进来'}）`); sfx('door'); meow('short'); }
       if (e.type === 'neighborLeft') this.toast(`${NEIGHBORS[e.id]?.name ?? '邻居'}回去了` + (e.find ? `，在院子里留下了${FIND_KINDS[e.find]?.name ?? '一点东西'}` : ''));
       if (e.type === 'outingBack') { this.toast(e.text); sfx('return'); meow('happy'); }
       if (e.type === 'errandDone') { const d = DESTS.find((x) => x.id === e.destId); this.toast(`信送到${d?.name ?? ''}了，谢礼：小鱼干 +${e.reward}`); sfx('coin'); }
@@ -406,7 +406,7 @@ export class UI {
   openNeighbors() {
     this.open({ title: '邻居', render: () => {
       const s = this.game.state; const NB = CONFIG.neighbors; const home = sim.homePets(s).filter((p) => !sim.isWeak(p));
-      const out: Kid[] = [h('p', { class: 'soft' }, '住在附近的三只猫。你开着游戏的时候，它们偶尔会从院子那边进来串门，和家里的宠物玩一会儿、蹭口饭再走。来得多了就成了朋友，可以让宠物去它家回访。')];
+      const out: Kid[] = [h('p', { class: 'soft' }, '住在附近的三只猫。你开着游戏的时候，它们偶尔会来串门（麻薯从院子的栅栏进来，大黑和花卷从别人家的屋顶过来、顺着阳台的木梯下来），和家里的宠物玩一会儿、蹭口饭再走。来得多了就成了朋友，可以让宠物去它家回访。')];
       for (const [id, nb] of Object.entries(NEIGHBORS)) {
         const bond = sim.bondOf(s, id), friend = sim.isNeighborFriend(s, id), here = s.hood.now?.id === id; const set = this.game.sprites.get(nb.look);
         const keeps = (['flower', 'note'] as const).map((k) => [k, sim.keepsakeCount(s, k, id)] as const).filter(([, n]) => n > 0);
