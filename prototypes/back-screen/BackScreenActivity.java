@@ -1,4 +1,4 @@
-package com.uermm.meow;
+package com.uermm.meowhouse;
 
 import android.os.Bundle;
 import android.view.WindowManager;

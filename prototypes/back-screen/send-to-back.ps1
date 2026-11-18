@@ -2,7 +2,7 @@
 # 用法：powershell -ExecutionPolicy Bypass -File prototypes\back-screen\send-to-back.ps1
 #       加上 home 参数：挪回主屏并关掉
 param([string]$mode = "")
-$pkg = "com.uermm.meow"
+$pkg = "com.uermm.meowhouse"
 $act = "$pkg/.BackScreenActivity"
 $rear = 1   # 背屏的显示编号。不确定的话运行：adb shell dumpsys display | findstr mDisplayId
 

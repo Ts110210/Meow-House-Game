@@ -1,4 +1,4 @@
-package com.uermm.meow;
+package com.uermm.meowhouse;
 
 import android.content.ContentResolver;
 import android.content.ContentValues;

@@ -16,8 +16,8 @@
 
 ## 名字
 
-游戏叫 **uermm meow**（2026-11-18 改的，原来叫「背屏宠物」）。应用编号 `com.uermm.meow`（原来 `com.chen.backscreenpet`），安卓代码在 `android/app/src/main/java/com/uermm/meow/`。
-GitHub 仓库名还是 `back-screen-pet`，没改。存档的内部键名（`pet-game-…`）也没改。
+游戏叫 **喵屋**，英文名 **Meow House**（2026-11-18 定的；之前叫过「背屏宠物」「uermm meow」）。手机语言是英文时桌面上显示 Meow House（`android/app/src/main/res/values-en/strings.xml`）。
+应用编号 `com.uermm.meowhouse`，安卓代码在 `android/app/src/main/java/com/uermm/meowhouse/`。GitHub 仓库名还是 `back-screen-pet`，没改。存档的内部键名（`pet-game-…`）也没改。
 
 ## 现在做到哪
 

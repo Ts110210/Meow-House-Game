@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 手机语言是英文时桌面图标下显示的名字 -->
+<resources>
+    <string name="app_name">Meow House</string>
+    <string name="title_activity_main">Meow House</string>
+</resources>
