@@ -1,5 +1,5 @@
 // 界面：顶部和底部的按钮，以及所有从下方弹出的面板。
-import { MOMENTS, SEXES, SEX_IDS, type Sex, NEIGHBORS, FIND_KINDS, SEASON_EVENTS, SEASON_FINDS, SKINS, SKIN_PRICE, ROOM_THEMES, ZONES, CONFIG, DAY, DESTS, TREAT, TIME_NAMES, SEASON_NAMES, FOODS, FRY, FUR_COLORS, DECOR, VISITORS, SEASON_IDS, TIME_IDS, SPECIAL_DECOR, TRAITS, TRAIT_IDS, type Trait, PATTERN_NAMES, DEFAULT_LOOK, encodeLook, decodeLook, type Look, type CoatPattern, GEAR, GOODS, HOUR, MIN, SOUVENIRS, SPRITE, TOOLS, type ActionName } from './config';
+import { MOMENTS, QUESTS, SEXES, SEX_IDS, type Sex, NEIGHBORS, FIND_KINDS, SEASON_EVENTS, SEASON_FINDS, SKINS, SKIN_PRICE, ROOM_THEMES, ZONES, CONFIG, DAY, DESTS, TREAT, TIME_NAMES, SEASON_NAMES, FOODS, FRY, FUR_COLORS, DECOR, VISITORS, SEASON_IDS, TIME_IDS, SPECIAL_DECOR, TRAITS, TRAIT_IDS, type Trait, PATTERN_NAMES, DEFAULT_LOOK, encodeLook, decodeLook, type Look, type CoatPattern, GEAR, GOODS, HOUR, MIN, SOUVENIRS, SPRITE, TOOLS, type ActionName } from './config';
 import { renderPostcard } from './art/postcard';
 import { drawDefaultSheet } from './art/defaultPet';
 import type { Game } from './game';
@@ -53,7 +53,7 @@ const STAT_NAME = { food: '饱食', mood: '心情', clean: '干净' };
 interface Sheet { title: string; render: () => Kid | Kid[]; onClose?: () => void; /** 返回 false = 先别关（比如还有没整理完的东西） */ beforeClose?: () => boolean }
 
 export class UI {
-  private hudFish!: HTMLElement; private hudCheck!: HTMLElement; private hudDev!: HTMLElement; private hudSeason!: HTMLElement;
+  private hudFish!: HTMLElement; private hudCheck!: HTMLElement; private hudQuest!: HTMLElement; private hudDev!: HTMLElement; private hudSeason!: HTMLElement;
   private strip!: HTMLElement; private zonesEl!: HTMLElement; private toasts!: HTMLElement;
   private scrim: HTMLElement | null = null; private body: HTMLElement | null = null;
   private sheet: Sheet | null = null;
@@ -158,8 +158,9 @@ export class UI {
   private buildHud() {
     this.hudFish = h('button', { class: 'pill', onclick: () => this.openShop() });
     this.hudCheck = h('button', { class: 'pill', onclick: () => { const r = this.game.act((s) => sim.checkin(s)); this.say(r); sfx(r.ok ? 'checkin' : 'error'); } }, '签到');
+    this.hudQuest = h('button', { class: 'pill', onclick: () => this.openQuests() }, '任务');
     this.hudDev = h('button', { class: 'pill dev', onclick: () => this.openDev() });
-    const top = h('div', { class: 'hud-top' }, this.hudFish, this.hudCheck, h('div', { class: 'spacer' }), this.hudDev,
+    const top = h('div', { class: 'hud-top' }, this.hudFish, this.hudCheck, this.hudQuest, h('div', { class: 'spacer' }), this.hudDev,
       h('button', { class: 'pill', onclick: () => this.openShop() }, '商店'),
       h('button', { class: 'pill', onclick: () => this.openMenu() }, '菜单'));
     this.strip = h('div', { class: 'petstrip' });
@@ -200,6 +201,9 @@ export class UI {
     this.hudFish.textContent = `🐟 ${s.fish}`;
     this.hudCheck.classList.toggle('hot', sim.canCheckin(s));
     this.hudCheck.textContent = sim.canCheckin(s) ? '签到' : '已签到';
+    // 任务：有能领的奖励时变成高亮；引导期间显示进度
+    const qs = sim.questStatus(s); this.hudQuest.classList.toggle('hot', qs.claimable > 0);
+    this.hudQuest.textContent = qs.mode === 'guide' ? `引导 ${qs.items.filter((x) => x.claimed).length}/${qs.items.length}` : qs.claimable > 0 ? `任务 ${qs.claimable}` : '任务';
     this.hudDev.style.display = s.dev.enabled ? '' : 'none';
     this.hudDev.textContent = `调试×${s.dev.speed}`;
     this.scene.relayout();
@@ -303,6 +307,36 @@ export class UI {
   }
 
   // ---------- 猫爬架：指定谁待在哪一层 ----------
+
+  // ---------- 任务：新手引导和每日任务（同一个入口） ----------
+
+  openQuests() {
+    this.open({ title: sim.questStatus(this.game.state).mode === 'guide' ? '新手引导' : '今天的任务', render: () => {
+      const s = this.game.state; const st = sim.questStatus(s); const pet = sim.alivePets(s)[0]?.name ?? '它';
+      const intro = st.mode === 'guide' ? '跟着做一遍，就会玩了。每做完一步领一点小鱼干，全部领完以后，每天会有几个小任务。' : `每天 ${QUESTS.dailyCount} 个小任务，做完领小鱼干；全部领完再加 ${QUESTS.dailyBonus}。第二天换新的。`;
+      const row = (q: (typeof st.items)[number]) => h('div', { class: 'item' },
+        h('span', { class: 'ico' }, q.claimed ? '✅' : q.done ? '🎁' : '⬜'),
+        h('div', { class: 'txt' }, h('b', null, q.text.replace('{pet}', pet)), h('span', { class: 'soft' }, `${st.mode === 'daily' && q.need > 1 ? `${q.got}/${q.need}　` : ''}🐟 +${q.reward}`)),
+        q.claimed ? h('button', { class: 'btn small', disabled: true }, '已领')
+          : q.done ? h('button', { class: 'btn small primary', onclick: () => { const r = this.game.act((x) => sim.claimQuest(x, q.id)); this.say(r); sfx(r.ok ? 'checkin' : 'error'); if (r.ok && sim.questStatus(this.game.state).mode !== st.mode) this.openQuests(); else this.refresh(true); } }, '领取')
+          : h('button', { class: 'btn small', onclick: () => this.questGo(q.go) }, '去做'));
+      return [h('p', { class: 'soft' }, intro), h('div', { class: 'card' }, st.items.map(row)),
+        st.mode === 'daily' ? h('p', null, h('button', { class: 'btn block' + (st.bonusReady ? ' primary' : ''), disabled: !st.bonusReady, onclick: () => { const r = this.game.act((x) => sim.claimDailyBonus(x)); this.say(r); sfx(r.ok ? 'checkin' : 'error'); this.refresh(true); } }, st.bonusClaimed ? '今天的额外奖励已经领了' : `全部完成再领 🐟 +${QUESTS.dailyBonus}`)) : null];
+    } });
+  }
+  /** 任务的「去做」：带玩家到要做这件事的地方 */
+  private questGo(go: string) {
+    const s = this.game.state;
+    if (go === 'pet') { const p = sim.homePets(s)[0]; if (p) this.openPet(p.id); else this.toast('宠物都出门了，等它回来再做'); return; }
+    if (go === 'checkin') { const r = this.game.act((x) => sim.checkin(x)); this.say(r); sfx(r.ok ? 'checkin' : 'error'); this.refresh(true); return; }
+    if (go === 'shop') { this.openShop(); return; }
+    if (go === 'album') { this.toast('出门的宠物回来时会带回明信片，可以在菜单的「纪念相册」里看'); return; }
+    this.close();
+    if (go === 'door') { this.scene.scrollToZone(0); this.openDoor(); }
+    else if (go === 'decor') this.startDecor();
+    else if (go === 'roof') this.scene.goRoof();
+    else if (go === 'pond') { this.scene.scrollToZone(ZONES.findIndex((z) => z.id === 'garden')); this.openPond(); }
+  }
 
   openCatTree() {
     this.open({ title: '猫爬架', render: () => {
@@ -1422,6 +1456,9 @@ export class UI {
           h('button', { class: 'chip', onclick: () => { sim.homePets(s).forEach((p) => { p.food = 26; p.mood = 26; p.clean = 26; }); this.game.changed(); } }, '全部降到 26'),
           h('button', { class: 'chip', onclick: () => { sim.homePets(s).forEach((p) => { p.food = 0.5; }); this.game.changed(); } }, '饱食降到快归零'),
           h('button', { class: 'chip', onclick: () => { s.lastCheckin = ''; this.game.changed(); } }, '重置今日签到')),
+        h('h3', null, '任务'), h('div', { class: 'seg' },
+          h('button', { class: 'chip', onclick: () => { s.quests = sim.newQuests(false); this.game.changed(); this.toast('新手引导从头开始'); } }, '重新开始新手引导'),
+          h('button', { class: 'chip', onclick: () => { s.quests.guideDone = true; s.quests.day = ''; this.game.changed(); this.toast('换了一批今天的任务'); } }, '跳过引导 / 重新抽今天的任务')),
         h('h3', null, '成长阶段（直接设成某个阶段，看体型）'),
         ...sim.alivePets(s).map((p) => h('div', { class: 'seg', style: 'margin-bottom:6px;align-items:center' },
           h('span', { class: 'soft', style: 'min-width:9em' }, `${p.name} ${SEXES[p.sex].icon} 成年 ${Math.round(p.size * 100)}%`),

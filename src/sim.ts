@@ -1,6 +1,6 @@
 // 游戏规则。这个文件不碰画面，只改存档数据，方便单独测试。
 import { writeDiary } from './diary';
-import { CONFIG, DAY, SEX_IDS, type Sex, MOMENTS, NEIGHBORS, FIND_KINDS, SEASON_FINDS, SEASON_EVENTS, SEASON_IDS, SKINS, DEFAULT_SKIN, SKIN_PRICE, skinSize, ROOM_THEMES, DEFAULT_ROOM, DESTS, FOODS, FRY, FUR_COLORS, GEAR, GOODS, HOUR, MIN, SOUVENIRS, TOOLS, TREAT, type DayTime, type Season, type StatKey, decodeLook, TRAIT_IDS, type Trait, VISITORS, type VisitorWho, SPECIAL_DECOR, DECOR, ZONES } from './config';
+import { CONFIG, DAY, QUESTS, SEX_IDS, type Sex, MOMENTS, NEIGHBORS, FIND_KINDS, SEASON_FINDS, SEASON_EVENTS, SEASON_IDS, SKINS, DEFAULT_SKIN, SKIN_PRICE, skinSize, ROOM_THEMES, DEFAULT_ROOM, DESTS, FOODS, FRY, FUR_COLORS, GEAR, GOODS, HOUR, MIN, SOUVENIRS, TOOLS, TREAT, type DayTime, type Season, type StatKey, decodeLook, TRAIT_IDS, type Trait, VISITORS, type VisitorWho, SPECIAL_DECOR, DECOR, ZONES } from './config';
 import { ASSETS } from './assets.config';
 import type { Decor, Find, Moment, GameEvent, GameState, Pet, Postcard, RepeatKey, Result, Trip, Visitor, Weather } from './types';
 
@@ -21,11 +21,58 @@ export function newPet(name: string, spriteId: string, clock: number, trait: Tra
   };
 }
 
+// ---------- 任务：新手引导和每日任务 ----------
+
+/** 新的任务记录。guideDone = true：不走新手引导，直接做每日任务（老玩家） */
+export const newQuests = (guideDone: boolean): GameState['quests'] => ({ guide: [], guideClaimed: [], guideDone, day: '', daily: [], bonus: false });
+const dailyDef = (id: string) => QUESTS.daily.find((q) => q.id === id);
+/** 引导领完之后，每天第一次看任务时抽当天的每日任务 */
+function refreshDaily(s: GameState) {
+  const q = s.quests; if (!q.guideDone) return; const day = dayKey(s.clock); if (q.day === day) return;
+  const pool = [...QUESTS.daily].sort(() => Math.random() - 0.5).slice(0, QUESTS.dailyCount);
+  q.day = day; q.daily = pool.map((d) => ({ id: d.id, got: 0, claimed: false })); q.bonus = false;
+}
+/** 玩家做了一件事（摸、喂、洗、玩、签到、派出门、收到明信片、买东西、挪装饰、上屋顶、放鱼苗）：记进新手引导和当天的每日任务 */
+export function questEvent(s: GameState, key: string, n = 1) {
+  const q = s.quests;
+  if (!q.guideDone) { for (const g of QUESTS.guide) if (g.key === key && !q.guide.includes(g.id)) q.guide.push(g.id); return; }
+  refreshDaily(s);
+  for (const d of q.daily) { const def = dailyDef(d.id); if (def && def.key === key && !d.claimed) d.got = Math.min(def.need, d.got + n); }
+}
+/** 任务面板要显示的东西：现在是引导还是每日任务、每一项的进度、能领几个 */
+export function questStatus(s: GameState) {
+  refreshDaily(s); const q = s.quests;
+  const items = q.guideDone
+    ? q.daily.map((d) => { const def = dailyDef(d.id)!; return { ...def, got: d.got, done: d.got >= def.need, claimed: d.claimed }; }).filter((x) => !!x.id)
+    : QUESTS.guide.map((g) => ({ ...g, got: q.guide.includes(g.id) ? 1 : 0, done: q.guide.includes(g.id), claimed: q.guideClaimed.includes(g.id) }));
+  const bonusReady = q.guideDone && items.length > 0 && items.every((x) => x.claimed) && !q.bonus;
+  return { mode: q.guideDone ? 'daily' as const : 'guide' as const, items, bonusReady, bonusClaimed: q.bonus, claimable: items.filter((x) => x.done && !x.claimed).length + (bonusReady ? 1 : 0) };
+}
+/** 领一项任务的奖励。新手引导全部领完就开始每日任务 */
+export function claimQuest(s: GameState, id: string): Result {
+  const q = s.quests; refreshDaily(s);
+  if (!q.guideDone) {
+    const g = QUESTS.guide.find((x) => x.id === id); if (!g) return { ok: false, msg: '没有这个任务' };
+    if (!q.guide.includes(id)) return { ok: false, msg: '还没做到' }; if (q.guideClaimed.includes(id)) return { ok: false, msg: '已经领过了' };
+    q.guideClaimed.push(id); s.fish += g.reward;
+    if (QUESTS.guide.every((x) => q.guideClaimed.includes(x.id))) { q.guideDone = true; refreshDaily(s); return { ok: true, msg: `小鱼干 +${g.reward}。新手引导全部完成！以后每天会有几个小任务` }; }
+    return { ok: true, msg: `小鱼干 +${g.reward}` };
+  }
+  const d = q.daily.find((x) => x.id === id); const def = dailyDef(id); if (!d || !def) return { ok: false, msg: '今天没有这个任务' };
+  if (d.claimed) return { ok: false, msg: '已经领过了' }; if (d.got < def.need) return { ok: false, msg: '还没做完' };
+  d.claimed = true; s.fish += def.reward; return { ok: true, msg: `小鱼干 +${def.reward}` };
+}
+/** 今天的每日任务全部领完：额外奖励 */
+export function claimDailyBonus(s: GameState): Result {
+  const st = questStatus(s); if (!st.bonusReady) return { ok: false, msg: st.bonusClaimed ? '今天已经领过了' : '先把今天的任务都做完' };
+  s.quests.bonus = true; s.fish += QUESTS.dailyBonus; return { ok: true, msg: `今天的任务全部完成，小鱼干 +${QUESTS.dailyBonus}` };
+}
+
 export function newState(now: number): GameState {
   const s: GameState = {
     v: 7, createdAt: now, seasonStart: now, settings: { notify: true, showSeason: false, seasonMode: 'cycle' }, clock: now, lastReal: now, fish: CONFIG.startFish, slots: 1,
     pets: [], trips: [], postcards: [], souvenirs: {}, inv: { ...CONFIG.startItems }, owned: {},
-    pond: Array(CONFIG.pond.slots).fill(null), lastCheckin: '', pendingReturns: [], friends: {}, variants: {}, milestones: [], decor: [], visitors: [], visitorQuota: 0, visitorDay: '', lastVisitorAt: 0, errand: null, display: { souvenirs: [], postcards: [] }, cattree: [null, null, null], hood: { now: null, bonds: {}, day: '', quota: 0, last: 0, stories: [] }, seasonal: { key: '', got: {}, done: false, last: 0, day: '', quota: 0 }, seasonalClaimed: [], moments: [], favor: {}, favorClaimed: [], finds: [], keepsakes: {}, skins: {}, skinsOwned: {}, room: DEFAULT_ROOM, roomsOwned: [],
+    pond: Array(CONFIG.pond.slots).fill(null), lastCheckin: '', pendingReturns: [], friends: {}, variants: {}, milestones: [], decor: [], quests: newQuests(false), visitors: [], visitorQuota: 0, visitorDay: '', lastVisitorAt: 0, errand: null, display: { souvenirs: [], postcards: [] }, cattree: [null, null, null], hood: { now: null, bonds: {}, day: '', quota: 0, last: 0, stories: [] }, seasonal: { key: '', got: {}, done: false, last: 0, day: '', quota: 0 }, seasonalClaimed: [], moments: [], favor: {}, favorClaimed: [], finds: [], keepsakes: {}, skins: {}, skinsOwned: {}, room: DEFAULT_ROOM, roomsOwned: [],
     dev: { enabled: false, background: false, time: 'auto', season: 'auto', weather: 'auto', speed: 1, growth: 1, decay: { food: 1, mood: 1, clean: 1 } },
   };
   s.pets.push(newPet(CONFIG.startPet.name, `default:${CONFIG.startPet.color}`, now));
@@ -226,9 +273,10 @@ export function feed(s: GameState, petId: string, foodId: string): Result {
   if (yum) p!.mood = clamp(p!.mood + yum);
   if (p!.weakSince !== null) {
     p!.weakSince = null;
-    p!.mood = clamp(p!.mood - CONFIG.weak.rescueMoodPenalty);
+    p!.mood = clamp(p!.mood - CONFIG.weak.rescueMoodPenalty); questEvent(s, 'feed');
     return { ok: true, msg: `${p!.name}被救回来了，但心情很差（-${CONFIG.weak.rescueMoodPenalty}）` };
   }
+  questEvent(s, 'feed');
   return { ok: true, msg: `饱食 +${fmt(gain)}` + (yum ? `　心情 +${yum}` : '') };
 }
 
@@ -236,7 +284,7 @@ export function petPet(s: GameState, petId: string, amount = CONFIG.actions.petM
   const p = s.pets.find((x) => x.id === petId);
   const u = usable(p); if (!u.ok) return u;
   const gain = amount * (p!.trait === 'clingy' ? T.clingy.petMood : 1) * repeatMult(s, p!, 'pet');
-  p!.mood = clamp(p!.mood + gain); p!.lastCare = s.clock;
+  p!.mood = clamp(p!.mood + gain); p!.lastCare = s.clock; questEvent(s, 'pet');
   return { ok: true, msg: `心情 +${fmt(gain)}` };
 }
 
@@ -245,7 +293,7 @@ export function bath(s: GameState, petId: string): Result {
   const u = usable(p); if (!u.ok) return u;
   if (isWeak(p!)) return { ok: false, msg: `${p!.name}太虚弱了，先喂点东西` };
   const gain = CONFIG.actions.bathClean * repeatMult(s, p!, 'bath');
-  p!.clean = clamp(p!.clean + gain); p!.lastCare = s.clock;
+  p!.clean = clamp(p!.clean + gain); p!.lastCare = s.clock; questEvent(s, 'bath');
   return { ok: true, msg: `干净 +${fmt(gain)}` };
 }
 
@@ -256,7 +304,7 @@ export function play(s: GameState, petId: string): Result {
   const a = CONFIG.actions;
   const base = s.owned.wand ? a.playMoodWand : a.playMoodHand;
   const gain = base * repeatMult(s, p!, 'play');
-  p!.mood = clamp(p!.mood + gain); p!.lastCare = s.clock;
+  p!.mood = clamp(p!.mood + gain); p!.lastCare = s.clock; questEvent(s, 'play');
   return { ok: true, msg: `心情 +${fmt(gain)}` };
 }
 
@@ -331,7 +379,7 @@ export function buyDecor(s: GameState, kind: string): Result {
   if (!def || def.special) return { ok: false, msg: '商店里没有这件装饰' };
   if (decorCount(s, kind) >= CONFIG.decor.maxPerKind) return { ok: false, msg: `${def.name}最多买 ${CONFIG.decor.maxPerKind} 件` };
   if (s.fish < def.price) return { ok: false, msg: '小鱼干不够' };
-  s.fish -= def.price; s.decor.push({ id: newId('decor'), kind, zone: null, x: 0, y: 0 });
+  s.fish -= def.price; s.decor.push({ id: newId('decor'), kind, zone: null, x: 0, y: 0 }); questEvent(s, 'buy');
   return { ok: true, msg: `买到了${def.name}。到菜单的「布置房间」里摆出来` };
 }
 /** 摆到某个区域的某个位置（已经摆着的就是挪动；可以挪到别的区域） */
@@ -379,7 +427,7 @@ export function placeDecor(s: GameState, id: string, zone: string, x: number, y:
   if (!ZONES.some((z) => z.id === zone)) return { ok: false, msg: '没有这个区域' };
   const why = decorProblem(d.kind, zone, x, y, size?.[0] ?? 0, size?.[1] ?? DECOR[d.kind].height, world); if (why) return { ok: false, msg: why };
   if (d.zone !== zone && s.decor.filter((it) => it.zone === zone).length >= CONFIG.decor.maxPerZone) return { ok: false, msg: `这个区域最多摆 ${CONFIG.decor.maxPerZone} 件` };
-  d.zone = zone; d.x = Math.round(x); d.y = Math.round(y);
+  d.zone = zone; d.x = Math.round(x); d.y = Math.round(y); questEvent(s, 'decor');
   return { ok: true };
 }
 /** 收起来：不会丢，还能再摆 */
@@ -410,7 +458,7 @@ export function setSkin(s: GameState, kind: string, skin: string): Result {
   let msg = `换成了${def.name}款`;
   if (!ownsSkin(s, kind, skin)) {
     if (s.fish < price) return { ok: false, msg: '小鱼干不够' };
-    s.fish -= price; (s.skinsOwned[kind] ??= []).push(skin); msg = `买下并换上了${def.name}款`;
+    s.fish -= price; (s.skinsOwned[kind] ??= []).push(skin); msg = `买下并换上了${def.name}款`; questEvent(s, 'buy');
   }
   if (skin === DEFAULT_SKIN) delete s.skins[kind]; else s.skins[kind] = skin;
   return { ok: true, msg };
@@ -422,7 +470,7 @@ export function buyRoom(s: GameState, id: string): Result {
   if (!def) return { ok: false, msg: '没有这套房间' };
   if (ownsRoom(s, id)) return { ok: false, msg: '已经有了' };
   if (s.fish < def.price) return { ok: false, msg: '小鱼干不够' };
-  s.fish -= def.price; s.roomsOwned.push(id); s.room = id;
+  s.fish -= def.price; s.roomsOwned.push(id); s.room = id; questEvent(s, 'buy');
   return { ok: true, msg: `买下了「${def.name}」，已经换上。可以在「布置房间」里换回去` };
 }
 export function setRoom(s: GameState, id: string): Result {
@@ -710,6 +758,7 @@ export function dispatch(s: GameState, plan: DispatchPlan): Result {
   if (errand) { trip.errandReward = errand.reward; s.errand = null; }
   s.trips.push(trip);
   for (const id of plan.petIds) s.pets.find((p) => p.id === id)!.tripId = trip.id;
+  questEvent(s, 'trip');
   return { ok: true, msg: '出门啦，路上小心' };
 }
 
@@ -721,7 +770,7 @@ function sendLetter(s: GameState, trip: Trip, events: GameEvent[]) {
   const season_ = season(s), time = dayTime(s);
   const card: Postcard = { id: newId('card'), kind: 'letter', destId: trip.destId, petIds: trip.petIds, at: s.clock, souvenir: null, tool: trip.tool, seed: Math.floor(Math.random() * 1e9),
     season: season_, time, diary: writeDiary({ destId: trip.destId, season: season_, time, tool: trip.tool, names: petNames(s, trip.petIds), letter: true }), income: 0, sold: [], unsold: [] };
-  s.postcards.push(card); s.pendingReturns.push(card.id); recordVariant(s, card);
+  s.postcards.push(card); s.pendingReturns.push(card.id); recordVariant(s, card); questEvent(s, 'postcard');
   events.push({ type: 'letter', postcardId: card.id });
 }
 
@@ -768,7 +817,7 @@ function resolveTrip(s: GameState, trip: Trip, events: GameEvent[]) {
     season: season_, time, diary: writeDiary({ destId: dest.id, season: season_, time, tool: trip.tool, names: petNames(s, trip.petIds), letter: false,
       avoid: [...s.postcards].reverse().find((c) => c.kind === 'letter' && c.destId === dest.id && c.petIds.join() === trip.petIds.join())?.diary }), income, sold, unsold };
   // 相册满了也先收下：多出来的由主人自己决定删哪张（见 albumOver / discardOverflow），不会自动删
-  s.postcards.push(card); recordVariant(s, card);
+  s.postcards.push(card); recordVariant(s, card); questEvent(s, 'postcard');
   s.pendingReturns.push(card.id);
   events.push({ type: 'return', postcardId: card.id });
 }
@@ -795,13 +844,14 @@ export function buy(s: GameState, id: string): Result {
   if (s.fish < price) return { ok: false, msg: '小鱼干不够' };
   s.fish -= price;
   if (gear) s.owned[id] = true; else addItem(s, id, 1);
+  questEvent(s, 'buy');
   return { ok: true, msg: '买好了' };
 }
 
 export function checkin(s: GameState): Result {
   if (!canCheckin(s)) return { ok: false, msg: '今天已经签到过了' };
   s.lastCheckin = dayKey(s.clock);
-  s.fish += CONFIG.checkinFish;
+  s.fish += CONFIG.checkinFish; questEvent(s, 'checkin');
   return { ok: true, msg: `签到成功，小鱼干 +${CONFIG.checkinFish}` };
 }
 
@@ -809,7 +859,7 @@ export function plantFry(s: GameState, slot: number): Result {
   if (s.pond[slot] !== null && s.pond[slot] !== undefined) return { ok: false, msg: '这个位置已经有鱼苗了' };
   if (count(s, FRY.id) < 1) return { ok: false, msg: '没有鱼苗了，去商店买' };
   addItem(s, FRY.id, -1);
-  s.pond[slot] = s.clock;
+  s.pond[slot] = s.clock; questEvent(s, 'plant');
   return { ok: true, msg: '鱼苗放进去了' };
 }
 

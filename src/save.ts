@@ -5,12 +5,12 @@
 //   2. 在 MIGRATIONS 里加一条「从上一个版本升到这个版本」的函数
 //   3. 在 repair() 里给新字段补默认值
 // 旧存档会在打开时自动一步一步升上来，升级前的原样会另存一份。
-import { MOMENTS, SEASON_IDS, NEIGHBORS, FIND_KINDS, SEASON_FINDS, CONFIG, DESTS, FOODS, SOUVENIRS, TRAIT_IDS, SEX_IDS, type Sex, VISITORS, ZONES, DECOR, SKINS, DEFAULT_SKIN, ROOM_THEMES, DEFAULT_ROOM, skinSize } from './config';
+import { QUESTS, DAY, MOMENTS, SEASON_IDS, NEIGHBORS, FIND_KINDS, SEASON_FINDS, CONFIG, DESTS, FOODS, SOUVENIRS, TRAIT_IDS, SEX_IDS, type Sex, VISITORS, ZONES, DECOR, SKINS, DEFAULT_SKIN, ROOM_THEMES, DEFAULT_ROOM, skinSize } from './config';
 import { kv } from './platform/storage';
 import type { GameState, Pet, Postcard, Trip } from './types';
-import { starterDecor } from './sim';
+import { newQuests, starterDecor } from './sim';
 
-export const SAVE_VERSION = 7;
+export const SAVE_VERSION = 8;
 const MAIN = 'pet-game-save-v1'; // 键名不跟版本走，这样旧存档一直读得到
 const BACKUP = 'pet-game-save-backup';
 const BEFORE_MIGRATION = 'pet-game-save-before-migration';
@@ -47,6 +47,8 @@ const MIGRATIONS: Record<number, (s: Raw) => Raw> = {
   // v6 → v7：背景里画的地毯、挂画、盆栽拆出来变成开局自带的装饰：旧存档补上一份，摆在原来的位置。
   // 公猫母猫和成年大小在 repair() 里补
   6: (s) => { s.decor = [...(Array.isArray(s.decor) ? s.decor : []), ...starterDecor()]; s.v = 7; return s; },
+  // v7 → v8：加了任务。已经玩了一阵的存档（玩满一天，或者已经收到过明信片）不走新手引导，直接做每日任务
+  7: (s) => { if (!s.quests) s.quests = newQuests((typeof s.clock === 'number' && typeof s.createdAt === 'number' && s.clock - s.createdAt >= DAY) || (Array.isArray(s.postcards) && s.postcards.length > 0)); s.v = 8; return s; },
 };
 
 const num = (v: any, d: number, lo = -Infinity, hi = Infinity) => (typeof v === 'number' && isFinite(v) ? Math.max(lo, Math.min(hi, v)) : d);
@@ -119,6 +121,10 @@ export function repair(raw: Raw, now = Date.now()): GameState {
       for (const c of postcards) if (c.season && c.time) { const k = `${c.season}-${c.time}`; const list = (out[c.destId] ??= []); if (!list.includes(k)) list.push(k); }
       return out; })(),
     milestones: arr(raw.milestones).filter((id) => CONFIG.milestones.some((m) => m.id === id)),
+    // 任务：形状不对就当老玩家（不走引导）；只留认识的步骤和任务
+    quests: (() => { const q = obj(raw.quests); if (!raw.quests) return newQuests(true); const ids = (v: any, ok: (x: string) => boolean) => arr(v).filter((x) => typeof x === 'string' && ok(x));
+      return { guide: ids(q.guide, (x) => QUESTS.guide.some((g) => g.id === x)), guideClaimed: ids(q.guideClaimed, (x) => QUESTS.guide.some((g) => g.id === x)), guideDone: !!q.guideDone, day: str(q.day, ''),
+        daily: arr(q.daily).filter((d) => d && QUESTS.daily.some((x) => x.id === d.id)).map((d) => ({ id: d.id, got: num(d.got, 0, 0, 1e6), claimed: !!d.claimed })), bonus: !!q.bonus }; })(),
     decor: arr(raw.decor).filter((d) => d && typeof d.id === 'string' && typeof d.kind === 'string' && !!DECOR[d.kind]).map((d) => ({ id: d.id, kind: d.kind, zone: typeof d.zone === 'string' && ZONES.some((z) => z.id === d.zone) ? d.zone : null, x: num(d.x, 0), y: num(d.y, 0), ...(d.starter ? { starter: true } : {}) })),
     visitors: arr(raw.visitors).filter((v) => v && typeof v.id === 'string' && v.who in VISITORS && ['gift', 'trade', 'errand'].includes(v.kind) && (v.kind !== 'errand' || DESTS.some((d) => d.id === v.destId)))
       .map((v) => ({ id: v.id, who: v.who, kind: v.kind, arrivedAt: num(v.arrivedAt, clock), leaveAt: num(v.leaveAt, clock), ...(typeof v.fish === 'number' ? { fish: v.fish } : {}), ...(typeof v.item === 'string' ? { item: v.item } : {}), ...(typeof v.wants === 'string' ? { wants: v.wants } : {}), ...(typeof v.gives === 'string' ? { gives: v.gives } : {}), ...(typeof v.destId === 'string' ? { destId: v.destId } : {}) })),

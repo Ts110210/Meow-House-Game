@@ -141,6 +141,9 @@ export interface GameState {
   milestones: string[];
   /** 家里的装饰。zone = null 表示收起来了 */
   decor: Decor[];
+  /** 任务。guide = 新手引导里做到了的步骤，guideClaimed = 已经领了奖励的；guideDone = 引导全部领完（开始每日任务）。
+   *  day = 每日任务是哪一天抽的，daily = 当天的任务和进度，bonus = 全部完成的额外奖励领了没有 */
+  quests: { guide: string[]; guideClaimed: string[]; guideDone: boolean; day: string; daily: { id: string; got: number; claimed: boolean }[]; bonus: boolean };
   /** 现在在门口的访客 */
   visitors: Visitor[];
   /** 访客今天还会来几个（每天第一次打开时定下来）、是哪一天定的、上一个是什么时候来的 */

@@ -632,6 +632,7 @@ export class Scene {
   goRoof(instant = false) {
     if (this.editMode || this.decorMode || this.bgMode) return;
     this.layer = 'roof'; this.follow = null; this.vel = 0;
+    this.game.act((st) => { sim.questEvent(st, 'roof'); return { ok: true }; }); // 新手引导：去屋顶看看
     const target = Math.max(0, Math.min(this.maxCam(), this.ladder().x + 40 - this.viewW)); // 梯子顶在这一屏的右边
     if (instant) { this.lift = H; this.camX = target; this.camTarget = null; } else this.camTarget = target;
     this.applyCam();

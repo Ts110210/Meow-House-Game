@@ -1,5 +1,5 @@
 // 规则和存档的自动检查。运行：npm test
-import { ZONES, MOMENTS, VISITORS, NEIGHBORS, SEASON_EVENTS, SEASON_FINDS, CONFIG, DAY, DECOR, DESTS, FUR_COLORS, GEAR, HOUR, MIN, ROOM_THEMES, SKIN_PRICE, SKIN_SIZE, SKINNABLE, SKINS, SOUVENIRS, decodeLook, encodeLook, skinSize } from '../src/config';
+import { ZONES, MOMENTS, VISITORS, QUESTS, NEIGHBORS, SEASON_EVENTS, SEASON_FINDS, CONFIG, DAY, DECOR, DESTS, FUR_COLORS, GEAR, HOUR, MIN, ROOM_THEMES, SKIN_PRICE, SKIN_SIZE, SKINNABLE, SKINS, SOUVENIRS, decodeLook, encodeLook, skinSize } from '../src/config';
 import { ASSETS } from '../src/assets.config';
 import * as sim from '../src/sim';
 import { diaryPlaceCount, writeDiary } from '../src/diary';
@@ -225,6 +225,35 @@ console.log('开局自带的装饰');
   const old = JSON.parse(JSON.stringify(sim.newState(T0))); old.v = 6; old.decor = [{ id: 'd1', kind: 'lamp', zone: 'living', x: 300, y: 640 }];
   const m1 = migrate(old, T0); const r = m1.ok ? m1.state : null; const m2 = r ? migrate(JSON.parse(JSON.stringify(r)), T0) : null;
   check('旧存档读档时补上一份开局自带的，原来摆的不动；再读一次不会重复补', !!r && r.decor.length === 1 + ASSETS.starterDecor.length && r.decor[0].kind === 'lamp' && r.decor.filter((d) => d.starter).length === ASSETS.starterDecor.length && !!m2?.ok && m2.state.decor.length === r.decor.length);
+}
+
+console.log('任务：新手引导和每日任务');
+{
+  const s = blank(); s.fish = 1000; const p = s.pets[0]; p.food = 50; p.mood = 50; p.clean = 50;
+  let st = sim.questStatus(s);
+  check('新存档先走新手引导，一共 10 步', st.mode === 'guide' && st.items.length === QUESTS.guide.length && QUESTS.guide.length === 10 && st.claimable === 0);
+  check('没做到的领不了', !sim.claimQuest(s, 'pet').ok);
+  sim.petPet(s, p.id); sim.feed(s, p.id, 'kibble'); sim.checkin(s);
+  st = sim.questStatus(s);
+  check('摸一摸、喂一顿、签到之后这三步变成可以领', ['pet', 'feed', 'checkin'].every((id) => st.items.find((x) => x.id === id)!.done) && st.claimable === 3);
+  const f0 = s.fish; const r = sim.claimQuest(s, 'pet');
+  check('领取：加小鱼干，不能重复领', r.ok && s.fish === f0 + QUESTS.guide[0].reward && !sim.claimQuest(s, 'pet').ok);
+  for (const g of QUESTS.guide) sim.questEvent(s, g.key);
+  let total = 0; for (const g of QUESTS.guide) { const before = s.fish; if (sim.claimQuest(s, g.id).ok) total += s.fish - before; }
+  st = sim.questStatus(s);
+  check('全部领完：引导结束，开始每日任务（3 个）', st.mode === 'daily' && st.items.length === QUESTS.dailyCount && new Set(st.items.map((x) => x.id)).size === QUESTS.dailyCount && total > 0);
+  for (const it of st.items) sim.questEvent(s, it.key, it.need);
+  check('每日任务做够次数就能领', sim.questStatus(s).items.every((x) => x.done) && !sim.claimDailyBonus(s).ok);
+  for (const it of st.items) sim.claimQuest(s, it.id);
+  const f1 = s.fish; check('全部领完再领额外奖励，一天一次', sim.claimDailyBonus(s).ok && s.fish === f1 + QUESTS.dailyBonus && !sim.claimDailyBonus(s).ok);
+  sim.advance(s, DAY); st = sim.questStatus(s);
+  check('第二天换一批新的，进度从零开始', st.items.length === QUESTS.dailyCount && st.items.every((x) => x.got === 0 && !x.claimed) && !st.bonusClaimed);
+  check('每日任务一天能多赚大约 75–105', (() => { const r = QUESTS.daily.map((q) => q.reward).sort((a, b) => a - b); const lo = r.slice(0, 3).reduce((a, b) => a + b, 0) + QUESTS.dailyBonus, hi = r.slice(-3).reduce((a, b) => a + b, 0) + QUESTS.dailyBonus; return lo >= 70 && hi <= 110; })());
+  const old = JSON.parse(JSON.stringify(sim.newState(T0))); old.v = 7; delete old.quests; old.clock += 2 * DAY;
+  const m = migrate(old, T0); check('已经玩了一阵的旧存档不走引导，直接每日任务', m.ok && m.state.quests.guideDone);
+  const young = JSON.parse(JSON.stringify(sim.newState(T0))); young.v = 7; delete young.quests;
+  const m2 = migrate(young, T0); check('刚开的旧存档照样走引导', m2.ok && !m2.state.quests.guideDone);
+  const m3 = migrate(JSON.parse(JSON.stringify(s)), T0); check('任务进度存档再读档还在', m3.ok && m3.state.quests.guideDone && m3.state.quests.daily.length === QUESTS.dailyCount);
 }
 
 console.log('装饰的摆放规则');

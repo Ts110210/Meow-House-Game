@@ -628,6 +628,39 @@ export const TRAITS: Record<Trait, { name: string; icon: string; desc: string }>
 };
 export const TRAIT_IDS = Object.keys(TRAITS) as Trait[];
 
+/** 任务：新手引导（一次性，按顺序列出，做完一步领一步的奖励）和每日任务（引导全部领完后开始，每天随机抽几个）。
+ *  key = 做了哪件事算进度（规则那边 questEvent 记的事）；go = 「去做」按钮带你去哪；{pet} 换成第一只宠物的名字 */
+export interface QuestDef { id: string; text: string; key: string; need: number; reward: number; go: string }
+export const QUESTS = {
+  guide: [
+    { id: 'pet', text: '摸一摸{pet}', key: 'pet', need: 1, reward: 10, go: 'pet' },
+    { id: 'feed', text: '给{pet}喂一顿饭', key: 'feed', need: 1, reward: 10, go: 'pet' },
+    { id: 'bath', text: '给{pet}洗个澡', key: 'bath', need: 1, reward: 10, go: 'pet' },
+    { id: 'play', text: '陪{pet}玩一会儿', key: 'play', need: 1, reward: 10, go: 'pet' },
+    { id: 'checkin', text: '每日签到', key: 'checkin', need: 1, reward: 10, go: 'checkin' },
+    { id: 'trip', text: '到门口派{pet}出门旅行', key: 'trip', need: 1, reward: 20, go: 'door' },
+    { id: 'postcard', text: '等它回来，收到第一张明信片', key: 'postcard', need: 1, reward: 20, go: 'album' },
+    { id: 'buy', text: '在商店买一样东西', key: 'buy', need: 1, reward: 20, go: 'shop' },
+    { id: 'decor', text: '在「布置房间」里挪一件装饰', key: 'decor', need: 1, reward: 20, go: 'decor' },
+    { id: 'roof', text: '点底部的「屋顶」去屋顶看看', key: 'roof', need: 1, reward: 10, go: 'roof' },
+  ] as QuestDef[],
+  /** 每日任务的池子：每天从里面随机抽 dailyCount 个（不重复） */
+  daily: [
+    { id: 'feed3', text: '喂 3 次饭', key: 'feed', need: 3, reward: 15, go: 'pet' },
+    { id: 'pet5', text: '摸摸 5 次', key: 'pet', need: 5, reward: 15, go: 'pet' },
+    { id: 'bath1', text: '洗 1 次澡', key: 'bath', need: 1, reward: 15, go: 'pet' },
+    { id: 'play2', text: '陪玩 2 次', key: 'play', need: 2, reward: 15, go: 'pet' },
+    { id: 'checkin', text: '每日签到', key: 'checkin', need: 1, reward: 15, go: 'checkin' },
+    { id: 'trip1', text: '派宠物出门 1 次', key: 'trip', need: 1, reward: 25, go: 'door' },
+    { id: 'plant1', text: '往鱼塘放 1 条鱼苗', key: 'plant', need: 1, reward: 20, go: 'pond' },
+    { id: 'buy1', text: '在商店买 1 样东西', key: 'buy', need: 1, reward: 20, go: 'shop' },
+    { id: 'decor1', text: '在「布置房间」里挪 1 件装饰', key: 'decor', need: 1, reward: 15, go: 'decor' },
+  ] as QuestDef[],
+  dailyCount: 3,
+  /** 当天的每日任务全部领完，再给这么多 */
+  dailyBonus: 30,
+};
+
 /** 公猫、母猫。现在只决定成年后的大小（见 CONFIG.growth.adultSize） */
 export type Sex = 'm' | 'f';
 export const SEXES: Record<Sex, { name: string; icon: string }> = { m: { name: '公猫', icon: '♂' }, f: { name: '母猫', icon: '♀' } };
