@@ -21,9 +21,14 @@ export type ObjectKind = 'neighbor' | 'find' | 'door' | 'bowl' | 'tub' | 'bed' |
  *  dx = 离家具中心多远（按 432 宽的区域算）；
  *  at = 站在地上时，脚底在家具底边往上多少（按家具高度的比例；负数 = 在家具前面）。不写 = 贴着墙根；
  *  perch = 跳到家具上：落脚点在图片里的位置 [横向 −0.5…0.5，从底边往上 0…1]。先走到 dx 的位置，再跳上去。 */
-interface Station { dx: number; dir: 1 | -1; at?: number; perch?: [number, number]; /** 钻到里面去（纸箱、洗衣篮、隧道）：排在家具和它「前面一层」之间 */ inside?: boolean }
+interface Station { dx: number; dir: 1 | -1; at?: number; perch?: [number, number];
+  /** 吃饭的位置：把嘴对准家具的「嘴要对准的那一块」（assets.config 的 mouth）里的这一点 [横向 0–1, 纵向 0–1]。
+   *  纵向可以是负数（高过碗沿）。back = 一定站在家具后面，脚底至少比家具底边靠后这么多（从后面探头吃，家具挡住它的下半身）。有 eat 时 dx、at 不用 */
+  eat?: { at: [number, number]; back?: number }; /** 钻到里面去（纸箱、洗衣篮、隧道）：排在家具和它「前面一层」之间 */ inside?: boolean }
 const STATIONS: Record<string, Station[]> = {
-  bowl: [{ dx: -72, dir: 1, at: -0.1 }, { dx: 72, dir: -1, at: -0.1 }, { dx: -138, dir: 1, at: -0.4 }, { dx: 138, dir: -1, at: -0.4 }], // 围着饭碗，最多四只一起吃
+  // 饭碗：最多三只一起吃。左边一只、右边一只，嘴伸进碗口；第三只站在碗后面探头吃
+  bowl: [{ dx: 0, dir: 1, eat: { at: [0.14, 0.6] } }, { dx: 0, dir: -1, eat: { at: [0.86, 0.6] } }, { dx: 0, dir: 1, eat: { at: [0.5, -0.5], back: 12 } }],
+  feeder: [{ dx: 0, dir: 1, eat: { at: [0.18, 0.45] } }], // 自动喂食机：一次只能一只在出粮口吃，其他的排队
   tub: [{ dx: -44, dir: 1, perch: [-0.17, 0] }, { dx: 44, dir: -1, perch: [0.17, 0] }], // 浴缸够大，两只可以一起泡（位置按遮挡线另算）
   bed: [{ dx: -62, dir: 1, perch: [-0.22, 0.5] }, { dx: 20, dir: 1, perch: [0.06, 0.5] }, { dx: 98, dir: -1, perch: [0.34, 0.5] }], // 床上能睡三只
   sofa: [{ dx: -64, dir: 1, perch: [-0.25, 0.33] }, { dx: 36, dir: -1, perch: [0.13, 0.33] }], // 沙发上两只
@@ -90,7 +95,9 @@ interface Actor {
   /** 闹脾气到什么时候（主人离开太久）。摸一下就好 */
   sulkUntil: number;
   /** meet = 走到这只同伴身边再开始；partner = 到了之后同伴做什么动作 */
-  pending: { action: ActionName; dur: number; ball?: boolean; meet?: string; partner?: ActionName } | null; fast: boolean;
+  pending: { action: ActionName; dur: number; ball?: boolean; meet?: string; partner?: ActionName; dish?: string } | null;
+  /** 正在去吃（或正在吃）的那份罐头、便当 */
+  dishId?: string; fast: boolean;
   /** 正在追球：到什么时候为止、是不是带球的那只、刚跑到位要不要先扑一下 */
   ball: { until: number; leader: boolean; hop: boolean } | null;
   /** 主人正在陪它玩（逗猫棒）到什么时候 */
@@ -693,6 +700,53 @@ export class Scene {
   }
   private lastFrameReal = 0; private greeted = false;
   private findSprites: Text[] = [];
+
+  // ---------- 罐头、便当：摆在厨房地上，吃完留下空罐、空盒，过一会儿消失 ----------
+  private dishes = new Map<string, { id: string; kind: 'can' | 'feast'; owner: string; x: number; y: number; dir: 1 | -1; sp: Sprite; started: boolean; endAt: number; emptyUntil: number }>();
+  private dishSeq = 0;
+  private propTex(kind: string): Texture {
+    const img = this.assets.get(`prop.${kind}`); if (img) return this.tex(img);
+    if (!this.objArt.has(kind)) this.objArt.set(kind, drawObject(kind));
+    return this.tex(this.objArt.get(kind)!);
+  }
+  /** 在厨房的吃饭区域里找个空地，地上摆好罐头或便当，让宠物走过去吃 */
+  private serveDish(a: Actor, kind: 'can' | 'feast') {
+    const area = ASSETS.eatArea; const zi = zoneIndex(area.zone); if (zi < 0) { this.reserveOrWait(a, 'bowl'); return; }
+    const k = zw(zi) / BASE_ZW, oy = geo.floorY - BASE_FY; const sc = this.scaleOf(a); const [ox, oyM] = this.mouthOffset(sc); const def = ASSETS.props[kind];
+    // 别人正在吃的地方（饭碗、出粮口、别的罐头便当）都要躲开
+    const busy: [number, number][] = [...[...this.actors.values()].filter((o) => o !== a && o.station).map((o) => [o.tx, o.ty] as [number, number]), ...[...this.dishes.values()].map((d) => [d.x, d.y] as [number, number])];
+    for (const kind2 of ['bowl', 'feeder']) { const sp = this.objSprites.get(kind2); if (sp) busy.push([sp.x - 60, sp.y], [sp.x, sp.y], [sp.x + 60, sp.y]); }
+    let best: { x: number; y: number; dir: 1 | -1 } | null = null, bestGap = -1;
+    for (let i = 0; i < 40; i++) {
+      const dir: 1 | -1 = Math.random() < 0.5 ? 1 : -1;
+      const fx = zx(zi) + (area.x[0] + Math.random() * (area.x[1] - area.x[0])) * k, fy = clampY(area.y[0] + oy + Math.random() * (area.y[1] - area.y[0]));
+      // 猫又长又高：前后错开一点没用，要左右拉开（大约一只猫的身长）才不会叠在一起
+      const gap = Math.min(...busy.map(([bx, by]) => Math.max(Math.abs(bx - fx), Math.abs(by - fy) * 1.2)), 999);
+      if (gap > bestGap) { bestGap = gap; best = { x: clampX(fx), y: fy, dir }; } if (gap > 130) break;
+    }
+    const spot = best!; const id = `dish${++this.dishSeq}`;
+    // 罐头摆在嘴的正下方：嘴对准罐口
+    const mx = spot.x + ox * spot.dir, my = spot.y + oyM; const h = def.height, img = this.propTex(kind); const w = (h * img.width) / img.height;
+    const sp = new Sprite(img); sp.anchor.set(0.5, 1); sp.width = w; sp.height = h; sp.position.set(mx + (0.5 - def.mouth[0]) * w, my + (1 - def.mouth[1]) * h); (sp as any).isActor = true; sp.eventMode = 'none';
+    this.addSorted(sp, sp.y + 0.05);
+    this.dishes.set(id, { id, kind, owner: a.id, x: spot.x, y: spot.y, dir: spot.dir, sp, started: false, endAt: 0, emptyUntil: 0 });
+    a.station = 'dish'; a.slot = -1; a.dishId = id; a.tx = spot.x; a.ty = spot.y;
+  }
+  private updateDishes() {
+    for (const d of [...this.dishes.values()]) {
+      const owner = this.actors.get(d.owner);
+      // 吃完了（或者它被叫去做别的事了，没吃上也算吃过：饱食已经加过了）：换成空罐、空盒
+      const gone = !owner || (!d.started && owner.pending?.dish !== d.id);
+      if (!d.emptyUntil && ((d.started && this.now >= d.endAt) || gone)) {
+        d.emptyUntil = this.now + CONFIG.eating.emptyLinger; d.sp.texture = this.propTex(d.kind === 'can' ? 'canEmpty' : 'feastEmpty');
+        if (owner?.dishId === d.id) owner.dishId = undefined;
+      }
+      if (d.emptyUntil) {
+        const left = d.emptyUntil - this.now; d.sp.alpha = Math.max(0, Math.min(1, left / CONFIG.eating.fadeMs));
+        if (left <= 0) { d.sp.destroy(); this.dishes.delete(d.id); }
+      }
+    }
+  }
   /** 这只宠物此刻在做什么（给背屏的「小剧场」用）。不在家就是 null */
   doingOf(petId: string): { action: ActionName; text: string } | null {
     const a = this.actors.get(petId); if (!a) return null;
@@ -813,8 +867,19 @@ export class Scene {
     return { x: ball ? this.ballX! : pos.x, y: ball ? this.ballY ?? pos.y : pos.y, w: sp.width, h: sp.height, k: pos.k };
   }
   /** 用这件家具的第几个位置时，脚站在地上的哪里（要跳上去的家具：这里是起跳的地方） */
-  private floorSpot(kind: string, slot: number): [number, number] | null {
+  /** 这只宠物现在画多大 */
+  private scaleOf(a: Actor) { const p = this.game.pet(a.id); return PET_BASE * ASSETS.petScale * CONFIG.growth.stageScale[p ? sim.stageOf(p) : 2]; }
+  /** 嘴在世界里离脚底多远（面朝右；朝左时 x 取反） */
+  private mouthOffset(sc: number): [number, number] { return [(SPRITE.mouth[0] - SPRITE.cell / 2) * sc, (SPRITE.mouth[1] - SPRITE.cell * 0.9) * sc]; }
+  private floorSpot(kind: string, slot: number, sc = PET_BASE * ASSETS.petScale): [number, number] | null {
     const A = this.anchor(kind), st = STATIONS[kind]?.[slot]; if (!A || !st) return null;
+    const box = ASSETS.objects[kind]?.mouth;
+    if (st.eat && box) {
+      // 嘴对准碗口（或出粮口）里的那一点，反推脚站在哪
+      const mx = A.x - A.w / 2 + A.w * (box[0] + (box[2] - box[0]) * st.eat.at[0]), my = A.y - A.h + A.h * (box[1] + (box[3] - box[1]) * st.eat.at[1]);
+      const [ox, oy] = this.mouthOffset(sc); const x = clampX(mx - ox * st.dir);
+      return [x, clampY(st.eat.back != null ? Math.min(my - oy, A.y - st.eat.back) : my - oy)];
+    }
     const x = clampX(A.x + st.dx * A.k); const y = st.at != null ? A.y - A.h * st.at : depthMin() + 4 + slot * 7;
     return [x, Math.min(clampY(y), this.depthLimit(x))];
   }
@@ -835,7 +900,7 @@ export class Scene {
     // 已经待在这件家具上：优先留在原来的位置，不用跳下来再跳上去
     const order = want != null ? [want] : [...(a.perch?.kind === kind ? [a.perch.slot] : []), ...slots.map((_, k) => k)];
     const i = order.find(free); if (i === undefined) return false;
-    const spot = this.floorSpot(kind, i)!;
+    const spot = this.floorSpot(kind, i, this.scaleOf(a))!;
     a.station = kind; a.slot = i; a.tx = spot[0]; a.ty = spot[1];
     return true;
   }
@@ -856,19 +921,21 @@ export class Scene {
   }
 
   /** 让一只宠物去做某个动作（主人喂食、洗澡、玩耍时调用）。会走到对应的家具旁边；镜头跟着它。 */
-  perform(petId: string, action: ActionName, follow = true) {
+  /** food = 吃的是什么（kibble 猫粮在饭碗吃；can 鱼罐头、feast 豪华便当在厨房里找个空地，地上摆出罐头或便当） */
+  perform(petId: string, action: ActionName, follow = true, food?: string) {
     const a = this.actors.get(petId); if (!a) return;
     // 待在沙发、床、猫爬架上被摸：不用跳下来
     if (!(action === 'happy' && a.perch && a.perch.kind !== 'tub')) this.release(a);
     a.pending = null; a.want = null; this.stop(a); a.wandUntil = 0; a.inter = null;
     if (a.sulkUntil > this.now) { a.sulkUntil = 0; if (action === 'happy') this.floatText(petId, '哼……原谅你了'); }
-    if (action === 'eat') this.reserveOrWait(a, 'bowl');
+    if (action === 'eat' && (food === 'can' || food === 'feast')) this.serveDish(a, food);
+    else if (action === 'eat') this.reserveOrWait(a, 'bowl');
     else if (action === 'bath') this.reserveOrWait(a, 'tub');
     // 主人陪玩：就在原地逗它，不用走到玩具那里（猫抓板和球是它自己玩的）
     const dur = action === 'eat' ? D.eat : action === 'bath' ? D.bath : action === 'play' ? D.wand : D.pet;
     if (action === 'play') { a.wandUntil = this.now + dur; a.selfPlayAt = this.now; }
     a.fast = true;
-    a.pending = { action, dur };
+    a.pending = { action, dur, ...(a.station === 'dish' ? { dish: a.dishId } : {}) };
     if (follow && action !== 'happy') this.follow = { id: petId, until: this.now + dur + 4000 };
   }
 
@@ -910,9 +977,9 @@ export class Scene {
       // 饿了：去饭碗旁边蹲着等
       const spot = goNear('bowl', -150 - a.lane * 30);
       if (near(spot)) { a.dir = 1; this.setAction(a, 'idle', 3000); } else this.go(a, spot);
-    } else if (s.owned.feeder && p.food < CONFIG.stats.feederFoodFloor + 12 && Math.random() < 0.4 && this.reserve(a, 'bowl')) {
-      // 自动喂食机出粮了：自己去吃两口
-      a.pending = { action: 'eat', dur: 5000 };
+    } else if (s.owned.feeder && p.food < CONFIG.stats.feederFoodFloor + 12 && Math.random() < 0.4 && this.anchor('feeder')) {
+      // 自动喂食机出粮了：自己去出粮口吃两口。一次只能一只，有别的猫在吃就在旁边排队
+      this.reserveOrWait(a, 'feeder'); a.pending = { action: 'eat', dur: 5000 };
     } else if (night) {
       // 晚上：先睡自己在猫爬架上的那一层；没有就上床、上沙发；都满了在床边的地上睡
       const adv = p.trait === 'adventurer'; const winter = sim.season(s) === 'winter';
@@ -1172,25 +1239,29 @@ export class Scene {
           a.ball.hop = false;
           const lo = zx(1) + 80, hi = zx(Math.min(N, 5)) - 80; // 只在屋里跑，不出阳台
           if (a.ball.leader) this.go(a, Math.max(lo, Math.min(hi, a.x + (Math.random() < 0.5 ? -1 : 1) * (140 + Math.random() * 200))), depthMin() + 20 + Math.random() * (depthMax() - depthMin() - 20));
-          else if (a.station === 'autoball') { const f = this.floorSpot('autoball', a.slot); if (f) this.go(a, f[0], f[1]); else this.stop(a); } // 追着自己滚的球
+          else if (a.station === 'autoball') { const f = this.floorSpot('autoball', a.slot, this.scaleOf(a)); if (f) this.go(a, f[0], f[1]); else this.stop(a); } // 追着自己滚的球
           else { const lead = [...this.actors.values()].find((o) => o.ball?.leader); if (lead) this.go(a, Math.max(lo, Math.min(hi, lead.tx - lead.dir * 84)), lead.ty + 8); else this.stop(a); }
           if (!this.far(a)) this.setAction(a, 'play', 900);
         }
-      } else if (a.pending && a.want && this.now - a.want.since < 40_000 && !this.reserve(a, a.want.kind)) {
-        // 位置还被占着：面朝家具等一等（最多等 40 秒，再等不到就原地做）
+      } else if (a.pending && a.want && a.pending.action === 'eat' && this.now - a.want.since >= CONFIG.eating.maxWait && !this.reserve(a, a.want.kind)) {
+        // 等太久还是没空位：不吃了（不会对着空气吃）
+        a.pending = null; a.want = null; a.fast = false; this.setAction(a, 'idle', 1500);
+      } else if (a.pending && a.want && this.now - a.want.since < (a.pending.action === 'eat' ? CONFIG.eating.maxWait : 40_000) && !this.reserve(a, a.want.kind)) {
+        // 位置还被占着：面朝家具等一等（吃饭会一直等到有空位；别的最多等 40 秒，再等不到就原地做）
         const pos = objPos(ASSETS.objects[a.want.kind]); a.dir = pos.x >= a.x ? 1 : -1;
         if (a.action !== 'idle') { a.action = 'idle'; a.t0 = this.now; }
       } else if (a.pending && a.want && a.station) {
         a.want = null; // 空出来了，走过去（下一帧开始走）
       } else if (a.pending) {
         a.want = null;
-        const st = a.station ? STATIONS[a.station][a.slot] : null;
+        const st = a.station ? STATIONS[a.station]?.[a.slot] ?? null : null;
         if (st?.perch && !(a.perch && a.perch.kind === a.station && a.perch.slot === a.slot) && this.perchSpot(a.station!, a.slot, sc)) {
           // 走到家具跟前了：先跳上去，落稳了再开始做动作
           a.dir = st.dir; a.hop = { t0: this.now, up: true, kind: a.station!, slot: a.slot }; a.t0 = this.now;
         } else {
           // 到位了：转向家具，开始做动作
           if (st) a.dir = st.dir;
+          if (a.pending.dish) { const d = this.dishes.get(a.pending.dish); if (d) { a.dir = d.dir; d.started = true; d.endAt = this.now + a.pending.dur; } }
           if (a.pending.ball && a.station === 'ball') { a.ball = { until: this.now + a.pending.dur, leader: ![...this.actors.values()].some((o) => o !== a && o.ball?.leader), hop: true }; this.setAction(a, 'play', 1100); }
           else if (a.pending.ball && a.station === 'autoball') { a.ball = { until: this.now + a.pending.dur, leader: false, hop: true }; this.setAction(a, 'play', 1100); }
           else this.setAction(a, a.pending.action, a.pending.dur);
@@ -1280,7 +1351,7 @@ export class Scene {
       }
     });
 
-    this.updateGuest(dt); this.watchMoments();
+    this.updateGuest(dt); this.watchMoments(); this.updateDishes();
     for (const [kind, front] of this.fronts) front.visible = inUse.has(kind);
     this.rollAutoBall(dt);
 

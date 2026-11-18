@@ -24,6 +24,10 @@
 门、橱柜、沙发、浴缸、床头柜、床、收藏柜、相册墙、鱼塘是固定家具：所在区域换了背景图、而它们没有自己的图片时，占位图自动隐藏，只保留点击区域。
 建议正式素材里把它们都单独出图、不画进背景——这样才有前后遮挡、能换皮肤，猫也才能跳到沙发和床上。
 
+## props/ 吃饭时摆在地上的东西（透明背景 PNG）
+
+`can.png` `can-empty.png` `feast.png` `feast-empty.png`（鱼罐头、空罐头、豪华便当、空便当盒；尺寸和嘴对准的点见 `docs/素材模板.md` 第 2 节）
+
 ## decor/ 房间装饰（透明背景 PNG）
 
 `cushion.png` `mat.png` `poster.png` `plant.png` `rug.png` `painting.png` `lamp.png` `sidelamp.png` `nightlight.png` `bigplant.png` `shelf.png`

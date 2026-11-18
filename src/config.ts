@@ -304,6 +304,16 @@ export const CONFIG = {
     fishPerFry: 18,
   },
 
+  // ---------- 吃饭的演出 ----------
+  eating: {
+    /** 罐头、便当吃完后，空罐、空盒在地上留多久再消失（毫秒） */
+    emptyLinger: 30_000,
+    /** 消失时淡出用多久 */
+    fadeMs: 1_000,
+    /** 位置被占着时最多等多久（毫秒）；等不到就算了，不会对着空气吃 */
+    maxWait: 120_000,
+  },
+
   // ---------- 面板 ----------
   ui: {
     /** 面板刚弹出来的这段时间（毫秒）里，面板里的按钮点了不响应。
@@ -540,6 +550,9 @@ export const NPC_COLORS: Record<string, Coat> = {
 export const SPRITE = {
   cell: 256,
   framesPerRow: 4,
+  /** 「吃东西」那一行里，宠物的嘴在格子里的位置（面朝右，按 256 的格子算）。吃饭时用它把嘴对准碗口、出粮口、罐头。
+   *  换了正式的精灵图，嘴的位置不一样时改这里 */
+  mouth: [198, 187] as [number, number],
   /** 行的顺序。前 5 行必须有，后面的可以没有（缺了用 fallback 里写的动作代替）。
    *  一共 16 行 = 4096 像素高，这是很多手机一张贴图能放下的上限，所以不要再往后加行；要加新动作先和我商量拆成两张图。 */
   rows: ['idle', 'walk', 'eat', 'sleep', 'happy', 'bath', 'lick', 'play', 'jump', 'fish', 'yawn', 'stretch', 'sit', 'groom', 'scratch', 'beg'] as const,

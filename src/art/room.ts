@@ -268,10 +268,19 @@ const OBJECT_ART: Record<string, { w: number; h: number; draw: (s: Sketch) => vo
   bowl: { w: 96, h: 44, draw(s) {
     s.poly([[6, 12], [90, 12], [78, 40], [18, 40]], { fill: P.coral }); s.ellipse(48, 13, 42, 9, { fill: darken(P.wood, 0.1) });
   } },
+  // 自动喂食机：粮仓在上面，出粮口在最下面的小食盘（嘴对准的是食盘，见 assets.config 的 mouth）
   feeder: { w: 70, h: 128, draw(s) {
-    s.rect(5, 4, 60, 122, { fill: P.white, r: 10 }); s.rect(15, 14, 40, 54, { fill: P.mist, r: 6, width: 1.3 });
-    s.rect(18, 40, 34, 26, { fill: darken(P.wood, 0.05), stroke: false, r: 3 }); s.ellipse(35, 94, 10, 10, { fill: P.coral });
+    s.rect(5, 4, 60, 98, { fill: P.white, r: 10 }); s.rect(15, 14, 40, 50, { fill: P.mist, r: 6, width: 1.3 });
+    s.rect(18, 38, 34, 24, { fill: darken(P.wood, 0.05), stroke: false, r: 3 }); s.ellipse(35, 82, 6, 6, { fill: P.coral });
+    s.rect(28, 96, 14, 10, { fill: darken(P.white, 0.15), r: 2 }); // 出粮口
+    s.poly([[3, 104], [67, 104], [61, 126], [9, 126]], { fill: P.coral }); s.ellipse(35, 106, 31, 5, { fill: darken(P.wood, 0.1) }); // 食盘
   } },
+  // 鱼罐头：拉开的罐子，里面是鱼。吃完是空罐
+  can: { w: 46, h: 36, draw(s) { s.rect(4, 8, 38, 26, { fill: '#C9D3D9', r: 4 }); s.rect(4, 16, 38, 10, { fill: P.mist }); s.ellipse(23, 8, 19, 6, { fill: '#E9A07F' }); s.ellipse(17, 7, 5, 2.5, { fill: '#F3C5A8', stroke: false, hatch: 0 }); s.curve([[40, 6], [48, 0], [44, 12]], '#9AA6AE', 2); } },
+  canEmpty: { w: 46, h: 36, draw(s) { s.poly([[2, 30], [10, 12], [40, 16], [44, 34], [8, 36]], { fill: '#C9D3D9' }); s.ellipse(25, 14, 15, 5, { fill: '#9AA6AE' }); s.rect(12, 20, 26, 8, { fill: P.mist, stroke: false }); } },
+  // 豪华便当：打开的盒子，几格不同的菜。吃完是空盒
+  feast: { w: 76, h: 34, draw(s) { s.rect(2, 8, 72, 24, { fill: P.coral, r: 4 }); s.rect(6, 4, 64, 10, { fill: P.white, r: 3 }); s.ellipse(20, 8, 9, 4, { fill: '#F3C5A8' }); s.ellipse(38, 8, 7, 4, { fill: P.sage }); s.ellipse(56, 8, 9, 4, { fill: P.mustard }); } },
+  feastEmpty: { w: 76, h: 34, draw(s) { s.rect(2, 8, 72, 24, { fill: P.coral, r: 4 }); s.rect(6, 4, 64, 10, { fill: darken(P.white, 0.06), r: 3 }); s.line(28, 5, 28, 13, P.ink, 1, 0.5); s.line(48, 5, 48, 13, P.ink, 1, 0.5); } },
   scratcher: { w: 84, h: 160, draw(s) {
     s.rect(28, 16, 28, 132, { fill: lighten(P.wood, 0.35) });
     for (let y = 30; y < 144; y += 11) s.line(29, y, 55, y + 4, P.woodDark, 1.1, 0.6);

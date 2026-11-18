@@ -30,7 +30,12 @@ export interface ObjectDef {
   frontFrom?: number;
   /** 会发光的位置（0–1，相对图片的宽和高）。天黑了在这里画一团暖光，物品挪到哪光跟到哪 */
   light?: [number, number];
+  /** 吃饭时嘴要对准的那一块（0–1，相对图片：左、上、右、下）。饭碗 = 碗口，自动喂食机 = 出粮口。和图片的范围框不是一回事 */
+  mouth?: [number, number, number, number];
 }
+
+/** 吃饭时临时摆在地上的东西（罐头、便当，和吃完的空罐、空盒）。height = 显示多高；mouth = 嘴要对准的点（0–1，相对图片） */
+export interface PropDef { src: string; height: number; mouth: [number, number]; label: string }
 
 export const ASSETS = {
   base: 'assets/',
@@ -63,8 +68,8 @@ export const ASSETS = {
   // ---------- 家具和可互动物品：每件一张透明背景的 PNG ----------
   objects: {
     door: { src: 'objects/door.png', zone: 'door', x: 216, y: 562, height: 392, label: '门', partOfBackground: true },
-    bowl: { src: 'objects/bowl.png', zone: 'kitchen', x: 340, y: 634, height: 44, label: '饭碗' },
-    feeder: { src: 'objects/feeder.png', zone: 'kitchen', x: 262, y: 564, height: 128, label: '自动喂食机', needsOwned: 'feeder' },
+    bowl: { src: 'objects/bowl.png', zone: 'kitchen', x: 340, y: 634, height: 44, label: '饭碗', mouth: [0.08, 0.1, 0.92, 0.45] },
+    feeder: { src: 'objects/feeder.png', zone: 'kitchen', x: 262, y: 600, height: 128, label: '自动喂食机', needsOwned: 'feeder', mouth: [0.12, 0.8, 0.88, 0.9] },
     pendantDoor: { src: 'objects/pendantDoor.png', zone: 'door', x: 66, y: 194, height: 194, label: '门口吊灯', needsOwned: 'pendantDoor', light: [0.5, 0.88] },
     counter: { src: 'objects/counter.png', zone: 'kitchen', x: 122, y: 548, height: 190, label: '橱柜', partOfBackground: true },
     sofa: { src: 'objects/sofa.png', zone: 'living', x: 132, y: 562, height: 144, label: '沙发', partOfBackground: true },
@@ -86,6 +91,16 @@ export const ASSETS = {
     tunnel: { src: 'objects/tunnel.png', zone: 'balcony', x: 170, y: 672, height: 80, label: '猫隧道', needsOwned: 'tunnel', frontFrom: 0 },
     catgrass: { src: 'objects/catgrass.png', zone: 'garden', x: 50, y: 608, height: 64, label: '猫草盆', needsOwned: 'catgrass' },
   } as Record<string, ObjectDef>,
+
+  // ---------- 吃饭时摆在地上的东西 ----------
+  props: {
+    can: { src: 'props/can.png', height: 36, mouth: [0.5, 0.18], label: '鱼罐头' },
+    canEmpty: { src: 'props/can-empty.png', height: 36, mouth: [0.5, 0.18], label: '空罐头' },
+    feast: { src: 'props/feast.png', height: 34, mouth: [0.5, 0.22], label: '豪华便当' },
+    feastEmpty: { src: 'props/feast-empty.png', height: 34, mouth: [0.5, 0.22], label: '空便当盒' },
+  } as Record<string, PropDef>,
+  /** 吃鱼罐头、豪华便当的地方：厨房里饭碗周围的一块长方形，在这里面随便找个空位（x、y = 宠物脚底，按 432 宽、地板线 560 算） */
+  eatArea: { zone: 'kitchen' as ZoneId, x: [40, 420] as [number, number], y: [614, 700] as [number, number] },
 
   // ---------- 不是家具的落脚点：窗台。猫会跳上去看外面 ----------
   // x = 离所在区域左边多远（按 432 宽的区域算），y = 窗台的高度（按地板线在 560 算）。换了背景图、窗户位置变了，改这里。

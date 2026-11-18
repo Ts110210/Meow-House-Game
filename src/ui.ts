@@ -505,7 +505,7 @@ export class UI {
     }
 
     const mult = (k: 'feed' | 'pet' | 'bath' | 'play') => { const m = sim.peekMult(s, p, k); return m < 1 ? h('small', null, `连续做，效果 ×${m}`) : null; };
-    const doAct = (fn: (st: typeof s) => Result, anim: ActionName) => {
+    const doAct = (fn: (st: typeof s) => Result, anim: ActionName, food?: string) => {
       // 正在吃、洗、玩的时候不接新的指令，等它做完
       const busy = this.scene.busy(id);
       if (busy && anim !== 'happy') { this.toast(`${p.name}正在${busy === 'eat' ? '吃东西' : busy === 'bath' ? '洗澡' : '玩'}，等它一下`); sfx('error'); return; }
@@ -517,11 +517,11 @@ export class UI {
         this.preview = { petId: id, action: anim, until: performance.now() + 2600 }; this.scene.perform(id, anim, false); this.say(r);
       } else {
         // 喂食、洗澡、玩耍：收起面板，镜头跟着它走到饭碗、浴缸、玩具那里
-        this.close(); this.scene.perform(id, anim); if (r.msg) this.scene.floatText(id, r.msg);
+        this.close(); this.scene.perform(id, anim, true, food); if (r.msg) this.scene.floatText(id, r.msg);
       }
     };
     out.push(h('h3', null, '喂食'));
-    out.push(h('div', { class: 'grid3' }, FOODS.map((f) => h('button', { class: 'act', disabled: sim.count(s, f.id) < 1, onclick: () => doAct((st) => sim.feed(st, id, f.id), 'eat') },
+    out.push(h('div', { class: 'grid3' }, FOODS.map((f) => h('button', { class: 'act', disabled: sim.count(s, f.id) < 1, onclick: () => doAct((st) => sim.feed(st, id, f.id), 'eat', f.id) },
       h('span', { class: 'big' }, f.icon), `${f.name} ×${sim.count(s, f.id)}`, h('small', null, `饱食 +${f.restore}`)))));
     const fm = mult('feed'); if (fm) out.push(h('p', { class: 'soft' }, '短时间内连续喂食，每次效果减半；', `下一次 ×${sim.peekMult(s, p, 'feed')}`));
     if (FOODS.every((f) => sim.count(s, f.id) < 1)) out.push(h('button', { class: 'btn block', onclick: () => this.openShop() }, '食物吃完了，去商店'));
