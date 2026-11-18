@@ -1,6 +1,6 @@
 // 读取精灵图：默认宠物和上传的宠物走同一套格式。
 import { Rectangle, Texture } from 'pixi.js';
-import { SPRITE, type ActionName } from './config';
+import { SPRITE, type ActionName, type ExtraAction } from './config';
 
 const C = SPRITE.cell;
 const N = SPRITE.framesPerRow;
@@ -11,21 +11,40 @@ export interface SpriteSet {
   rows: number;
   avatar: HTMLCanvasElement;
   tex: Texture[][];
+  /** 第二张精灵图（爬梯子等），没有就是空的 */
+  tex2: Texture[][];
 }
 
-export function buildSet(id: string, sheet: HTMLCanvasElement, avatar?: HTMLCanvasElement | null): SpriteSet {
+/** sheet2 = 第二张精灵图（没有就不传） */
+export function buildSet(id: string, sheet: HTMLCanvasElement, avatar?: HTMLCanvasElement | null, sheet2?: HTMLCanvasElement | null): SpriteSet {
   const rows = Math.min(SPRITE.rows.length, Math.floor(sheet.height / C));
   const base = Texture.from(sheet);
   const tex: Texture[][] = [];
   for (let r = 0; r < rows; r++) {
     tex.push(Array.from({ length: N }, (_, f) => new Texture({ source: base.source, frame: new Rectangle(f * C, r * C, C, C) })));
   }
-  return { id, sheet, rows, avatar: avatar ?? firstFrame(sheet), tex };
+  const tex2: Texture[][] = [];
+  if (sheet2) { const b2 = Texture.from(sheet2); const rows2 = Math.min(SPRITE.rows2.length, Math.floor(sheet2.height / C)); for (let r = 0; r < rows2; r++) tex2.push(Array.from({ length: N }, (_, f) => new Texture({ source: b2.source, frame: new Rectangle(f * C, r * C, C, C) }))); }
+  return { id, sheet, rows, avatar: avatar ?? firstFrame(sheet), tex, tex2 };
+}
+
+/** 第二张精灵图里某个动作的一帧；没有这张图（或这一行）时返回 null，调用的地方用第一张里的代替动作 */
+export function extraFrame(set: SpriteSet, action: ExtraAction, t: number): Texture | null {
+  const r = (SPRITE.rows2 as readonly string[]).indexOf(action); const row = set.tex2[r]; if (!row) return null;
+  return row[Math.floor((t / 1000) * (SPRITE.fps2[action] ?? 6)) % N] ?? null;
+}
+
+/** 第二张精灵图（只有一行时 256 高也可以）：宽分 4 格，高度是格子的整数倍 */
+export function normalizeSheet2(img: HTMLImageElement | HTMLCanvasElement): HTMLCanvasElement | null {
+  const cellW = img.width / N; const rows = Math.round(img.height / cellW);
+  if (cellW < 32 || rows < 1 || Math.abs(img.height / cellW - rows) > 0.12) return null;
+  const use = Math.min(rows, SPRITE.rows2.length); const cv = document.createElement('canvas'); cv.width = C * N; cv.height = C * use;
+  const ctx = cv.getContext('2d')!; ctx.imageSmoothingQuality = 'high'; ctx.drawImage(img, 0, 0, img.width, cellW * use, 0, 0, cv.width, cv.height); return cv;
 }
 
 /** 只给面板里的预览动画用的轻量版：不建 Pixi 贴图 */
 export function previewSet(sheet: HTMLCanvasElement): SpriteSet {
-  return { id: 'preview', sheet, rows: Math.min(SPRITE.rows.length, Math.floor(sheet.height / C)), avatar: sheet, tex: [] };
+  return { id: 'preview', sheet, rows: Math.min(SPRITE.rows.length, Math.floor(sheet.height / C)), avatar: sheet, tex: [], tex2: [] };
 }
 
 function firstFrame(sheet: HTMLCanvasElement) {

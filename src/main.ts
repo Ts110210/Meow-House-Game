@@ -32,7 +32,7 @@ async function boot() {
   ui = new UI(game, scene, document.getElementById('ui')!);
   scene.relayout(); scene.scrollToZone(2, true);
   ui.setZone(2);
-  assets.onChange(async (key) => { if (key.startsWith('pet.') || key.startsWith('avatar.')) await game.reloadDefaultSprites(); ui?.assetsChanged(); scene.rebuildArt(); });
+  assets.onChange(async (key) => { if (key.startsWith('pet.') || key.startsWith('pet2.') || key.startsWith('avatar.')) await game.reloadDefaultSprites(); ui?.assetsChanged(); scene.rebuildArt(); });
   // 切到后台或关掉页面时存一次档
   document.addEventListener('visibilitychange', () => { if (document.hidden) game.save(); else game.welcome(); });
   setTimeout(() => game.welcome(), 1500); // 打开游戏：看看门口有没有客人

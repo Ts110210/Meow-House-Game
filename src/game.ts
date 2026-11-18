@@ -1,10 +1,10 @@
 // 把存档、规则、精灵图串在一起。画面（scene）和界面（ui）都只和它打交道。
 import { CONFIG, DAY, FUR_COLORS, NPC_COLORS, VISITORS, NEIGHBORS } from './config';
-import { drawDefaultAvatar, drawDefaultSheet } from './art/defaultPet';
+import { drawDefaultAvatar, drawDefaultSheet, drawDefaultSheet2 } from './art/defaultPet';
 import { blobs } from './platform/storage';
 import { notifyNow } from './platform/notify';
 import * as sim from './sim';
-import { buildSet, loadImage, normalizeSheet, type SpriteSet } from './sprites';
+import { buildSet, loadImage, normalizeSheet, normalizeSheet2, type SpriteSet } from './sprites';
 import type { AssetStore } from './assets';
 import { buildExport, clearSave, loadSave, parseImport, SAVE_VERSION, writeSave } from './save';
 import type { GameEvent, GameState, Pet, Result } from './types';
@@ -76,14 +76,17 @@ export class Game {
         }
       } catch { set = null; }
     }
-    if (!set && spriteId.startsWith('look:')) { const sheet = drawDefaultSheet(spriteId); set = buildSet(spriteId, sheet, drawDefaultAvatar(sheet)); }
+    if (!set && spriteId.startsWith('look:')) { const sheet = drawDefaultSheet(spriteId); set = buildSet(spriteId, sheet, drawDefaultAvatar(sheet), drawDefaultSheet2(spriteId)); }
     if (!set) {
       const color = spriteId.startsWith('default:') ? spriteId.slice(8) : spriteId.startsWith('npc:') ? spriteId.slice(4) : 'orange';
       // 默认宠物：assets.config.ts 里配了精灵图就用图片，否则用代码画的占位图
       const pic = this.assets.get(`pet.${color}`);
       const r = pic ? normalizeSheet(pic, false) : null;
-      if (r && r.ok && r.sheet) set = buildSet(spriteId, r.sheet, this.assets.get(`avatar.${color}`));
-      else { const sheet = drawDefaultSheet(FUR_COLORS[color] || NPC_COLORS[color] ? color : 'orange'); set = buildSet(spriteId, sheet, drawDefaultAvatar(sheet)); }
+      // 第二张精灵图（爬梯子等）：有图片用图片；默认宠物用的是占位图时，第二张也用占位图；第一张是正式图片而第二张没有，就不要第二张（爬梯子用跳跃代替，免得画风不一样）
+      const pic2 = this.assets.get(`pet2.${color}`); const known = FUR_COLORS[color] || NPC_COLORS[color] ? color : 'orange';
+      const sheet2 = pic2 ? normalizeSheet2(pic2) : r && r.ok ? null : drawDefaultSheet2(known);
+      if (r && r.ok && r.sheet) set = buildSet(spriteId, r.sheet, this.assets.get(`avatar.${color}`), sheet2);
+      else { const sheet = drawDefaultSheet(known); set = buildSet(spriteId, sheet, drawDefaultAvatar(sheet), sheet2); }
     }
     this.sprites.set(spriteId, set);
     return set;

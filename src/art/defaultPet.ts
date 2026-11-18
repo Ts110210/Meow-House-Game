@@ -274,10 +274,26 @@ const POSES: Record<string, Pose[]> = {
   beg: [0, 1, 2, 1].map((b, i) => ({ rear: 0.74 + b * 0.05, legs: [[0, 0], [0, 0], [0, b * 8], [0, b * 8]], tail: 1, eyes: 'happy', headY: -b * 2, extra: i === 2 ? 'heart' : undefined, phase: 1 } as Pose)),
 };
 
+/** 第二张精灵图里的动作 */
+const POSES2: Record<string, Pose[]> = {
+  // 爬梯子：身体竖起来贴着梯子，两只前爪一上一下轮流往上够，尾巴垂着摆
+  climb: [0, 1, 2, 3].map((i) => ({ rear: 1.22, legs: [[0, 0], [0, 0], [i % 2 ? 22 : -2, i % 2 ? -10 : 14], [i % 2 ? -2 : 22, i % 2 ? 14 : -10]], tail: [0.2, 0.5, 0.2, 0][i], headY: -4, eyes: 'open' } as Pose)),
+};
+
+const paletteOf = (color: string | Coat): Coat => { const look = typeof color === 'string' ? decodeLook(color) : null; return typeof color !== 'string' ? color : look ? coatOfLook(look) : FUR_COLORS[color] ?? NPC_COLORS[color] ?? FUR_COLORS.orange; };
+
+/** 第二张精灵图的占位图（爬梯子等），格式和第一张一样 */
+export function drawDefaultSheet2(color: string | Coat): HTMLCanvasElement {
+  const pal = paletteOf(color); const rows = SPRITE.rows2;
+  const cv = document.createElement('canvas'); cv.width = C * SPRITE.framesPerRow; cv.height = C * rows.length; const ctx = cv.getContext('2d')!;
+  rows.forEach((row, r) => { for (let f = 0; f < SPRITE.framesPerRow; f++) drawCat(ctx, f * C, r * C, pal, POSES2[row][f] ?? { legs: L0 }); });
+  for (let r = 0; r < rows.length; r++) for (let f = 0; f < SPRITE.framesPerRow; f++) { ctx.save(); ctx.beginPath(); ctx.rect(f * C, r * C, C, C); ctx.clip(); ctx.translate(f * C, r * C); pencilOver(ctx, C, C, 11, 0.9); ctx.restore(); }
+  return cv;
+}
+
 /** color 可以是内置毛色的名字、一套颜色，或者 look:… 这样的自定义编号 */
 export function drawDefaultSheet(color: string | Coat): HTMLCanvasElement {
-  const look = typeof color === 'string' ? decodeLook(color) : null;
-  const pal = typeof color !== 'string' ? color : look ? coatOfLook(look) : FUR_COLORS[color] ?? NPC_COLORS[color] ?? FUR_COLORS.orange;
+  const pal = paletteOf(color);
   const cv = document.createElement('canvas');
   cv.width = C * SPRITE.framesPerRow; cv.height = C * SPRITE.rows.length;
   const ctx = cv.getContext('2d')!;

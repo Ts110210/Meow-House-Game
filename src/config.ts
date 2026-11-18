@@ -603,11 +603,18 @@ export const SPRITE = {
   assembleSize: { idle: 0.7, walk: 0.7, eat: 0.56, sleep: 0.42, happy: 0.7, bath: 0.7, lick: 0.66, play: 0.7, jump: 0.7, fish: 0.62, yawn: 0.7, stretch: 0.66, sit: 0.74, groom: 0.66, scratch: 0.84, beg: 0.84 } as Record<string, number>,
   /** 脚底对齐到格子高度的这个位置 */
   footLine: 0.9,
+  /** 第二张精灵图 pets/<毛色>-2.png：格式和第一张一样（每格 256，每行 4 帧，面朝右）。
+   *  第 1 行是爬梯子（上下屋顶），后面的行留给以后的新动作。没有这张图时，爬梯子用「跳跃」那一行代替 */
+  rows2: ['climb'] as const,
+  rowNames2: { climb: '爬梯子（上下屋顶）' } as Record<string, string>,
+  fps2: { climb: 6 } as Record<string, number>,
   /** 每秒播几帧 */
   fps: { idle: 3, walk: 7, eat: 5, sleep: 1.5, happy: 5, bath: 4, lick: 4, play: 7, jump: 8, fish: 5, yawn: 3, stretch: 3.5, sit: 2, groom: 5, scratch: 8, beg: 5 } as Record<string, number>,
 };
 
 export type ActionName = (typeof SPRITE.rows)[number];
+/** 第二张精灵图里的动作 */
+export type ExtraAction = (typeof SPRITE.rows2)[number];
 
 /** 四种性格。数值在 CONFIG.traits 里 */
 export type Trait = 'glutton' | 'clingy' | 'tidy' | 'adventurer';

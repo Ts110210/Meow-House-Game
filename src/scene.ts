@@ -12,7 +12,7 @@ import { drawDecor } from './art/decor';
 import type { Game } from './game';
 import { BASE_FY, BASE_ZW, geo, recompute } from './geo';
 import * as sim from './sim';
-import { frameIndex, rowFor } from './sprites';
+import { extraFrame, frameIndex, rowFor } from './sprites';
 
 export type ObjectKind = 'neighbor' | 'find' | 'ladder' | 'hooks' | 'umbrella' | 'kitchenWindow' | 'bedroomWindow' | 'kitchenShelf' | 'mirror' | 'bathShelf' | 'towel' | 'shelfRack' | 'chair' | 'tree' | 'fence' | 'door' | 'bowl' | 'tub' | 'bed' | 'cabinet' | 'album' | 'pond' | 'scratcher' | 'feeder' | 'ball' | 'sofa' | 'counter' | 'nightstand' | 'bedlamp' | 'pendantDoor' | 'pendantShelf' | 'cattree' | 'npc' | 'visitor';
 
@@ -1515,7 +1515,8 @@ export class Scene {
       if (a.inter && !a.hop) shown = a.inter.action;
       // 跳跃的四帧跟着跳的进度走（蹲、蹬、腾空、落地），不是按时间循环
       const frame = a.hop ? Math.min(3, Math.floor(((this.now - a.hop.t0) / HOP_MS) * 4)) : a.climb ? Math.floor(this.now / 150) % 4 : frameIndex(shown, this.now - (a.inter ? a.inter.t0 : a.t0));
-      a.sprite.texture = set.tex[rowFor(set, shown)][frame];
+      // 爬梯子：用第二张精灵图里的「爬梯子」；没有就用跳跃的四帧循环
+      a.sprite.texture = (a.climb ? extraFrame(set, 'climb', this.now) : null) ?? set.tex[rowFor(set, shown)][frame];
       a.sprite.scale.set(sc * a.dir, sc); a.sprite.rotation = a.roof && a.action === 'walk' ? tilt : a.roof ? tilt * 0.5 : 0; // 斜坡上跟着坡度歪
       a.sprite.alpha = weak ? 0.75 : 1;
       a.root.position.set(px, py); a.root.zIndex = z;

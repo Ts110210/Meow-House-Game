@@ -25,6 +25,7 @@ export class AssetStore {
     for (const [k, src] of Object.entries(ASSETS.decor)) out.push({ key: `decor.${k}`, group: '装饰', name: DECOR[k]?.name ?? k, src, hint: `透明背景 PNG，底边贴地，显示高度 ${DECOR[k]?.height ?? 80}`, kind: 'object' });
     for (const [k, d] of Object.entries(ASSETS.props)) out.push({ key: `prop.${k}`, group: '吃饭时摆在地上的', name: d.label, src: d.src, hint: `透明背景 PNG，底边贴地，显示高度 ${d.height}`, kind: 'object' });
     for (const [k, src] of Object.entries(ASSETS.pets)) out.push({ key: `pet.${k}`, group: '默认宠物精灵图', name: FUR_COLORS[k]?.name ?? k, src, hint: '4 列，每格 256×256，每行一个动作', kind: 'pet' });
+    for (const [k, src] of Object.entries(ASSETS.pets)) out.push({ key: `pet2.${k}`, group: '默认宠物精灵图（第二张：爬梯子等）', name: FUR_COLORS[k]?.name ?? k, src: src.replace(/\.png$/, '-2.png'), hint: '4 列，每格 256×256；第 1 行爬梯子，后面的行留给以后的新动作', kind: 'pet' });
     for (const [k, src] of Object.entries(ASSETS.pets)) out.push({ key: `avatar.${k}`, group: '默认宠物头像', name: FUR_COLORS[k]?.name ?? k, src: src.replace(/\.png$/, '-avatar.png'), hint: '正方形，建议 256×256', kind: 'avatar' });
     // 皮肤和房间风格的图片：文件名 = 默认款的文件名加上「-皮肤名」，比如 objects/bed-mint.png、room/strip-seaside.png
     const withId = (src: string, id: string) => src.replace(/\.png$/, `-${id}.png`);
