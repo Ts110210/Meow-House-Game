@@ -304,10 +304,22 @@ const OBJECT_ART: Record<string, { w: number; h: number; draw: (s: Sketch) => vo
   } },
   // 院子的大树：跟着季节换样子（春天开花、秋天黄叶、冬天光秃秃挂着雪），没有皮肤
   tree: { w: 296, h: 356, draw(s) { s.ctx.translate(56, -196); tree(s, 92, 552, 300); } },
-  fence: { w: 432, h: 82, draw(s) {
-    s.ctx.translate(0, -478);
-    for (let x = 14; x < W; x += 40) s.poly([[x, 560], [x, 492], [x + 9, 480], [x + 18, 492], [x + 18, 560]], { fill: P.white, width: 1.2 });
-    s.rect(0, 510, W, 8, { fill: P.white, width: 1.1 }); s.rect(0, 538, W, 8, { fill: P.white, width: 1.1 });
+  fence: { w: 432, h: 110, draw(s) {
+    s.ctx.translate(0, -450);
+    // 最左边一根粗柱子，贴着房子的墙角：栅栏是从房子那里接出来的
+    s.rect(0, 456, 18, 104, { fill: P.white, width: 1.4 }); s.rect(-2, 450, 22, 10, { fill: darken(P.white, 0.08), r: 3, width: 1.2 });
+    for (let x = 34; x < W; x += 40) s.poly([[x, 560], [x, 492], [x + 9, 480], [x + 18, 492], [x + 18, 560]], { fill: P.white, width: 1.2 });
+    s.rect(18, 510, W - 18, 8, { fill: P.white, width: 1.1 }); s.rect(18, 538, W - 18, 8, { fill: P.white, width: 1.1 });
+  } },
+  // 阳台和院子的交界：阳台木地板的收边木条，外面一级矮木阶，草从地板边上长出来盖住硬边
+  deckEdge: { w: 180, h: 166, draw(s) {
+    const c = sea(); const g = c.ground, blade = ENV.season === 'winter' ? '#C9D3DA' : darken(P.sage, 0.15);
+    s.poly([[70, 0], [92, 0], [98, 166], [76, 166]], { fill: darken(P.wood, 0.22), width: 1.4 }); // 收边木条（从后往前）
+    s.line(81, 2, 87, 164, lighten(P.wood, 0.2), 2, 0.7);
+    s.poly([[92, 34], [128, 34], [134, 136], [98, 136]], { fill: P.wood, width: 1.3 }); s.line(95, 85, 131, 85, P.ink, 1, 0.45); s.line(96, 60, 129, 60, darken(P.wood, 0.15), 1, 0.5); // 一级矮木阶
+    for (let i = 0; i < 16; i++) { const y = 4 + i * 10.2, x = 86 + (i % 3) * 14 + s.r() * 10; s.ellipse(x + 18, y + 5, 22, 7, { fill: g, stroke: false, hatch: 0 }); for (let k = 0; k < 4; k++) s.curve([[x + k * 7, y + 9], [x + k * 7 + 2, y - 4]], blade, 1.6, 0.85); }
+    for (let i = 0; i < 6; i++) { const y = 20 + i * 26 + s.r() * 8; s.curve([[60 + s.r() * 8, y], [62, y - 9]], blade, 1.4, 0.8); s.curve([[66 + s.r() * 6, y + 2], [69, y - 7]], blade, 1.4, 0.8); } // 几根草从木地板边上探出来
+    if (ENV.season === 'spring') for (const [x, y] of [[132, 26], [146, 118], [122, 150]]) s.ellipse(x, y, 4, 4, { fill: P.coral, width: 1 });
   } },
   // 木梯子：两根竖杆，十几根横档。很细很长（顶端伸出阳台的天花板，搭到屋檐上）
   ladder: { w: 84, h: 632, draw(s) {
@@ -436,7 +448,7 @@ const OBJECT_ART: Record<string, { w: number; h: number; draw: (s: Sketch) => vo
 
 /** skin = 皮肤（不写 = 默认款）。占位图的各款皮肤造型一样，只换配色 */
 /** 院子的大树这类跟着季节换的东西：skin 那个位置传的是季节 */
-export const SEASONAL_ART = ['tree'];
+export const SEASONAL_ART = ['tree', 'deckEdge'];
 export function drawObject(kind: string, skin?: string): HTMLCanvasElement | null {
   const def = OBJECT_ART[kind]; if (!def) return null;
   const [cv, ctx] = makeCanvas(def.w, def.h, 2);

@@ -36,6 +36,8 @@ export interface ObjectDef {
   wall?: boolean;
   /** 窗户的玻璃（0–1，相对图片：左、上、右、下）。图片里这一块要挖空（透明），程序在后面画窗外的天空、雨丝 */
   glass?: [number, number, number, number];
+  /** 平铺在地上的（阳台和院子交界的收边、草边）：排在所有站着的东西后面，宠物从上面走过 */
+  flat?: boolean;
   /** 跟着季节换图（院子的树）：图片文件名 = 默认名加 -spring / -summer / -autumn / -winter，没有皮肤 */
   seasonal?: boolean;
 }
@@ -127,7 +129,8 @@ export const ASSETS = {
     shelfRack: { src: 'objects/shelfRack.png', zone: 'shelf', x: 321, y: 446, height: 76, label: '装饰架', wall: true },
     chair: { src: 'objects/chair.png', zone: 'balcony', x: 286, y: 580, height: 132, label: '阳台的椅子' },
     tree: { src: 'objects/tree.png', zone: 'garden', x: 92, y: 552, height: 356, label: '大树', seasonal: true },
-    fence: { src: 'objects/fence.png', zone: 'garden', x: 216, y: 560, height: 82, label: '栅栏' },
+    fence: { src: 'objects/fence.png', zone: 'garden', x: 216, y: 560, height: 110, label: '栅栏' },
+    deckEdge: { src: 'objects/deckEdge.png', zone: 'garden', x: 0, y: 722, height: 166, label: '阳台和院子交界的收边', seasonal: true, flat: true },
     // 木梯子：固定家具，从阳台的地上一直搭到屋檐（顶端伸出天花板，进到上面那一层）。猫顺着它上下屋顶
     ladder: { src: 'objects/ladder.png', zone: 'balcony', x: 368, y: 598, height: 632, label: '木梯子', partOfBackground: true },
     tunnel: { src: 'objects/tunnel.png', zone: 'balcony', x: 156, y: 666, height: 80, label: '猫隧道', needsOwned: 'tunnel', frontFrom: 0 },

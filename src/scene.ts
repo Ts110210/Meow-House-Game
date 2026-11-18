@@ -14,7 +14,7 @@ import { BASE_FY, BASE_ZW, bg, bgCfg, geo, recompute } from './geo';
 import * as sim from './sim';
 import { extraFrame, frameIndex, rowFor } from './sprites';
 
-export type ObjectKind = 'neighbor' | 'find' | 'ladder' | 'hooks' | 'umbrella' | 'kitchenWindow' | 'bedroomWindow' | 'kitchenShelf' | 'mirror' | 'bathShelf' | 'towel' | 'shelfRack' | 'chair' | 'tree' | 'fence' | 'door' | 'bowl' | 'tub' | 'bed' | 'cabinet' | 'album' | 'pond' | 'scratcher' | 'feeder' | 'ball' | 'sofa' | 'counter' | 'nightstand' | 'bedlamp' | 'pendantDoor' | 'pendantShelf' | 'cattree' | 'npc' | 'visitor';
+export type ObjectKind = 'neighbor' | 'find' | 'ladder' | 'deckEdge' | 'hooks' | 'umbrella' | 'kitchenWindow' | 'bedroomWindow' | 'kitchenShelf' | 'mirror' | 'bathShelf' | 'towel' | 'shelfRack' | 'chair' | 'tree' | 'fence' | 'door' | 'bowl' | 'tub' | 'bed' | 'cabinet' | 'album' | 'pond' | 'scratcher' | 'feeder' | 'ball' | 'sofa' | 'counter' | 'nightstand' | 'bedlamp' | 'pendantDoor' | 'pendantShelf' | 'cattree' | 'npc' | 'visitor';
 
 /** 家具的位置：每件家具能同时容纳几只、各自在哪、脸朝哪边。
  *  有位置才过去，位置满了就不去挤，所以不会重叠，也不会互相打断。
@@ -396,7 +396,7 @@ export class Scene {
         sp.on('pointerdown', (e) => this.editDown(e, kind, 'move'));
       }
       if (kind === 'ball' && this.ballX !== null && !this.editMode) { sp.x = this.ballX; sp.y = this.ballY ?? sp.y; }
-      this.addSorted(sp, pos.y); this.objSprites.set(kind, sp);
+      this.addSorted(sp, def.flat ? -1000 + pos.y / 10 : pos.y); this.objSprites.set(kind, sp);
       // 窗户：玻璃是透明的，后面放一张窗外的风景（跟着昼夜、天气重画）
       if (def.glass) { const box = new Container(); const v = new Sprite(Texture.EMPTY); const rain = new Graphics(); box.addChild(v, rain); box.eventMode = 'none'; this.addSorted(box, pos.y - 0.5); this.windowViews.push({ box, sp: v, rain, win: sp, glass: def.glass, sig: '' }); }
       if (this.editMode) continue;
