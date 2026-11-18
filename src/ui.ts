@@ -102,6 +102,7 @@ export class UI {
     if (game.isNew) { this.toast('点一下宠物可以照顾它'); setTimeout(() => this.toast('左右滑动看整个家，到门口可以派它出门'), 2800); }
     if (game.state.pendingReturns.length) setTimeout(() => { if (!this.sheet) this.showReturns(); }, 600);
     else if (sim.albumOver(game.state) > 0) setTimeout(() => { if (!this.sheet) this.openAlbumFull(); }, 600);
+    else if (sim.momentsOver(game.state) > 0) setTimeout(() => { if (!this.sheet) this.openMomentsFull(); }, 600);
   }
 
   // ---------- 开场：离开期间发生了什么 ----------
@@ -256,6 +257,7 @@ export class UI {
     this.scrim?.remove(); this.scrim = null; this.body = null;
     if (this.game.state.pendingReturns.length) setTimeout(() => { if (!this.sheet) this.showReturns(); }, 250);
     else if (sim.albumOver(this.game.state) > 0) setTimeout(() => { if (!this.sheet) this.openAlbumFull(); }, 250);
+    else if (sim.momentsOver(this.game.state) > 0) setTimeout(() => { if (!this.sheet) this.openMomentsFull(); }, 250);
   }
 
   private refresh(force = false) {
@@ -316,7 +318,38 @@ export class UI {
   // ---------- 瞬间相册 ----------
 
   private momentCache = new Map<string, HTMLCanvasElement>();
-  momentCaught(id: string) { const m = this.game.state.moments.find((x) => x.id === id); if (m) { this.toast(`📷 抓拍到了：${sim.momentTitle(m)}（在相册的「瞬间」里）`); sfx('ok'); } }
+  momentCaught(id: string) {
+    const m = this.game.state.moments.find((x) => x.id === id); if (!m) return;
+    this.toast(`📷 抓拍到了：${sim.momentTitle(m)}（在相册的「瞬间」里）`); sfx('ok');
+    // 放不下了：没有面板开着就马上请主人整理；开着的话等关掉面板时再弹
+    if (sim.momentsOver(this.game.state) > 0) setTimeout(() => { if (!this.sheet) this.openMomentsFull(); }, 1200);
+  }
+  private momentsWarned = false;
+  /** 瞬间相册放不下了：和明信片一样，请主人自己删；不整理就退出的话，新拍的那几张不保存 */
+  openMomentsFull() {
+    const s = this.game.state;
+    if (sim.momentsOver(s) <= 0) return;
+    this.momentsWarned = false;
+    this.open({ title: '瞬间相册放不下了',
+      beforeClose: () => {
+        const over = sim.momentsOver(s); if (over <= 0) return true;
+        if (!this.momentsWarned) { this.momentsWarned = true; this.refresh(true); if (this.body) this.body.scrollTop = 0; sfx('error'); return false; }
+        const n = this.game.act((st) => ({ ok: true as const, msg: String(sim.discardMomentOverflow(st)) }));
+        this.toast(`没有整理，新拍的 ${n.msg} 张没有保存`); return true;
+      },
+      render: () => {
+        const over = sim.momentsOver(s);
+        if (over <= 0) return [h('p', { class: 'center' }, '整理好了，新拍的瞬间已经收进相册。'), h('button', { class: 'btn primary block', onclick: () => this.close() }, '好')];
+        const newest = new Set(s.moments.slice(0, over).map((m) => m.id));
+        const out: Kid[] = [];
+        if (this.momentsWarned) out.push(h('div', { class: 'card warn' }, h('b', null, '确认退出？'), h('p', null, `现在退出的话，新拍的 ${over} 张将无法保存。`),
+          h('div', { class: 'grid2' }, h('button', { class: 'btn primary', onclick: () => { this.momentsWarned = false; this.refresh(true); } }, '继续整理'), h('button', { class: 'btn danger', onclick: () => this.close() }, '不保存，退出'))));
+        out.push(h('p', { class: 'soft' }, `瞬间相册最多放 ${CONFIG.moments.max} 张，现在多了 ${over} 张。请删掉 ${over} 张不想留的（新的旧的都可以删）。`));
+        out.push(h('div', { class: 'postgrid moments' }, s.moments.map((m) => h('div', { class: 'postcard pick' }, this.momentCopy(m), h('span', null, (newest.has(m.id) ? '新 · ' : '') + sim.momentTitle(m)),
+          h('button', { class: 'btn small danger', onclick: () => { this.game.act((st) => sim.deleteMoment(st, m.id)); sfx('click'); this.refresh(true); } }, '删除')))));
+        return out;
+      } });
+  }
   private momentCanvas(m: Moment): HTMLCanvasElement {
     const s = this.game.state; const key = `${m.id}|${JSON.stringify(s.skins)}|${s.room}|${this.game.avatarRev}`;
     let cv = this.momentCache.get(key);
@@ -329,9 +362,10 @@ export class UI {
   }
   private momentCopy(m: Moment) { const src = this.momentCanvas(m); const cv = h('canvas', { width: src.width, height: src.height }) as HTMLCanvasElement; cv.getContext('2d')!.drawImage(src, 0, 0); return cv; }
   openMoments() {
+    if (sim.momentsOver(this.game.state) > 0) { this.openMomentsFull(); return; }
     this.open({ title: '瞬间', render: () => {
       const s = this.game.state;
-      const out: Kid[] = [h('p', { class: 'soft' }, `宠物们在家做了有意思的事，游戏会自己抓拍下来。同一种瞬间隔几天才会再拍一张，最多留 ${CONFIG.moments.max} 张。`)];
+      const out: Kid[] = [h('p', { class: 'soft' }, `宠物们在家做了有意思的事，游戏会自己抓拍下来。同一种瞬间隔几天才会再拍一张。最多放 ${CONFIG.moments.max} 张，满了会请你自己删几张（${s.moments.length} / ${CONFIG.moments.max}）。`)];
       if (!s.moments.length) out.push(h('p', { class: 'soft center', style: 'padding:24px 0' }, '还没有抓拍到。多开着游戏看看它们在做什么吧。'));
       else out.push(h('div', { class: 'postgrid moments', style: 'margin-top:12px' }, s.moments.map((m) => h('button', { class: 'postcard', onclick: () => this.open({ title: `${MOMENTS[m.kind]?.icon ?? '📷'} ${fmtDate(m.at)}`, render: () => [
         h('div', { class: 'center' }, (() => { const cv = this.momentCopy(m); cv.style.cssText = 'width:100%;max-width:360px;border-radius:10px;box-shadow:0 2px 10px rgba(90,70,54,.18)'; return cv; })()),

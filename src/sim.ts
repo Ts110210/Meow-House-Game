@@ -513,9 +513,14 @@ export function recordMoment(s: GameState, kind: string, petIds: string[], extra
   const pets = petIds.map((id) => s.pets.find((p) => p.id === id)).filter((p): p is Pet => !!p && !p.dead); if (!pets.length) return null;
   const last = s.moments.find((m) => m.kind === kind); if (last && s.clock - last.at < CONFIG.moments.cooldown) return null;
   const m: Moment = { id: newId('moment'), kind, at: s.clock, petIds: pets.map((p) => p.id), names: pets.map((p) => p.name), sprites: pets.map((p) => p.spriteId), season: season(s), time: dayTime(s), extra };
-  s.moments = [m, ...s.moments].slice(0, CONFIG.moments.max);
+  // 和明信片一样：满了也先收下，多出来的请主人自己挑着删（见 momentsOver / discardMomentOverflow），不会自动删
+  s.moments = [m, ...s.moments];
   return m;
 }
+/** 瞬间相册里超出上限的张数。大于 0 时要请主人删掉几张，或者放弃新拍的 */
+export const momentsOver = (s: GameState) => Math.max(0, s.moments.length - CONFIG.moments.max);
+/** 主人不想整理：放弃最新拍的那几张，直到不超上限。返回放弃了几张 */
+export function discardMomentOverflow(s: GameState): number { const n = momentsOver(s); if (n > 0) s.moments = s.moments.slice(n); return n; }
 export const momentTitle = (m: Moment) => (MOMENTS[m.kind]?.title ?? '{pets}').replace('{pets}', m.names.join('、'));
 export function deleteMoment(s: GameState, id: string): Result { const n = s.moments.length; s.moments = s.moments.filter((m) => m.id !== id); return n !== s.moments.length ? { ok: true, msg: '删掉了' } : { ok: false, msg: '找不到这张' }; }
 

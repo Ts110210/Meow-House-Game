@@ -358,8 +358,12 @@ console.log('季节活动、皮肤的其他来源、瞬间相册');
   const shot = sim.recordMoment(a, 'fishing', [p.id]);
   check('抓拍一个瞬间：记下是谁、什么时候、当时的季节和时段', !!shot && a.moments.length === 1 && sim.momentTitle(shot!).includes(p.name) && shot!.season === sim.season(a));
   check('同一种瞬间短时间内不重复拍；不认识的种类和不存在的宠物不拍', sim.recordMoment(a, 'fishing', [p.id]) === null && sim.recordMoment(a, 'nope', [p.id]) === null && sim.recordMoment(a, 'box', ['ghost']) === null && (sim.advance(a, CONFIG.moments.cooldown + HOUR), !!sim.recordMoment(a, 'fishing', [p.id])));
-  for (let i = 0; i < CONFIG.moments.max + 5; i++) { a.clock += CONFIG.moments.cooldown + HOUR; sim.recordMoment(a, 'box', [p.id]); }
-  check('相册满了去掉最旧的；可以删', a.moments.length === CONFIG.moments.max && sim.deleteMoment(a, a.moments[0].id).ok && a.moments.length === CONFIG.moments.max - 1);
+  const before = a.moments.length; for (let i = 0; i < CONFIG.moments.max + 5 - before; i++) { a.clock += CONFIG.moments.cooldown + HOUR; sim.recordMoment(a, 'box', [p.id]); }
+  check('和明信片一样：满了也照样收下，不会自动删', a.moments.length === CONFIG.moments.max + 5 && sim.momentsOver(a) === 5);
+  { const b = JSON.parse(JSON.stringify(a)); const newest = b.moments[0].id, oldest = b.moments[b.moments.length - 1].id;
+    check('不整理就放弃新拍的那几张，旧的都留着', sim.discardMomentOverflow(b) === 5 && sim.momentsOver(b) === 0 && !b.moments.some((m: any) => m.id === newest) && b.moments.some((m: any) => m.id === oldest)); }
+  for (let i = 0; i < 5; i++) sim.deleteMoment(a, a.moments[a.moments.length - 1].id);
+  check('自己删掉几张（新的旧的都行）就不超了；还可以再删', sim.momentsOver(a) === 0 && sim.deleteMoment(a, a.moments[0].id).ok && a.moments.length === CONFIG.moments.max - 1);
   p.name = '改名了'; check('宠物改名后，旧照片上还是当时的名字', !sim.momentTitle(a.moments[a.moments.length - 1]).includes('改名了'));
   check('瞬间存档再读档还在', repair(JSON.parse(JSON.stringify(a)), T0).moments.length === a.moments.length);
 }
