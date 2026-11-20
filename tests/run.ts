@@ -2,6 +2,7 @@
 import { ZONES, MOMENTS, VISITORS, QUESTS, NEIGHBORS, SEASON_EVENTS, SEASON_FINDS, CONFIG, DAY, DECOR, DESTS, FUR_COLORS, GEAR, HOUR, MIN, ROOM_THEMES, SKIN_PRICE, SKIN_SIZE, SKINNABLE, SKINS, SOUVENIRS, decodeLook, encodeLook, skinSize } from '../src/config';
 import { ASSETS } from '../src/assets.config';
 import * as sim from '../src/sim';
+import * as sheetCut from '../src/sheetCut';
 import { diaryPlaceCount, writeDiary } from '../src/diary';
 import { buildExport, migrate, parseImport, repair, SAVE_VERSION } from '../src/save';
 
@@ -254,6 +255,21 @@ console.log('任务：新手引导和每日任务');
   const young = JSON.parse(JSON.stringify(sim.newState(T0))); young.v = 7; delete young.quests;
   const m2 = migrate(young, T0); check('刚开的旧存档照样走引导', m2.ok && !m2.state.quests.guideDone);
   const m3 = migrate(JSON.parse(JSON.stringify(s)), T0); check('任务进度存档再读档还在', m3.ok && m3.state.quests.guideDone && m3.state.quests.daily.length === QUESTS.dailyCount);
+}
+
+console.log('整张切图');
+{
+  // 一张 40×20 的图：左边一块方的、右边一块方的、中间隔开；右边那块中间有一道 1 像素的缝（不该被切成两件）；还有一个孤零零的杂点
+  const w = 40, h = 20, a = new Uint8Array(w * h); const fill = (x0: number, y0: number, x1: number, y1: number) => { for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) a[y * w + x] = 1; };
+  fill(2, 2, 12, 18); fill(24, 2, 30, 18); fill(31, 2, 38, 18); a[0] = 1;
+  const L = sheetCut.labelPieces(a, w, h, 2, 1, 0.01);
+  check('按内容找出两件：小缝不会把一件切开，孤零零的杂点不算', L.blobs.length === 2 && L.blobs[0].x0 <= 2 && L.blobs[0].x1 >= 12 && L.blobs[1].x0 <= 24 && L.blobs[1].x1 >= 38);
+  check('从左到右排好，每个格子知道自己属于哪一件', L.blobs[0].x0 < L.blobs[1].x0 && L.label[(4 / 2 | 0) * L.gw + 3] === 0 && L.label[(4 / 2 | 0) * L.gw + 17] === 1);
+  check('CRC32 算得对（标准测试值）', sheetCut.crc32(new TextEncoder().encode('123456789')) === 0xcbf43926);
+  const zip = sheetCut.makeZip([{ name: 'public/assets/objects/door.png', data: new Uint8Array([1, 2, 3]) }, { name: 'public/assets/decor/rug.png', data: new Uint8Array([4, 5]) }]);
+  const dv = new DataView(zip.buffer); const endAt = zip.length - 22;
+  check('zip：开头和结尾的标记对，记着 2 个文件，文件名带着 public/assets/ 的文件夹', dv.getUint32(0, true) === 0x04034b50 && dv.getUint32(endAt, true) === 0x06054b50 && dv.getUint16(endAt + 10, true) === 2 && new TextDecoder().decode(zip.slice(30, 30 + 30)) === 'public/assets/objects/door.png');
+  check('窗户（包括它的皮肤）按素材模板的比例挖玻璃，别的不挖', !!sheetCut.glassOf('object.kitchenWindow') && sheetCut.glassOf('object.bedroomWindow@cream') === ASSETS.objects.bedroomWindow.glass && sheetCut.glassOf('object.door') === null && sheetCut.glassOf('decor.rug') === null);
 }
 
 console.log('装饰的摆放规则');

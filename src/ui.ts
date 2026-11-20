@@ -14,6 +14,7 @@ import { renderMoment } from './art/moment';
 import { exportLayout, isChanged, resetBackground, resetObjects, saveLayout } from './layout';
 import { bgCfg } from './geo';
 import { composeSheet, splitStrip, type Assembled, type StripPart } from './assemble';
+import { canvasBytes, cropPieces, cutGlass, glassOf, makeZip, readSheet, type Sheet as CutSheet } from './sheetCut';
 import { canvasToBlob, saveBlob, saveMessage } from './platform/download';
 import { lookFromPhoto } from './lookFromPhoto';
 import { isNative, notifyPermission, notifyStatus, testNotification } from './platform/native';
@@ -1174,7 +1175,7 @@ export class UI {
   openAssets() {
     const A = this.game.assets;
     this.open({ title: '素材替换', render: () => {
-      const out: Kid[] = [h('div', { class: 'grid2' }, h('button', { class: 'btn primary', onclick: () => this.startEdit() }, '调整点击区域'), h('button', { class: 'btn primary', onclick: () => this.startBgEdit() }, '调整背景')),
+      const out: Kid[] = [h('p', null, h('button', { class: 'btn block primary', onclick: () => this.openSheetCut() }, '整张切图：一张白底图切成很多件')), h('div', { class: 'grid2' }, h('button', { class: 'btn primary', onclick: () => this.startEdit() }, '调整点击区域'), h('button', { class: 'btn primary', onclick: () => this.startBgEdit() }, '调整背景')),
         h('p', { class: 'soft' }, '调整点击区域：拖动每件物品的位置和大小。调整背景：上传背景长图后，拖地板线和 5 个区域的分界线，宠物和物品会跟着对齐。'),
         h('p', { class: 'soft' }, '给任意一项上传图片，马上就能在游戏里看到。上传的图只存在这个浏览器里；要正式放进游戏，把文件按下面的文件名放到 public/assets/ 文件夹。没有图片的项目用代码画的占位图。')];
       let group = '';
@@ -1194,6 +1195,75 @@ export class UI {
             this.toast(saved ? `${slot.name}已换上` : `${slot.name}已换上（这个浏览器存不下，刷新后要重传）`);
           } }))));
       }
+      return out;
+    } });
+  }
+
+  // ---------- 整张切图：一张白底、画了好几件东西的图 → 自动切开、去白底、选文件名 → 预览 / 打包 zip ----------
+
+  private cut: { sheet: CutSheet; file: string; pieces: { ids: number[]; cv: HTMLCanvasElement; key: string; sel: boolean }[] } | null = null;
+  /** 一件切好的图最后的样子：窗户按比例挖空玻璃 */
+  private cutFinal(p: { cv: HTMLCanvasElement; key: string }) { const g = glassOf(p.key); return g ? cutGlass(p.cv, g) : p.cv; }
+
+  openSheetCut() {
+    const A = this.game.assets;
+    // 能选的文件名：家具、装饰、皮肤、季节图、明信片、头像……（宠物精灵图用「精灵图拼装」，背景整张图直接在素材替换里传）
+    const slots = A.slots().filter((s) => s.kind !== 'pet' && s.kind !== 'room');
+    this.open({ title: '整张切图', render: () => {
+      const c = this.cut; const out: Kid[] = [
+        h('p', { class: 'soft' }, '上传一张白底、画了好几件东西的图：程序按内容自动找出每一件，去掉白底、裁掉空白。给每一件选一个文件名（和 docs/素材模板.md 一样），被切碎的可以勾上几块合并，不要的丢掉。窗户会按素材模板的比例自动挖空玻璃。'),
+        h('div', { class: 'btn block file' }, c ? '换一张图' : '上传一张白底图', h('input', { type: 'file', accept: 'image/*', onchange: async (e: Event) => {
+          const file = (e.target as HTMLInputElement).files?.[0]; if (!file) return;
+          this.toast('正在找图里的每一件……');
+          try {
+            const img = await loadImage(await fileToDataUrl(file)); const sheet = readSheet(img);
+            const pieces = sheet.labels.blobs.map((_, i) => ({ ids: [i], cv: cropPieces(sheet, [i]), key: '', sel: false }));
+            this.cut = { sheet, file: file.name, pieces }; this.toast(pieces.length ? `找到 ${pieces.length} 件` : '图里没找到东西：要白底、物品之间留点空隙');
+          } catch { this.toast('这张图读不出来'); }
+          this.refresh(true);
+        } })),
+      ];
+      if (!c) return out;
+      const used = new Map<string, number>(); for (const p of c.pieces) if (p.key) used.set(p.key, (used.get(p.key) ?? 0) + 1);
+      const dup = [...used].filter(([, n]) => n > 1).map(([k]) => slots.find((s) => s.key === k)?.name ?? k);
+      const sel = c.pieces.filter((p) => p.sel); const named = c.pieces.filter((p) => p.key);
+      out.push(h('p', { class: 'soft' }, `${c.file}：${c.pieces.length} 件，已经选好文件名 ${named.length} 件。` + (dup.length ? `有重复的文件名（${dup.join('、')}），后面的会盖掉前面的。` : '')));
+      out.push(h('div', { class: 'grid2' },
+        h('button', { class: 'btn', disabled: sel.length < 2, onclick: () => {
+          const keep = sel[0]; keep.ids = sel.flatMap((p) => p.ids); keep.cv = cropPieces(c.sheet, keep.ids); keep.key = sel.find((p) => p.key)?.key ?? ''; keep.sel = false;
+          c.pieces = c.pieces.filter((p) => p === keep || !p.sel); this.refresh(true);
+        } }, `合并勾选的 ${sel.length || ''} 块`),
+        h('button', { class: 'btn', disabled: !sel.length, onclick: () => { c.pieces = c.pieces.filter((p) => !p.sel); this.refresh(true); } }, '丢掉勾选的')));
+      // 每一件：缩略图（棋盘格底，看得出透明）、大小、文件名下拉框、勾选、丢掉
+      const groups = [...new Set(slots.map((s) => s.group))];
+      c.pieces.forEach((p, i) => {
+        const fin = this.cutFinal(p); const T = 96;
+        const thumb = h('canvas', { width: T, height: T, style: 'width:64px;height:64px;border-radius:8px;flex:none;background:repeating-conic-gradient(#eee 0 25%,#fff 0 50%) 0 0/12px 12px' }) as HTMLCanvasElement;
+        const k = Math.min(T / fin.width, T / fin.height); thumb.getContext('2d')!.drawImage(fin, (T - fin.width * k) / 2, (T - fin.height * k) / 2, fin.width * k, fin.height * k);
+        const select = h('select', { style: 'width:100%;margin-top:4px;font-size:13px', onchange: (e: Event) => { p.key = (e.target as HTMLSelectElement).value; this.refresh(true); } },
+          h('option', { value: '' }, '— 选它是哪个文件 —'),
+          groups.map((g) => h('optgroup', { label: g }, slots.filter((s) => s.group === g).map((s) => h('option', { value: s.key, selected: s.key === p.key }, `${(used.get(s.key) ?? 0) > 0 && s.key !== p.key ? '✓ ' : ''}${s.name}（${s.src}）`)))));
+        out.push(h('div', { class: 'item', style: 'align-items:flex-start' }, thumb,
+          h('div', { class: 'txt' },
+            h('b', null, `第 ${i + 1} 件`, h('span', { class: 'soft' }, `  ${p.cv.width}×${p.cv.height}` + (p.ids.length > 1 ? `，${p.ids.length} 块合并的` : '') + (glassOf(p.key) ? '，玻璃已挖空' : ''))),
+            select,
+            h('label', { class: 'check', style: 'margin:4px 0 0;font-size:12px' }, h('input', { type: 'checkbox', checked: p.sel, onchange: (e: Event) => { p.sel = (e.target as HTMLInputElement).checked; this.refresh(true); } }), '勾选（合并或丢掉）')),
+          h('button', { class: 'btn small', onclick: () => { c.pieces = c.pieces.filter((x) => x !== p); this.refresh(true); } }, '丢掉')));
+      });
+      out.push(h('div', { class: 'grid2' },
+        h('button', { class: 'btn primary', disabled: !named.length, onclick: async () => {
+          let n = 0; for (const p of named) { await A.uploadDataUrl(p.key, this.cutFinal(p).toDataURL('image/png'), false); n++; }
+          this.toast(`${n} 件已经换到游戏里了（只存在这个浏览器里；正式放进游戏用下面的打包）`);
+        } }, '全部应用到游戏里预览'),
+        h('button', { class: 'btn primary', disabled: !named.length, onclick: async () => {
+          // 同一个文件名选了好几次：用最后一件
+          const files = new Map<string, Uint8Array>();
+          for (const p of named) { const slot = slots.find((s) => s.key === p.key); if (slot) files.set(`public/assets/${slot.src}`, await canvasBytes(this.cutFinal(p))); }
+          const zip = makeZip([...files].map(([name, data]) => ({ name, data })));
+          const d = new Date(); const stamp = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}-${String(d.getHours()).padStart(2, '0')}${String(d.getMinutes()).padStart(2, '0')}`;
+          const r = await saveBlob(`喵屋素材-${stamp}.zip`, new Blob([zip as BlobPart], { type: 'application/zip' }));
+          this.toast(r === 'saved' || r === 'unknown' ? `打包好了：${files.size} 个文件。在仓库根目录解压，会放进 public/assets/ 里对应的文件夹` : saveMessage(r, '换个浏览器试试'));
+        } }, '打包成 zip')));
       return out;
     } });
   }
