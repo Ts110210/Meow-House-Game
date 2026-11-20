@@ -167,7 +167,6 @@ export class Scene {
   private glow = new Graphics(); private debug = new Graphics(); private debugLabels = new Map<string, Text>();
   private objSprites = new Map<string, Sprite>();
   private objArt = new Map<string, HTMLCanvasElement | null>();
-  private stripSprite: Sprite | null = null;
   private zoneSprites: ({ sp: Sprite; code: boolean } | null)[] = [];
   private camX = 0; private camTarget: number | null = null; private vel = 0;
   /** 现在看的是哪一层：地面（屋里、阳台、院子）还是屋顶。lift = 镜头往上抬了多少（0 = 地面，720 = 屋顶），切换时慢慢抬 */
@@ -236,13 +235,15 @@ export class Scene {
 
     const room = this.room(); this.roomSig = room;
     // 整张图：切成上下两半，下半张当长图（盖住 8 个区域），上半张当上面一层
-    const full = this.roomPic('room.full'); bg.full = !!full; this.fullHalves = full ? this.halves(full) : null;
+    const full = this.roomPic('room.full'); bg.full = !!full; this.fullPic = full ?? null;
     const strip = this.activeStrip();
-    recompute(strip);
+    recompute(this.stripSize());
     const env = this.env(); this.envSig = this.envKey(env);
     const cover = Math.min(N, bgCfg().coverZones);
-    this.stripSprite = strip ? new Sprite(this.tex(strip)) : null;
-    if (this.stripSprite) this.bgLayer.addChild(this.stripSprite);
+    // 整张图的下半张，或者长图：按原图的清晰度做贴图（太大的切成小块）
+    const half = full ? Math.round(full.height / 2) : 0;
+    this.stripArt = full ? this.tiled(full, full.height - half, half) : strip ? this.tiled(strip, 0, strip.height) : null;
+    if (this.stripArt) this.bgLayer.addChild(this.stripArt.c);
     this.zoneSprites = ZONES.map((z, i) => {
       const img = bg.full ? null : this.roomPic(`room.zone.${z.id}`);
       if (!img && strip && i < cover) return null;
@@ -250,8 +251,9 @@ export class Scene {
       return { sp, code: !img };
     });
     // 上面那一层：有上层图就切成 8 段（每段在一个区域的正上方），没有就用代码画
-    const top = this.roomPic('room.top'); this.topCode = !top && !this.fullHalves;
-    if (this.fullHalves) { const sp = new Sprite(this.tex(this.fullHalves.top)); this.bgLayer.addChild(sp); this.topSprites = [sp]; }
+    const top = this.roomPic('room.top'); this.topCode = !top && !full;
+    this.fullTop = full ? this.tiled(full, 0, half) : null; this.topSprites = [];
+    if (this.fullTop) this.bgLayer.addChild(this.fullTop.c);
     else this.topSprites = ZONES.map((_, i) => { const sp = new Sprite(this.tex(top ? this.topPiece(top, i) : drawTop(i * BASE_ZW, BASE_ZW, env, room))); this.bgLayer.addChild(sp); return sp; });
     this.placeArt();
     this.rebuildObjects();
@@ -259,14 +261,31 @@ export class Scene {
     if (this.bgMode) this.setBgMode(true);
   }
 
-  private fullHalves: { top: HTMLCanvasElement; bottom: HTMLCanvasElement } | null = null;
-  /** 整张图切成上下两半 */
-  private halves(img: HTMLCanvasElement | HTMLImageElement) {
-    const h = Math.round(img.height / 2); const cut = (y: number) => { const cv = document.createElement('canvas'); cv.width = img.width; cv.height = h; cv.getContext('2d')!.drawImage(img, 0, y, img.width, h, 0, 0, img.width, h); return cv; };
-    return { top: cut(0), bottom: cut(img.height - h) };
+  private fullPic: HTMLCanvasElement | HTMLImageElement | null = null;
+  /** 背景长图（或整张图的下半张）、整张图的上半张：c 里是切好的小块，w、h = 原图那一段的像素大小 */
+  private stripArt: { c: Container; w: number; h: number } | null = null;
+  private fullTop: { c: Container; w: number; h: number } | null = null;
+  /** 图片从 y0 开始、高 h 的一段，切成每块不超过 CONFIG.room.maxTexture 的小块，按原图像素摆在一个容器里。
+   *  每块往右、往下多带 2 像素，盖住下一块边上的接缝 */
+  private tiled(img: HTMLCanvasElement | HTMLImageElement, y0: number, h: number) {
+    const c = new Container(); const M = CONFIG.room.maxTexture, PAD = 2, w = img.width;
+    const nx = Math.ceil(w / M), ny = Math.ceil(h / M), tw = Math.ceil(w / nx), th = Math.ceil(h / ny);
+    for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {
+      const x = i * tw, y = j * th; const cw = Math.min(w - x, tw + (i < nx - 1 ? PAD : 0)), ch = Math.min(h - y, th + (j < ny - 1 ? PAD : 0));
+      const cv = document.createElement('canvas'); cv.width = cw; cv.height = ch; cv.getContext('2d')!.drawImage(img, x, y0 + y, cw, ch, 0, 0, cw, ch);
+      const t = this.tex(cv);
+      // 大图缩小看（全屋视图）时不闪：生成多级缩小图
+      if (t.source) { t.source.autoGenerateMipmaps = true; t.source.mipLevelCount = Math.floor(Math.log2(Math.max(cv.width, cv.height))) + 1; t.source.updateMipmaps?.(); }
+      const sp = new Sprite(t); sp.position.set(x, y); c.addChild(sp);
+    }
+    return { c, w, h };
   }
+  /** 把切好的一段摆到世界里 (x, y)，拉成 w×h */
+  private placeTiled(t: { c: Container; w: number; h: number }, x: number, y: number, w: number, h: number) { t.c.position.set(x, y); t.c.scale.set(w / t.w, h / t.h); }
   /** 现在当「长图」用的那张：整张图的下半张，或者长图 */
-  private activeStrip() { return this.fullHalves?.bottom ?? this.roomPic('room.strip'); }
+  private activeStrip() { return this.fullPic ?? this.roomPic('room.strip'); }
+  /** 算地板线、分界线用的长图大小：整张图一律按 ASSETS.room.full.size 的下半张算（多大的图都一样，对齐不用重来） */
+  private stripSize() { const s = ASSETS.room.full.size; return this.fullPic ? { width: s[0], height: s[1] / 2 } : this.roomPic('room.strip') ?? null; }
   /** 上层图的第 i 段（横向 8 等分） */
   private topPiece(img: HTMLCanvasElement | HTMLImageElement, i: number): HTMLCanvasElement {
     const cw = img.width / N, cv = document.createElement('canvas'); cv.width = Math.round(cw); cv.height = img.height;
@@ -314,9 +333,9 @@ export class Scene {
         if (split < 6000 + H) this.shade.rect(x0, split, x1 - x0, 6000 + H - split).fill(hex(tone.indoor));
       });
     }
-    if (this.stripSprite && geo.strip) { this.stripSprite.position.set(geo.strip.x, 0); this.stripSprite.width = geo.strip.w; this.stripSprite.height = H; }
+    if (this.stripArt && geo.strip) this.placeTiled(this.stripArt, geo.strip.x, 0, geo.strip.w, H);
     // 整张图的上半张和下半张用同一套横向位置；否则上层每一段在对应区域的正上方
-    if (this.fullHalves && geo.strip) { const sp = this.topSprites[0]; if (sp) { sp.position.set(geo.strip.x, -H); sp.width = geo.strip.w; sp.height = H; } }
+    if (this.fullTop && geo.strip) this.placeTiled(this.fullTop, geo.strip.x, -H, geo.strip.w, H);
     else this.topSprites.forEach((sp, i) => { sp.position.set(zx(i), -H); sp.width = zw(i); sp.height = H; });
     this.zoneSprites.forEach((z, i) => {
       if (!z) return;
@@ -331,7 +350,7 @@ export class Scene {
 
   /** 地板线或分界线变了：重新算一遍，所有东西跟着走 */
   private applyGeometry() {
-    recompute(this.activeStrip());
+    recompute(this.stripSize());
     this.placeArt(); this.placeObjects();
     for (const a of this.actors.values()) { a.x = clampX(a.x); a.tx = clampX(a.tx); a.y = clampY(a.y); a.ty = clampY(a.ty); }
     this.applyCam();

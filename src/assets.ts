@@ -15,7 +15,7 @@ export class AssetStore {
   slots(): Slot[] {
     const out: Slot[] = [];
     out.push({ key: 'room.strip', group: '房间背景', name: `长图（盖住左边 ${ASSETS.room.strip.coverZones} 个区域）`, src: ASSETS.room.strip.src, hint: '约 3:1，建议 2160×720', kind: 'room' });
-    out.push({ key: 'room.full', group: '房间背景', name: '整张图（上下两层：屋顶和天空、8 个区域）', src: ASSETS.room.full.src, hint: '3456×1440，有它就不用别的背景图；按 docs/构图底稿.png 的构图生成', kind: 'room' });
+    out.push({ key: 'room.full', group: '房间背景', name: '整张图（上下两层：屋顶和天空、8 个区域）', src: ASSETS.room.full.src, hint: '3456×1440，也可以是它的 2 倍、3 倍或比例差一点的大图（越大在手机上放大越清楚）；有它就不用别的背景图；按 docs/构图底稿.png 的构图生成', kind: 'room' });
     out.push({ key: 'room.top', group: '房间背景', name: '上面一层（屋顶和天空）', src: ASSETS.room.top, hint: '3456×720，横向 8 等分对着下面 8 个区域', kind: 'room' });
     for (const z of ZONES) out.push({ key: `room.zone.${z.id}`, group: '房间背景', name: `${z.name}（单独一张）`, src: ASSETS.room.zones[z.id], hint: '3:5，建议 432×720 的倍数', kind: 'room' });
     for (const [k, d] of Object.entries(ASSETS.objects)) {
