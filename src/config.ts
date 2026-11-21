@@ -607,6 +607,8 @@ export const SPRITE = {
   assembleSize: { idle: 0.7, walk: 0.7, eat: 0.56, sleep: 0.42, happy: 0.7, bath: 0.7, lick: 0.66, play: 0.7, jump: 0.7, fish: 0.62, yawn: 0.7, stretch: 0.66, sit: 0.74, groom: 0.66, scratch: 0.84, beg: 0.84 } as Record<string, number>,
   /** 脚底对齐到格子高度的这个位置 */
   footLine: 0.9,
+  /** 精灵图拼装时默认「保留跳跃高度」的动作：不把每帧的脚底拉回地面，保留原图里 4 帧之间的上下位置（最低的一帧当地面） */
+  keepHeight: ['jump'] as string[],
   /** 第二张精灵图 pets/<毛色>-2.png：格式和第一张一样（每格 256，每行 4 帧，面朝右）。
    *  第 1 行是爬梯子（上下屋顶），后面的行留给以后的新动作。没有这张图时，爬梯子用「跳跃」那一行代替 */
   rows2: ['climb'] as const,

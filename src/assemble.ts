@@ -3,6 +3,8 @@
 // 开发者工具和玩家上传自定义宠物用的是同一套。
 import { SPRITE, type ActionName } from './config';
 import { knockOutWhite } from './sprites';
+import { rowLift } from './assembleLift';
+export { rowLift };
 
 const C = SPRITE.cell, N = SPRITE.framesPerRow;
 
@@ -12,7 +14,14 @@ export interface StripPart {
   size: number;
   /** 自动切帧时遇到的问题（没问题就是空的） */
   warn: string;
+  /** 每一帧的脚底在原图里的位置（像素，从上往下） */
+  bottoms: number[];
+  /** 保留跳跃高度：不把每帧的脚底拉回地面，保留 4 帧之间的上下位置（最低的一帧当地面） */
+  keepHeight: boolean;
+  /** 保留跳跃高度时，跳得太高格子放不下，上下距离压到了原来的多少（1 = 没压）。拼的时候算出来 */
+  lift?: number;
 }
+
 
 interface Run { x0: number; x1: number; mass: number }
 
@@ -58,10 +67,11 @@ export function splitStrip(img: HTMLImageElement | HTMLCanvasElement, action: Ac
     runs = Array.from({ length: N }, (_, i) => ({ x0: Math.round((i * w) / N), x1: Math.round(((i + 1) * w) / N) - 1, mass: 0 }));
   }
 
+  const bottoms: number[] = [];
   const frames = runs.map((r) => {
     let x0 = r.x1, x1 = r.x0, y0 = h, y1 = -1;
     for (let y = 0; y < h; y++) for (let x = r.x0; x <= r.x1; x++) if (solid(x, y)) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
-    const f = document.createElement('canvas');
+    const f = document.createElement('canvas'); bottoms.push(Math.max(0, y1));
     if (y1 < 0) { f.width = 1; f.height = 1; return f; }
     f.width = x1 - x0 + 1; f.height = y1 - y0 + 1;
     f.getContext('2d')!.drawImage(cv, x0, y0, f.width, f.height, 0, 0, f.width, f.height);
@@ -71,7 +81,7 @@ export function splitStrip(img: HTMLImageElement | HTMLCanvasElement, action: Ac
   const hs = frames.map((f) => f.height), ws = frames.map((f) => f.width);
   if (whiteEdge < 0.6) warn = '这张图不像序列帧：四周不是白色背景，去不掉底。' + (warn ? warn : '');
   else if (!warn && (Math.max(...hs) > Math.min(...hs) * 2.2 || frames.some((f) => f.height > f.width * 4 || f.width > f.height * 4))) warn = '4 帧的大小差得很多，可能不是同一只宠物的 4 个动作';
-  return { frames, size: SPRITE.assembleSize[action] ?? SPRITE.cellFill, warn };
+  return { frames, size: SPRITE.assembleSize[action] ?? SPRITE.cellFill, warn, bottoms, keepHeight: SPRITE.keepHeight.includes(action) };
 }
 
 /** 把一个动作的 4 帧画进一行格子里 */
@@ -79,9 +89,12 @@ function drawRow(ctx: CanvasRenderingContext2D, row: number, part: StripPart) {
   const maxH = Math.max(1, ...part.frames.map((f) => f.height)), maxW = Math.max(1, ...part.frames.map((f) => f.width));
   // 同一个动作的 4 帧用同一个缩放比例，动起来才不会忽大忽小；太宽的话缩到格子里放得下
   const s = Math.min((C * part.size) / maxH, (C * 0.96) / maxW);
+  // 保留跳跃高度的行：每帧按原图抬高（大小不变，太高放不下时只压低跳的高度）
+  const { dy, fit } = rowLift(part.frames.map((f) => f.height), part.bottoms, s, part.keepHeight);
+  part.lift = fit;
   part.frames.forEach((f, i) => {
     const dw = f.width * s, dh = f.height * s;
-    ctx.drawImage(f, i * C + (C - dw) / 2, row * C + C * SPRITE.footLine - dh, dw, dh);
+    ctx.drawImage(f, i * C + (C - dw) / 2, row * C + C * SPRITE.footLine - dh - dy[i], dw, dh);
   });
 }
 

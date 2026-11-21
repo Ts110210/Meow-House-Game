@@ -1409,6 +1409,8 @@ export class UI {
         part ? h('label', { class: 'asm-size' }, '大小', h('input', { type: 'range', min: '25', max: '95', step: '1', value: String(Math.round(part.size * 100)),
           oninput: (e: Event) => { part.size = Number((e.target as HTMLInputElement).value) / 100; ((e.target as HTMLElement).nextSibling as HTMLElement).textContent = `${Math.round(part.size * 100)}%`; this.asmRecompose(); this.asmSwap(); },
         }), h('span', null, `${Math.round(part.size * 100)}%`)) : h('span', { class: 'soft' }, required ? '还没上传' : `不传的话用「${SPRITE.rowNames[SPRITE.fallback[act]].replace('（被摸）', '')}」代替`),
+        part ? h('label', { class: 'asm-size' }, h('input', { type: 'checkbox', checked: part.keepHeight, style: 'flex:none;min-width:0', onchange: (e: Event) => { part.keepHeight = (e.target as HTMLInputElement).checked; this.asmRecompose(); this.refresh(true); } }), h('span', { style: 'white-space:nowrap' }, '保留跳跃高度'),
+          part.keepHeight && (part.lift ?? 1) < 0.99 ? h('span', { class: 'asm-warn' }, `跳得太高格子放不下，高度压到了 ${Math.round((part.lift ?? 1) * 100)}%（把大小调小一点能跳得更高）`) : null) : null,
         part?.warn ? h('span', { class: 'asm-warn' }, part.warn) : null), pick,
         part ? h('button', { class: 'btn small', 'aria-label': '去掉', onclick: () => { delete a.parts[act]; this.asmRecompose(); this.refresh(true); } }, '×') : null);
       out.push(row);

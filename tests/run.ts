@@ -1,8 +1,10 @@
 // 规则和存档的自动检查。运行：npm test
 import { ZONES, MOMENTS, VISITORS, QUESTS, NEIGHBORS, SEASON_EVENTS, SEASON_FINDS, CONFIG, DAY, DECOR, DESTS, FUR_COLORS, GEAR, HOUR, MIN, ROOM_THEMES, SKIN_PRICE, SKIN_SIZE, SKINNABLE, SKINS, SOUVENIRS, decodeLook, encodeLook, skinSize } from '../src/config';
+import { SPRITE } from '../src/config';
 import { ASSETS } from '../src/assets.config';
 import * as sim from '../src/sim';
 import * as sheetCut from '../src/sheetCut';
+import { rowLift } from '../src/assembleLift';
 import { diaryPlaceCount, writeDiary } from '../src/diary';
 import { buildExport, migrate, parseImport, repair, SAVE_VERSION } from '../src/save';
 
@@ -270,6 +272,19 @@ console.log('整张切图');
   const dv = new DataView(zip.buffer); const endAt = zip.length - 22;
   check('zip：开头和结尾的标记对，记着 2 个文件，文件名带着 public/assets/ 的文件夹', dv.getUint32(0, true) === 0x04034b50 && dv.getUint32(endAt, true) === 0x06054b50 && dv.getUint16(endAt + 10, true) === 2 && new TextDecoder().decode(zip.slice(30, 30 + 30)) === 'public/assets/objects/door.png');
   check('窗户（包括它的皮肤）按素材模板的比例挖玻璃，别的不挖', !!sheetCut.glassOf('object.kitchenWindow') && sheetCut.glassOf('object.bedroomWindow@cream') === ASSETS.objects.bedroomWindow.glass && sheetCut.glassOf('object.door') === null && sheetCut.glassOf('decor.rug') === null);
+}
+
+console.log('精灵图拼装：保留跳跃高度');
+{
+  // 4 帧一样高（100），原图里脚底分别在 500、400、300、500：最低的 500 当地面
+  const hs = [100, 100, 100, 100], bs = [500, 400, 300, 500];
+  const off = rowLift(hs, bs, 1, false);
+  check('关着：每帧都贴地', off.dy.every((d) => d === 0) && off.fit === 1);
+  const on = rowLift(hs, bs, 1, true, 1000, 0.9);
+  check('打开：按原图抬高，最低的那帧贴地', on.dy[0] === 0 && on.dy[1] === 100 && on.dy[2] === 200 && on.dy[3] === 0 && on.fit === 1);
+  const high = rowLift(hs, [500, 300, 100, 500], 1, true, 256, 0.9);
+  check('跳得太高放不下：一起压低，最高的那帧刚好顶到格子上沿，最低的还是贴地', high.fit < 1 && Math.abs(high.dy[2] + 100 - 256 * 0.9) < 1e-6 && high.dy[0] === 0 && Math.abs(high.dy[1] / high.dy[2] - 0.5) < 1e-6);
+  check('跳跃这一行默认打开，别的行默认关', SPRITE.keepHeight.includes('jump') && !SPRITE.keepHeight.includes('walk'));
 }
 
 console.log('装饰的摆放规则');
