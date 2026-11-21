@@ -12,6 +12,7 @@ import { drawDecor } from './art/decor';
 import type { Game } from './game';
 import { BASE_FY, BASE_ZW, bg, bgCfg, geo, recompute } from './geo';
 import * as sim from './sim';
+import { lightAt, sunShadow, type Light } from './light';
 import { extraFrame, frameIndex, rowFor } from './sprites';
 
 export type ObjectKind = 'neighbor' | 'find' | 'ladder' | 'deckEdge' | 'hooks' | 'umbrella' | 'kitchenWindow' | 'bedroomWindow' | 'kitchenShelf' | 'mirror' | 'bathShelf' | 'towel' | 'shelfRack' | 'chair' | 'tree' | 'fence' | 'door' | 'bowl' | 'tub' | 'bed' | 'cabinet' | 'album' | 'pond' | 'scratcher' | 'feeder' | 'ball' | 'sofa' | 'counter' | 'nightstand' | 'bedlamp' | 'pendantDoor' | 'pendantShelf' | 'cattree' | 'npc' | 'visitor';
@@ -165,6 +166,10 @@ export class Scene {
   private decorSprites = new Map<string, Sprite>(); private decorArt = new Map<string, HTMLCanvasElement | null>();
   private decorDrag: { id: string; gx: number; gy: number; x: number; y: number; moved: boolean } | null = null; private decorBox = new Graphics();
   private glow = new Graphics(); private debug = new Graphics(); private debugLabels = new Map<string, Text>();
+  /** 光影（在背景上面、物品下面）：影子一层（接触阴影、室外的太阳影子），窗户光一层（叠加变亮） */
+  private lightLayer = new Container(); private shadowLayer = new Container(); private winLayer = new Container();
+  private shadowPool: Sprite[] = []; private contactTex: Texture | null = null; private winTex: Texture[] = [];
+  private lightSig = ''; private light: Light = lightAt(12, 'clear');
   private objSprites = new Map<string, Sprite>();
   private objArt = new Map<string, HTMLCanvasElement | null>();
   private zoneSprites: ({ sp: Sprite; code: boolean } | null)[] = [];
@@ -189,8 +194,9 @@ export class Scene {
     el.appendChild(this.app.canvas);
     this.weather.eventMode = 'none'; this.shade.eventMode = 'none'; this.frontLayer.eventMode = 'none'; this.glow.eventMode = 'none'; this.debug.eventMode = 'none';
     this.glow.blendMode = 'add'; this.shade.blendMode = 'multiply';
+    this.lightLayer.eventMode = 'none'; this.winLayer.blendMode = 'add'; this.lightLayer.addChild(this.shadowLayer, this.winLayer);
     this.decorBox.eventMode = 'none';
-    this.world.addChild(this.fill, this.bgLayer, this.weather, this.objects, this.frontLayer, this.shade, this.glow, this.overlay, this.decorBox, this.debug);
+    this.world.addChild(this.fill, this.bgLayer, this.lightLayer, this.weather, this.objects, this.frontLayer, this.shade, this.glow, this.overlay, this.decorBox, this.debug);
     this.objects.sortableChildren = true;
     this.app.stage.addChild(this.world);
     ZONES.forEach((z) => {
@@ -319,20 +325,7 @@ export class Scene {
     g.rect(-3000, -5, W + 6000, 5).fill({ color: hex(PALETTE.ink), alpha: 0.25 });
     // 屏幕底部往下延伸的地面：院子是草地，其他是木地板
     ZONES.forEach((z, i) => { const c = groundColor(z.id, env, this.room()); if (c !== rp.floor && this.zoneSprites[i]?.code) g.rect(zx(i), H - 2, zw(i) + (i === N - 1 ? 3000 : 0), 3000).fill(c.startsWith('#') ? hex(c) : c); });
-    // 傍晚偏暖、夜里压暗但保留暖色：整个画面乘上一个颜色（正片叠底）。屋里和室外（阳台、院子）各用各的颜色
-    this.shade.clear();
-    if (env.time !== 'day') {
-      const tone = CONFIG.light[env.time];
-      ZONES.forEach((z, i) => {
-        const x0 = i === 0 ? -3000 : zx(i), x1 = i === N - 1 ? W + 3000 : zx(i + 1);
-        const outdoor = OUTDOOR.includes(z.id);
-        // 阳台有屋檐，木地板和屋里连着：地板以下用屋里的颜色，不然和隔壁的地板接不上
-        // 天花板以上（屋顶那一层）都是露天
-        const split = z.id === 'balcony' ? fy : outdoor ? 6000 + H : 0;
-        this.shade.rect(x0, -3000 - H, x1 - x0, split + 3000 + H).fill(hex(tone.outdoor));
-        if (split < 6000 + H) this.shade.rect(x0, split, x1 - x0, 6000 + H - split).fill(hex(tone.indoor));
-      });
-    }
+    this.drawShade();
     if (this.stripArt && geo.strip) this.placeTiled(this.stripArt, geo.strip.x, 0, geo.strip.w, H);
     // 整张图的上半张和下半张用同一套横向位置；否则上层每一段在对应区域的正上方
     if (this.fullTop && geo.strip) this.placeTiled(this.fullTop, geo.strip.x, -H, geo.strip.w, H);
@@ -1307,11 +1300,120 @@ export class Scene {
     if (idle.length) this.follow = { id: idle[0].id, until: this.now + 5000 };
   }
 
+  // ---------- 光影：跟着真实时间变 ----------
+
+  private lightLevel() { return this.game.state.settings.light; }
+
+  /** 整个画面乘上一个颜色（正片叠底）。屋里和室外（阳台、院子、屋顶）各用各的颜色。
+   *  光影效果「关」：老的三段式（傍晚偏暖、夜里压暗）；高、简单：跟着时间平滑变（清晨偏粉、中午自然、黄昏偏橙、夜里偏蓝暗），下雨偏冷偏灰 */
+  private drawShade() {
+    const W = worldW(), fy = geo.floorY; this.shade.clear();
+    let tone: { indoor: string; outdoor: string } | null;
+    if (this.lightLevel() === 'off') { const t = this.env().time; tone = t === 'day' ? null : CONFIG.light[t]; }
+    else tone = this.light.indoor === '#FFFFFF' && this.light.outdoor === '#FFFFFF' ? null : this.light;
+    if (!tone) return;
+    ZONES.forEach((z, i) => {
+      const x0 = i === 0 ? -3000 : zx(i), x1 = i === N - 1 ? W + 3000 : zx(i + 1);
+      const outdoor = OUTDOOR.includes(z.id);
+      // 阳台有屋檐，木地板和屋里连着：地板以下用屋里的颜色，不然和隔壁的地板接不上
+      // 天花板以上（屋顶那一层）都是露天
+      const split = z.id === 'balcony' ? fy : outdoor ? 6000 + H : 0;
+      this.shade.rect(x0, -3000 - H, x1 - x0, split + 3000 + H).fill(hex(tone!.outdoor));
+      if (split < 6000 + H) this.shade.rect(x0, split, x1 - x0, 6000 + H - split).fill(hex(tone!.indoor));
+    });
+  }
+
+  /** 每一帧看一下：时间、天气、光影档位、窗户位置变了，就重算这一刻的光（大约 3 分钟变一次，拖时间时跟手） */
+  private updateLight() {
+    const s = this.game.state; const level = this.lightLevel(); const hour = sim.lightHour(s); const weather = sim.weather(s);
+    const wins = ['kitchenWindow', 'bedroomWindow'].map((k) => { const sp = this.objSprites.get(k); return sp ? `${Math.round(sp.x)},${Math.round(sp.y)},${Math.round(sp.width)}` : ''; }).join(';');
+    const sig = `${level}|${Math.round(hour * 20)}|${weather}|${wins}|${Math.round(geo.floorY)}`;
+    if (sig === this.lightSig) return;
+    this.lightSig = sig; this.light = lightAt(hour, weather);
+    this.drawShade(); this.drawWindowLight();
+  }
+
+  /** 一块软边的椭圆（接触阴影用），画一次反复用 */
+  private contactTexture() {
+    if (this.contactTex) return this.contactTex;
+    const cv = document.createElement('canvas'); cv.width = 128; cv.height = 32; const c = cv.getContext('2d')!;
+    c.translate(64, 16); c.scale(1, 0.25); const g = c.createRadialGradient(0, 0, 0, 0, 0, 64);
+    g.addColorStop(0, 'rgba(40,28,20,1)'); g.addColorStop(0.55, 'rgba(40,28,20,0.6)'); g.addColorStop(1, 'rgba(40,28,20,0)');
+    c.fillStyle = g; c.beginPath(); c.arc(0, 0, 64, 0, Math.PI * 2); c.fill();
+    return (this.contactTex = this.tex(cv));
+  }
+
+  /** 窗户光：从窗户斜着照进来，落在墙上和地板上的一块柔和的光。早上往右斜、中午短、傍晚往左斜；夜里和下雨没有。
+   *  光影效果「简单」时形状不动（只跟着时间变颜色和浓淡），「关」没有。
+   *  画法：在很小的画布上画好再放大，边缘自然就是软的 */
+  private drawWindowLight() {
+    for (const c of this.winLayer.removeChildren()) c.destroy();
+    for (const t of this.winTex) { this.textures = this.textures.filter((x) => x !== t); t.destroy(true); } this.winTex = [];
+    const level = this.lightLevel(), l = this.light, WL = CONFIG.light.windowLight;
+    const strength = WL.alpha * l.sun; if (level === 'off' || strength < 0.01) return;
+    const side = level === 'high' ? l.side : -0.25, high = level === 'high' ? l.high : 0.85;
+    const fy = geo.floorY, R = 10;
+    for (const kind of ['kitchenWindow', 'bedroomWindow']) {
+      const sp = this.objSprites.get(kind), glass = ASSETS.objects[kind]?.glass; if (!sp || !glass || sp.alpha === 0) continue;
+      const left = sp.x - sp.width / 2, top = sp.y - sp.height;
+      const gx0 = left + glass[0] * sp.width, gx1 = left + glass[2] * sp.width, gy0 = top + glass[1] * sp.height, gy1 = top + glass[3] * sp.height;
+      const gw = gx1 - gx0, shift = -side * WL.lean * gw, depth = WL.near + (WL.far - WL.near) * (1 - high);
+      // 地板上的那块：靠墙的一边和离墙远的一边都往太阳的反方向挪，离墙越远挪得越多
+      const floor: [number, number][] = [[gx0 + shift * 0.55, fy + 4], [gx1 + shift * 0.55, fy + 4], [gx1 + shift, fy + depth], [gx0 + shift, fy + depth]];
+      // 从窗户斜着落到地板上的一道淡淡的光（经过下面的墙）
+      const beam: [number, number][] = [[gx0, gy0], [gx1, gy0], [gx1 + shift, fy + depth], [gx0 + shift, fy + depth]];
+      const pts = [...floor, ...beam]; const pad = 3 * R;
+      const bx = Math.min(...pts.map((p) => p[0])) - pad, by = gy0 - pad, bw = Math.max(...pts.map((p) => p[0])) + pad - bx, bh = fy + depth + pad - by;
+      const cv = document.createElement('canvas'); cv.width = Math.max(2, Math.ceil(bw / R)); cv.height = Math.max(2, Math.ceil(bh / R)); const c = cv.getContext('2d')!;
+      const poly = (p: [number, number][], a: number) => { c.globalAlpha = a; c.beginPath(); p.forEach(([x, y], i) => (i ? c.lineTo((x - bx) / R, (y - by) / R) : c.moveTo((x - bx) / R, (y - by) / R))); c.closePath(); c.fill(); };
+      c.fillStyle = l.win; poly(beam, WL.beam / WL.alpha * 0.9); poly(floor, 0.75); poly(floor, 0.25);
+      const t = this.tex(cv); this.winTex.push(t);
+      const s2 = new Sprite(t); s2.position.set(bx, by); s2.width = bw; s2.height = bh; s2.alpha = strength / 0.75; this.winLayer.addChild(s2);
+    }
+  }
+
+  /** 每一帧：脚底下的接触阴影（屋里屋外都有），室外（阳台、院子、屋顶）跟着太阳的影子（只有「高」才有） */
+  private drawShadows() {
+    const level = this.lightLevel(); let n = 0;
+    const get = () => { let sp = this.shadowPool[n]; if (!sp) { sp = new Sprite(); this.shadowPool.push(sp); this.shadowLayer.addChild(sp); } n++; sp.visible = true; sp.skew.set(0, 0); sp.tint = 0xffffff; return sp; };
+    if (level !== 'off') {
+      const C = CONFIG.light.contact, S = CONFIG.light.shadow; const l = this.light;
+      const sun = level === 'high' && l.sun > 0.01 ? sunShadow(l) : null; const ctex = this.contactTexture();
+      /** src = 投影子的那张图；x, y = 脚底；w = 接触阴影多宽；outdoor = 有没有太阳影子 */
+      const cast = (src: Sprite, x: number, y: number, w: number, outdoor: boolean) => {
+        if (sun && outdoor && src.texture && src.texture !== Texture.EMPTY) {
+          const sh = get(); sh.texture = src.texture; sh.anchor.set(src.anchor.x, src.anchor.y); sh.tint = 0x000000; sh.alpha = S.alpha * l.sun;
+          // 影子 = 自己的轮廓压扁、斜切：顶端往旁边挪 dx、高度压成 dy（都按自己的高度算）
+          const sy = Math.abs(src.scale.y); sh.scale.set(src.scale.x, sy * Math.hypot(sun.dx, sun.dy)); sh.skew.set(Math.atan2(-sun.dx, sun.dy), 0); sh.position.set(x, y);
+        }
+        const c = get(); c.texture = ctex; c.anchor.set(0.5, 0.5); c.width = w * C.width; c.height = w * C.width * C.depth; c.position.set(x, y); c.alpha = C.alpha;
+      };
+      const none = CONFIG.light.noShadow;
+      for (const [kind, sp] of this.objSprites) {
+        const def = ASSETS.objects[kind]; if (!def || def.wall || def.flat || none.includes(kind) || !sp.visible || sp.alpha === 0) continue;
+        cast(sp, sp.x, sp.y, sp.width, this.isOutdoor(sp.x));
+      }
+      for (const d of this.game.state.decor) { const sp = this.decorSprites.get(d.id); if (sp && sp.visible && DECOR[d.kind]?.layer === 'stand') cast(sp, sp.x, sp.y, sp.width, this.isOutdoor(sp.x)); }
+      const petW = (sp: Sprite) => 256 * Math.abs(sp.scale.y) * C.pet;
+      for (const a of this.actors.values()) {
+        if (!a.root.visible || a.perch || a.hop || a.climb) continue; // 在家具上、跳着、爬梯子：地上没有影子
+        cast(a.sprite, a.root.x, a.root.y, petW(a.sprite), !!a.roof || this.isOutdoor(a.root.x));
+      }
+      const g = this.guest; if (g && g.root.visible && !g.climb) cast(g.sprite, g.root.x, g.root.y, petW(g.sprite), g.root.y < 0 || this.isOutdoor(g.root.x));
+      if (this.npc && this.npc.visible) cast(this.npc, this.npc.x, this.npc.y, petW(this.npc), this.isOutdoor(this.npc.x));
+      for (const sp of this.visitorSprites.values()) if (sp.visible) cast(sp, sp.x, sp.y, petW(sp), this.isOutdoor(sp.x));
+    }
+    // 用不上的藏起来，并放开原来的图（家具重建时旧图会被销毁）
+    for (let i = n; i < this.shadowPool.length; i++) { const sp = this.shadowPool[i]; if (sp.visible || sp.texture !== Texture.EMPTY) { sp.visible = false; sp.texture = Texture.EMPTY; } }
+  }
+
   /** 天黑了，灯的周围画一圈暖色光晕：买了的吊灯和床头灯、摆出来的落地灯和小夜灯。
    *  光跟着物品走，物品挪到哪光到哪；没买、没摆出来的灯不会亮。 */
   private drawGlow(env: Env) {
-    const g = this.glow.clear(); if (env.time === 'day') return;
-    const G = CONFIG.light.glow; const strength = G.strength * (env.time === 'night' ? 1 : G.duskStrength); const color = hex(G.color);
+    const g = this.glow.clear(); const G = CONFIG.light.glow;
+    // 光影效果「关」：老的三段式；高、简单：跟着时间慢慢亮起来（黄昏开始，夜里最亮）。光圈叠加在宠物上面，猫走进去会被照亮
+    const strength = this.lightLevel() === 'off' ? (env.time === 'day' ? 0 : G.strength * (env.time === 'night' ? 1 : G.duskStrength)) : G.strength * this.light.glow;
+    if (strength < 0.01) return; const color = hex(G.color);
     const lit: [number, number][] = [];
     for (const [kind, sp] of this.objSprites) { const light = ASSETS.objects[kind]?.light; if (light && sp.alpha !== 0) lit.push([sp.x - sp.width / 2 + sp.width * light[0], sp.y - sp.height + sp.height * light[1]]); }
     for (const d of this.game.state.decor) { const sp = this.decorSprites.get(d.id), light = DECOR[d.kind]?.light; if (sp && light) lit.push([sp.x - sp.width / 2 + sp.width * light[0], sp.y - sp.height + sp.height * light[1]]); }
@@ -1647,6 +1749,7 @@ export class Scene {
       else { if (this.ballX !== null) ballSp.x = this.ballX; ballSp.y = this.ballY ?? base.y; }
       ballSp.zIndex = this.ballY ?? base.y;
     }
+    this.updateLight(); this.drawShadows();
     this.drawGlow(env);
     this.syncWindowViews(env);
     this.drawDebug();

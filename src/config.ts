@@ -391,6 +391,36 @@ export const CONFIG = {
     night: { indoor: '#B8A59F', outdoor: '#A6ACD2' },
     /** 灯周围的暖色光晕：颜色、半径、最亮处的强度（0–1）；傍晚灯刚亮，强度再乘以 duskStrength */
     glow: { color: '#FFC977', radius: 180, strength: 0.5, duskStrength: 0.35 },
+    // 上面的 dusk、night、duskStrength 只在「光影效果：关」时用（老的三段式）。高、简单用下面跟着真实时间平滑变化的这套
+
+    /** 一天里的几个关键时刻（几点，0–24），两个时刻之间平滑过渡，24 点接回 0 点。
+     *  indoor / outdoor = 屋里 / 阳台、院子、屋顶整个画面乘上的颜色（白色 = 不变）；
+     *  sun = 太阳有多强（0–1，管室外影子和窗户光的浓淡，0 = 没有）；win = 窗户光的颜色；glow = 灯的光圈有多亮（0–1） */
+    keys: [
+      { h: 0, indoor: '#A9A7BE', outdoor: '#9AA2CC', sun: 0, win: '#FFD6B8', glow: 1 },
+      { h: 4.6, indoor: '#A9A7BE', outdoor: '#9AA2CC', sun: 0, win: '#FFD6B8', glow: 1 },
+      { h: 6, indoor: '#F4DCD8', outdoor: '#F2D2D6', sun: 0.55, win: '#FFC9B4', glow: 0.25 },
+      { h: 9, indoor: '#FFF8F0', outdoor: '#FFFAF2', sun: 0.9, win: '#FFE7C6', glow: 0 },
+      { h: 12.5, indoor: '#FFFFFF', outdoor: '#FFFFFF', sun: 1, win: '#FFFDF6', glow: 0 },
+      { h: 15.5, indoor: '#FFF6EA', outdoor: '#FFF4E6', sun: 0.9, win: '#FFE8C2', glow: 0 },
+      { h: 18, indoor: '#F8D9BE', outdoor: '#F6CBA8', sun: 0.55, win: '#FFAE6A', glow: 0.4 },
+      { h: 19.5, indoor: '#A9A7BE', outdoor: '#9AA2CC', sun: 0, win: '#FFD6B8', glow: 1 },
+      { h: 24, indoor: '#A9A7BE', outdoor: '#9AA2CC', sun: 0, win: '#FFD6B8', glow: 1 },
+    ] as { h: number; indoor: string; outdoor: string; sun: number; win: string; glow: number }[],
+    /** 时段的名字（开发者面板显示用）：从几点开始 */
+    phases: [[5, '清晨'], [7, '上午'], [11, '中午'], [14, '下午'], [17, '黄昏'], [19, '夜晚']] as [number, string][],
+    /** 太阳几点出来、几点落下：早上在左边（影子往右拉长），中午在头顶（影子短），傍晚在右边（影子往左拉长） */
+    sunrise: 5.5, sunset: 19.2,
+    /** 下雨（冬天是大雪）：没有太阳影子和窗户光，整个画面再乘上这个偏冷偏灰的颜色 */
+    rain: '#C6CCD6',
+    /** 室外影子：浓淡（乘以 sun）；压扁成多高（中午 short、早晚 long，按物品高度的比例）；早晚最多往旁边斜出去多少（按物品高度的比例） */
+    shadow: { alpha: 0.28, short: 0.16, long: 0.34, lean: 1.5 },
+    /** 接触阴影（屋里屋外都有，脚底下一小块柔和的暗影）：浓淡、宽度（按物品宽度的比例）、厚度（按宽度的比例）；猫的宽度按格子的比例 */
+    contact: { alpha: 0.22, width: 0.86, depth: 0.16, pet: 0.42 },
+    /** 不画接触阴影和室外影子的东西：挂着的、贴墙的、平铺在地上的 */
+    noShadow: ['pendantDoor', 'pendantShelf', 'bedlamp', 'album', 'door', 'ladder', 'pond', 'deckEdge'] as string[],
+    /** 窗户光：最亮处的浓淡（乘以 sun）；落在地板上的那块多深（中午 near、早晚 far）；早晚最多往旁边斜出去多少（按玻璃宽度的比例） */
+    windowLight: { alpha: 0.32, beam: 0.12, near: 46, far: 110, lean: 0.9 },
   },
 
   // ---------- 每日签到 ----------

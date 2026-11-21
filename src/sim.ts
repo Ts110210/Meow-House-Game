@@ -70,7 +70,7 @@ export function claimDailyBonus(s: GameState): Result {
 
 export function newState(now: number): GameState {
   const s: GameState = {
-    v: 7, createdAt: now, seasonStart: now, settings: { notify: true, showSeason: false, seasonMode: 'cycle' }, clock: now, lastReal: now, fish: CONFIG.startFish, slots: 1,
+    v: 7, createdAt: now, seasonStart: now, settings: { notify: true, showSeason: false, seasonMode: 'cycle', light: 'simple' }, clock: now, lastReal: now, fish: CONFIG.startFish, slots: 1,
     pets: [], trips: [], postcards: [], souvenirs: {}, inv: { ...CONFIG.startItems }, owned: {},
     pond: Array(CONFIG.pond.slots).fill(null), lastCheckin: '', pendingReturns: [], friends: {}, variants: {}, milestones: [], decor: [], quests: newQuests(false), tutorial: 0, visitors: [], visitorQuota: 0, visitorDay: '', lastVisitorAt: 0, errand: null, display: { souvenirs: [], postcards: [] }, cattree: [null, null, null], hood: { now: null, bonds: {}, day: '', quota: 0, last: 0, stories: [] }, seasonal: { key: '', got: {}, done: false, last: 0, day: '', quota: 0 }, seasonalClaimed: [], moments: [], favor: {}, favorClaimed: [], finds: [], keepsakes: {}, skins: {}, skinsOwned: {}, room: DEFAULT_ROOM, roomsOwned: [],
     dev: { enabled: false, background: false, time: 'auto', season: 'auto', weather: 'auto', speed: 1, growth: 1, decay: { food: 1, mood: 1, clean: 1 } },
@@ -94,9 +94,16 @@ export const albumLimit = () => Math.round(DESTS.length * CONFIG.travel.albumPer
 
 /** 现在是白天、傍晚还是夜晚；什么季节。开发者面板里可以强制指定。 */
 export function dayTime(s: GameState): DayTime {
-  if (s.dev.enabled && s.dev.time !== 'auto') return s.dev.time;
-  const h = new Date(s.clock).getHours();
+  const dragged = s.dev.enabled && s.dev.hour != null;
+  if (s.dev.enabled && s.dev.time !== 'auto' && !dragged) return s.dev.time;
+  const h = dragged ? Math.floor(s.dev.hour!) : new Date(s.clock).getHours();
   return h >= 20 || h < 6 ? 'night' : h >= 17 ? 'dusk' : 'day';
+}
+/** 光影用的时间：现在几点（0–24，带小数）。开发者面板里拖了时间就用拖的；选了白天、傍晚、夜晚就用那一段里的一个时刻 */
+export function lightHour(s: GameState): number {
+  if (s.dev.enabled && s.dev.hour != null) return s.dev.hour;
+  if (s.dev.enabled && s.dev.time !== 'auto') return { day: 12.5, dusk: 18, night: 23 }[s.dev.time];
+  const d = new Date(s.clock); return d.getHours() + d.getMinutes() / 60 + d.getSeconds() / 3600;
 }
 export function season(s: GameState): Season {
   if (s.dev.enabled && s.dev.season !== 'auto') return s.dev.season;

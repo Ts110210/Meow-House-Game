@@ -45,6 +45,7 @@ v0.7.0，存档格式第 8 版。README 的「功能清单」是完整的现状�
 | `src/save.ts` | 存档版本、迁移、`repair()`（读档时把每个字段修成合法值；**加了新字段一定要在这里补默认值**） |
 | `src/scene.ts` | PixiJS 画面。`STATIONS` = 每件家具的站位和落脚点；`think()` = 宠物空闲时决定做什么；`update()` 里的状态机 = 走、跳、做动作；`updateGuest()` = 邻居猫；`watchMoments()` = 抓拍 |
 | `src/ui.ts` | 所有面板（DOM，不是 Pixi） |
+| `src/light.ts` | 光影：几点（`sim.lightHour`）→ 整体光色、太阳方向、影子形状、窗户光（纯函数，有测试）。画在 `scene.ts` 的 `drawShade`、`drawShadows`、`drawWindowLight`；档位在 `settings.light`（high / simple / off） |
 | `src/art/` | 占位图：`room.ts` 区域背景和家具、`decor.ts` 装饰、`defaultPet.ts` 宠物的 16 行动作（`POSES`）、`postcard.ts`、`moment.ts` 瞬间照片 |
 | `src/backscreen.ts`、`src/backscreenModes.ts` | 背屏画面；新的背屏画面加在 `BACK_MODES` 里 |
 

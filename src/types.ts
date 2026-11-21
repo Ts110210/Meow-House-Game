@@ -1,3 +1,4 @@
+export type LightLevel = 'high' | 'simple' | 'off';
 import type { DayTime, Season, Sex, Trait, VisitorWho } from './config';
 import type { StatKey } from './config';
 
@@ -104,6 +105,8 @@ export interface DevSettings {
   weather: 'auto' | Weather;
   /** 强制的昼夜和季节；'auto' = 跟着游戏里的时间走 */
   time: 'auto' | 'day' | 'dusk' | 'night';
+  /** 手动拖的时间（几点，0–24），光影和昼夜都按它；null = 不拖 */
+  hour?: number | null;
   season: 'auto' | 'spring' | 'summer' | 'autumn' | 'winter';
   /** 显示范围框：物品的图片范围、点击范围、站位、遮挡线、宠物脚底 */
   debugBoxes?: boolean;
@@ -119,7 +122,8 @@ export interface GameState {
   /** 季节循环的起点：这一刻是春天的第一天。之后每 CONFIG.season.days 天换一季 */
   seasonStart: number;
   /** notify = 提醒；showSeason = 主界面显示现在是什么季节第几天；seasonMode = 季节跟游戏里的循环走（cycle）还是跟现实的月份走（real） */
-  settings: { notify: boolean; showSeason: boolean; seasonMode: 'cycle' | 'real' };
+  /** light = 光影效果：high 全部；simple 整体光色、灯的光圈、接触阴影、不动的窗户光；off 只留老的傍晚、夜里调色 */
+  settings: { notify: boolean; showSeason: boolean; seasonMode: 'cycle' | 'real'; light: LightLevel };
   /** 游戏里的「现在」。平时等于真实时间，开了倍速会跑得更快。 */
   clock: number;
   /** 上次存档时的真实时间，用来补算离线期间的变化 */

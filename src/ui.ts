@@ -10,6 +10,7 @@ import { audioSettings, meow, setVolume, sfx } from './audio';
 import { drawBackScreen, takeBackTaps } from './backscreen';
 import { BACK_MODES } from './backscreenModes';
 import { ASSETS } from './assets.config';
+import { phaseName } from './light';
 import { renderMoment } from './art/moment';
 import { exportLayout, isChanged, resetBackground, resetObjects, saveLayout } from './layout';
 import { bgCfg } from './geo';
@@ -981,6 +982,9 @@ export class UI {
         h('div', { class: 'seg' }, ([['cycle', `游戏里的四季（每季 ${CONFIG.season.days} 天）`], ['real', '跟现实的月份']] as ['cycle' | 'real', string][]).map(([v, label]) => h('button', { class: 'chip' + (s.settings.seasonMode === v ? ' on' : ''), onclick: () => { s.settings.seasonMode = v; this.game.changed(); } }, label))),
         h('p', { class: 'soft' }, `现在：${this.seasonLine()}`),
         h('p', null, h('button', { class: 'btn block', onclick: () => { s.settings.showSeason = !s.settings.showSeason; this.game.changed(); } }, `在主界面显示季节：${s.settings.showSeason ? '开' : '关'}`)),
+        h('h3', null, '光影效果'),
+        h('div', { class: 'seg' }, ([['high', '高'], ['simple', '简单'], ['off', '关']] as const).map(([v, label]) => h('button', { class: 'chip' + (s.settings.light === v ? ' on' : ''), onclick: () => { s.settings.light = v; this.game.changed(); } }, label))),
+        h('p', { class: 'soft' }, s.settings.light === 'high' ? '光色、影子和窗户光都跟着手机的时间变，阳台、院子、屋顶上有跟着太阳转的影子。手机卡的话调到「简单」。' : s.settings.light === 'simple' ? '光色跟着手机的时间变，有脚下的影子和不动的窗户光，没有跟着太阳转的影子。' : '只分白天、傍晚、夜晚三种颜色，最省电。'),
         s.dev.enabled ? h('p', null, h('button', { class: 'btn block', onclick: () => this.openDev() }, '开发者面板')) : null,
         h('p', { style: 'margin-top:20px' }, h('button', { class: 'btn block danger', onclick: async () => {
           if (!this.resetArmed) { this.resetArmed = true; this.refresh(true); return; }
@@ -1565,7 +1569,15 @@ export class UI {
         h('h3', null, '时间倍速（出门、鱼塘、状态下降、成长都会一起变快）'), seg(D.speedOptions, d.speed, (v) => { d.speed = v; }),
         h('div', { class: 'seg', style: 'margin-top:8px' }, h('button', { class: 'chip' + (d.background ? ' on' : ''), onclick: () => { d.background = !d.background; this.game.changed(); } }, `退到桌面、关掉再开的那段时间也按倍速：${d.background ? '开' : '关'}`)),
         h('p', { class: 'soft' }, d.background ? '注意：倍速开得很高时，离开一会儿宠物就可能饿坏。测完记得关掉。' : '现在倍速只在游戏开着的时候生效，离开期间按真实时间算。'),
-        h('h3', null, '昼夜'), h('div', { class: 'seg' }, (['auto', 'day', 'dusk', 'night'] as const).map((v) => h('button', { class: 'chip' + (d.time === v ? ' on' : ''), onclick: () => { d.time = v; this.game.changed(); } }, v === 'auto' ? '跟着时间' : TIME_NAMES[v]))),
+        h('h3', null, '昼夜'), h('div', { class: 'seg' }, (['auto', 'day', 'dusk', 'night'] as const).map((v) => h('button', { class: 'chip' + (d.time === v && d.hour == null ? ' on' : ''), onclick: () => { d.time = v; d.hour = null; this.game.changed(); } }, v === 'auto' ? '跟着时间' : TIME_NAMES[v]))),
+        (() => {
+          // 手动拖时间：光影和昼夜都按拖到的时间（点上面任何一个按钮就不拖了）
+          const now = sim.lightHour(s); const fmt = (v: number) => `${String(Math.floor(v)).padStart(2, '0')}:${String(Math.round((v % 1) * 60) % 60).padStart(2, '0')} ${phaseName(v)}`;
+          const label = h('span', { style: 'flex:none;min-width:86px' }, d.hour != null ? fmt(d.hour) : '拖动预览');
+          return h('label', { class: 'asm-size', style: 'margin-top:8px' }, '拖时间', h('input', { type: 'range', min: '0', max: '23.75', step: '0.25', value: String(Math.min(23.75, Math.round(now * 4) / 4)),
+            // 拖的时候画面每一帧都读这个值，直接跟着变；松手再存（存的时候面板会重画，拖着重画会把滑块换掉）
+            oninput: (e: Event) => { d.hour = Number((e.target as HTMLInputElement).value); label.textContent = fmt(d.hour); }, onchange: () => { this.game.changed(); this.refresh(true); } }), label);
+        })(),
         h('h3', null, '季节'), h('div', { class: 'seg' }, (['auto', 'spring', 'summer', 'autumn', 'winter'] as const).map((v) => h('button', { class: 'chip' + (d.season === v ? ' on' : ''), onclick: () => { d.season = v; this.game.changed(); } }, v === 'auto' ? '自动（按设置）' : SEASON_NAMES[v]))),
         h('h3', null, '天气'), h('div', { class: 'seg' }, (['auto', 'clear', 'rain'] as const).map((v) => h('button', { class: 'chip' + (d.weather === v ? ' on' : ''), onclick: () => { d.weather = v; this.game.changed(); } }, v === 'auto' ? '自动' : v === 'clear' ? '晴' : '下雨（冬天是大雪）'))),
         h('p', { class: 'soft' }, `现在是${SEASON_NAMES[sim.season(s)]}天的${TIME_NAMES[sim.dayTime(s)]}，${sim.weather(s) === 'rain' ? (sim.season(s) === 'winter' ? '下大雪' : '下雨') : '晴'}。到阳台和院子看效果最明显。`),
