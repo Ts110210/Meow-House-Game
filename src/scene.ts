@@ -12,7 +12,7 @@ import { drawDecor } from './art/decor';
 import type { Game } from './game';
 import { BASE_FY, BASE_ZW, bg, bgCfg, geo, recompute } from './geo';
 import * as sim from './sim';
-import { lightAt, sunShadow, type Light } from './light';
+import { lampShadow, lightAt, lightDir, lightMap, sunShadow, type Light, type LightSource, type Occluder } from './light';
 import { extraFrame, frameIndex, rowFor } from './sprites';
 
 export type ObjectKind = 'neighbor' | 'find' | 'ladder' | 'deckEdge' | 'hooks' | 'umbrella' | 'kitchenWindow' | 'bedroomWindow' | 'kitchenShelf' | 'mirror' | 'bathShelf' | 'towel' | 'shelfRack' | 'chair' | 'tree' | 'fence' | 'door' | 'bowl' | 'tub' | 'bed' | 'cabinet' | 'album' | 'pond' | 'scratcher' | 'feeder' | 'ball' | 'sofa' | 'counter' | 'nightstand' | 'bedlamp' | 'pendantDoor' | 'pendantShelf' | 'cattree' | 'npc' | 'visitor';
@@ -170,6 +170,11 @@ export class Scene {
   private lightLayer = new Container(); private shadowLayer = new Container(); private winLayer = new Container();
   private shadowPool: Sprite[] = []; private contactTex: Texture | null = null; private winTex: Texture[] = [];
   private lightSig = ''; private light: Light = lightAt(12, 'clear');
+  /** 超高：光照图（正片叠底盖在整个画面上）和这一刻的光源 */
+  private lightMapSp = new Sprite(); private lightMapTex: Texture | null = null; private lightSrc: LightSource[] = [];
+  /** 超高：投在家具上的影子（和家具在同一层，按脚底排前后）；每件家具朝光面的亮、背光面的暗 */
+  private objShadowPool: Sprite[] = [];
+  private rims: { key: string; lit: Sprite; dark: Sprite; tex: Texture[] }[] = [];
   private objSprites = new Map<string, Sprite>();
   private objArt = new Map<string, HTMLCanvasElement | null>();
   private zoneSprites: ({ sp: Sprite; code: boolean } | null)[] = [];
@@ -194,9 +199,9 @@ export class Scene {
     el.appendChild(this.app.canvas);
     this.weather.eventMode = 'none'; this.shade.eventMode = 'none'; this.frontLayer.eventMode = 'none'; this.glow.eventMode = 'none'; this.debug.eventMode = 'none';
     this.glow.blendMode = 'add'; this.shade.blendMode = 'multiply';
-    this.lightLayer.eventMode = 'none'; this.winLayer.blendMode = 'add'; this.lightLayer.addChild(this.shadowLayer, this.winLayer);
+    this.lightLayer.eventMode = 'none'; this.winLayer.blendMode = 'add'; this.lightMapSp.blendMode = 'multiply'; this.lightMapSp.eventMode = 'none'; this.lightMapSp.visible = false; this.lightLayer.addChild(this.shadowLayer, this.winLayer);
     this.decorBox.eventMode = 'none';
-    this.world.addChild(this.fill, this.bgLayer, this.lightLayer, this.weather, this.objects, this.frontLayer, this.shade, this.glow, this.overlay, this.decorBox, this.debug);
+    this.world.addChild(this.fill, this.bgLayer, this.lightLayer, this.weather, this.objects, this.frontLayer, this.shade, this.lightMapSp, this.glow, this.overlay, this.decorBox, this.debug);
     this.objects.sortableChildren = true;
     this.app.stage.addChild(this.world);
     ZONES.forEach((z) => {
@@ -396,7 +401,7 @@ export class Scene {
       const sp = new Sprite(src ? this.tex(src) : Texture.WHITE);
       const aspect = src ? src.width / src.height : objectAspect(kind);
       sp.anchor.set(0.5, 1); sp.height = def.height; sp.width = def.height * aspect; sp.position.set(pos.x, pos.y);
-      if (!src) sp.alpha = 0;
+      if (!src) sp.alpha = 0; else (sp as any).art = src; // 原图留着：超高光影按它的轮廓画朝光面
       if (kind !== 'ball' || this.editMode || this.decorMode) {
         sp.eventMode = 'static'; sp.cursor = this.editMode ? 'move' : 'pointer';
         sp.on('pointertap', this.tap(() => {
@@ -690,7 +695,7 @@ export class Scene {
     const skin = sim.skinOf(this.game.state, d.kind); const artKey = `${d.kind}@${skin}`;
     if (!this.decorArt.has(artKey)) this.decorArt.set(artKey, drawDecor(d.kind, skin));
     const src = this.assets.getSkinned(`decor.${d.kind}`, skin) ?? this.decorArt.get(artKey); if (!src) return null;
-    const sp = new Sprite(this.tex(src)); sp.anchor.set(0.5, 1); sp.height = def.height; sp.width = def.height * (src.width / src.height);
+    const sp = new Sprite(this.tex(src)); sp.anchor.set(0.5, 1); sp.height = def.height; sp.width = def.height * (src.width / src.height); (sp as any).art = src;
     sp.position.set(zx(zi) + d.x, d.y);
     if (this.decorMode) { sp.eventMode = 'static'; sp.cursor = 'move'; sp.on('pointerdown', (e) => this.decorDown(e, d.id)); } else sp.eventMode = 'none';
     this.decorSprites.set(d.id, sp);
@@ -1308,6 +1313,7 @@ export class Scene {
    *  光影效果「关」：老的三段式（傍晚偏暖、夜里压暗）；高、简单：跟着时间平滑变（清晨偏粉、中午自然、黄昏偏橙、夜里偏蓝暗），下雨偏冷偏灰 */
   private drawShade() {
     const W = worldW(), fy = geo.floorY; this.shade.clear();
+    if (this.lightLevel() === 'ultra') return; // 超高用光照图
     let tone: { indoor: string; outdoor: string } | null;
     if (this.lightLevel() === 'off') { const t = this.env().time; tone = t === 'day' ? null : CONFIG.light[t]; }
     else tone = this.light.indoor === '#FFFFFF' && this.light.outdoor === '#FFFFFF' ? null : this.light;
@@ -1327,10 +1333,106 @@ export class Scene {
   private updateLight() {
     const s = this.game.state; const level = this.lightLevel(); const hour = sim.lightHour(s); const weather = sim.weather(s);
     const wins = ['kitchenWindow', 'bedroomWindow'].map((k) => { const sp = this.objSprites.get(k); return sp ? `${Math.round(sp.x)},${Math.round(sp.y)},${Math.round(sp.width)}` : ''; }).join(';');
-    const sig = `${level}|${Math.round(hour * 20)}|${weather}|${wins}|${Math.round(geo.floorY)}`;
+    const lamps = level === 'ultra' ? this.lampSpots().map((p) => `${p.kind}${Math.round(p.x)},${Math.round(p.y)}`).join(';') : '';
+    const sig = `${level}|${Math.round(hour * 20)}|${weather}|${wins}|${lamps}|${Math.round(geo.floorY)}|${Math.round(worldW())}|${level === 'ultra' ? this.objSig + this.furnSig() : ''}`;
     if (sig === this.lightSig) return;
     this.lightSig = sig; this.light = lightAt(hour, weather);
-    this.drawShade(); this.drawWindowLight();
+    this.drawShade(); this.drawWindowLight(); this.drawLightMap(); this.drawRims();
+  }
+  /** 家具和装饰现在的位置（挪了要重算挡光和朝光面） */
+  private furnSig() {
+    let s = ''; for (const [k, sp] of this.objSprites) s += `${k}${Math.round(sp.x)},${Math.round(sp.y)},${Math.round(sp.height)};`;
+    for (const [k, sp] of this.decorSprites) s += `${k}${Math.round(sp.x)},${Math.round(sp.y)};`; return s;
+  }
+  /** 超高里算光影的家具和装饰：[名字, 图片, 原图] */
+  private lightThings(): [string, Sprite, HTMLCanvasElement | HTMLImageElement][] {
+    const out: [string, Sprite, HTMLCanvasElement | HTMLImageElement][] = [];
+    for (const [kind, sp] of this.objSprites) if ((sp as any).art && sp.alpha !== 0 && !sp.destroyed) out.push([kind, sp, (sp as any).art]);
+    for (const d of this.game.state.decor) { const sp = this.decorSprites.get(d.id); if (sp && (sp as any).art && !sp.destroyed && DECOR[d.kind]?.layer !== 'floor') out.push([d.kind, sp, (sp as any).art]); }
+    return out;
+  }
+
+  /** 超高：每件家具朝着光的那一面亮、背着光的那一面暗。按它自己的轮廓画两层（亮的一层叠加、暗的一层盖上去），
+   *  放在家具正上面一点点（同一层，宠物走到前面会挡住它）。光变了才重画 */
+  private drawRims() {
+    for (const r of this.rims) { r.lit.destroy(); r.dark.destroy(); for (const t of r.tex) { this.textures = this.textures.filter((x) => x !== t); t.destroy(true); } } this.rims = [];
+    if (this.lightLevel() !== 'ultra') return;
+    const U = CONFIG.light.ultra, l = this.light;
+    // 室外的太阳也算一个从侧上方照来的光
+    const sun: LightSource[] = l.sun > 0.01 ? [{ x: 0, y: 0, zone: -1, power: 0, radius: 1, color: l.win }] : [];
+    for (const [kind, sp, art] of this.lightThings()) {
+      if (U.noRim.includes(kind)) continue;
+      const z = this.zoneOfPoint(sp.x, sp.y - 2); const cx = sp.x, cy = sp.y - sp.height / 2;
+      let dir = lightDir(this.lightSrc, cx, cy, z, (q) => this.openZone(q));
+      // 露天：太阳从侧上方照（早上在左、傍晚在右、中午在头顶）
+      if (sun.length && this.openZone(z)) { const sx = l.side * 0.85, sy = -Math.max(0.3, l.high); const len = Math.hypot(sx, sy); const sd = { dx: sx / len, dy: sy / len, power: l.sun * 0.6, color: l.win }; dir = !dir || dir.power < sd.power ? sd : dir; }
+      if (!dir) continue;
+      const w = Math.max(2, Math.round(sp.width)), h = Math.max(2, Math.round(sp.height));
+      const paint = (stops: [number, string][]) => {
+        const cv = document.createElement('canvas'); cv.width = w; cv.height = h; const c = cv.getContext('2d')!;
+        c.drawImage(art, 0, 0, w, h); c.globalCompositeOperation = 'source-in';
+        const R = Math.hypot(w, h) / 2; const g = c.createLinearGradient(w / 2 + dir!.dx * R, h / 2 + dir!.dy * R, w / 2 - dir!.dx * R, h / 2 - dir!.dy * R);
+        for (const [at, col] of stops) g.addColorStop(at, col); c.fillStyle = g; c.fillRect(0, 0, w, h); return cv;
+      };
+      const [r, gg, b] = [1, 3, 5].map((i) => parseInt(dir!.color.slice(i, i + 2), 16));
+      const litA = U.rim.lit * dir.power, darkA = U.rim.dark * dir.power;
+      const litCv = paint([[0, `rgba(${r},${gg},${b},${litA})`], [0.45, `rgba(${r},${gg},${b},0)`], [1, `rgba(${r},${gg},${b},0)`]]);
+      const darkCv = paint([[0, 'rgba(30,22,40,0)'], [0.5, 'rgba(30,22,40,0)'], [1, `rgba(30,22,40,${darkA})`]]);
+      const t1 = this.tex(litCv), t2 = this.tex(darkCv);
+      const mk = (t: Texture, add: boolean) => { const s2 = new Sprite(t); s2.anchor.set(0.5, 1); s2.eventMode = 'none'; (s2 as any).isActor = true; if (add) s2.blendMode = 'add'; this.objects.addChild(s2); return s2; };
+      this.rims.push({ key: kind, lit: mk(t1, true), dark: mk(t2, false), tex: [t1, t2] });
+      (this.rims[this.rims.length - 1] as any).src = sp;
+    }
+    this.syncRims();
+  }
+  /** 每一帧：朝光面那两层跟着家具走（拖动调整时也跟手） */
+  private syncRims() {
+    for (const r of this.rims) {
+      const sp = (r as any).src as Sprite; const ok = !sp.destroyed && sp.visible && !!sp.parent;
+      for (const [o, dz] of [[r.dark, 0.002], [r.lit, 0.003]] as [Sprite, number][]) { o.visible = ok; if (!ok) continue; o.position.set(sp.x, sp.y); o.width = sp.width; o.height = sp.height; o.zIndex = sp.zIndex + dz; }
+    }
+  }
+
+  /** 会发光的东西现在在哪：买了的吊灯、床头灯、暖炉，摆出来的落地灯、小夜灯、萤火虫罐、灯笼 */
+  private lampSpots(): { x: number; y: number; kind: string }[] {
+    const out: { x: number; y: number; kind: string }[] = [];
+    for (const [kind, sp] of this.objSprites) { const light = ASSETS.objects[kind]?.light; if (light && sp.alpha !== 0) out.push({ x: sp.x - sp.width / 2 + sp.width * light[0], y: sp.y - sp.height + sp.height * light[1], kind }); }
+    for (const d of this.game.state.decor) { const sp = this.decorSprites.get(d.id), light = DECOR[d.kind]?.light; if (sp && light) out.push({ x: sp.x - sp.width / 2 + sp.width * light[0], y: sp.y - sp.height + sp.height * light[1], kind: d.kind }); }
+    return out;
+  }
+  /** 这一点在哪个区域：天花板以上是屋顶那一层（-1） */
+  private zoneOfPoint(x: number, y: number) { return y < 0 ? -1 : zoneAt(x); }
+  private openZone(z: number) { return z === -1 || OUTDOOR.includes(ZONES[z]?.id); }
+
+  /** 超高：这一刻的光源（白天的窗户、天黑后的灯），再算一张光照图盖在整个画面上（正片叠底，屋角暗、窗边和灯周围亮） */
+  private drawLightMap() {
+    if (this.lightMapTex) { this.textures = this.textures.filter((t) => t !== this.lightMapTex); this.lightMapTex.destroy(true); this.lightMapTex = null; this.lightMapSp.texture = Texture.EMPTY; }
+    this.lightSrc = []; this.lightMapSp.visible = false;
+    if (this.lightLevel() !== 'ultra') return;
+    const U = CONFIG.light.ultra, l = this.light;
+    if (l.sun > 0.01) for (const kind of ['kitchenWindow', 'bedroomWindow']) {
+      const sp = this.objSprites.get(kind), glass = ASSETS.objects[kind]?.glass; if (!sp || !glass || sp.alpha === 0) continue;
+      const left = sp.x - sp.width / 2, top = sp.y - sp.height; const x = left + (glass[0] + glass[2]) / 2 * sp.width, y = top + (glass[1] + glass[3]) / 2 * sp.height;
+      this.lightSrc.push({ x, y, zone: this.zoneOfPoint(x, y), power: U.window.power * l.sun, radius: U.window.radius, color: l.win });
+    }
+    if (l.glow > 0.01) for (const p of this.lampSpots()) this.lightSrc.push({ x: p.x, y: p.y, zone: this.zoneOfPoint(p.x, p.y), power: U.lamp.power * l.glow, radius: U.lampRadius[p.kind] ?? U.lamp.radius, color: U.lampColor[p.kind] ?? U.lamp.color });
+    // 家具本身当光源：鱼塘白天反光，喂食机夜里亮着指示灯（只照亮、不让别的东西投影）
+    for (const [kind, e] of Object.entries(U.extra)) {
+      const sp = this.objSprites.get(kind); const k = e.by === 'sun' ? l.sun : l.glow; if (!sp || sp.alpha === 0 || k < 0.01) continue;
+      const x = sp.x - sp.width / 2 + sp.width * e.at[0], y = sp.y - sp.height + sp.height * e.at[1];
+      this.lightSrc.push({ x, y, zone: this.zoneOfPoint(x, y), power: e.power * k, radius: e.radius, color: e.color, cast: e.cast });
+    }
+    // 挡光的家具：图片的框往里缩一点（家具不是方的）
+    const occ: Occluder[] = [];
+    for (const [kind, sp] of this.lightThings()) {
+      if (!U.occluders.includes(kind)) continue; const ix = sp.width * U.inset, iy = sp.height * U.inset;
+      occ.push({ x0: sp.x - sp.width / 2 + ix, x1: sp.x + sp.width / 2 - ix, y0: sp.y - sp.height + iy, y1: sp.y - 2, zone: this.zoneOfPoint(sp.x, sp.y - 2) });
+    }
+    const pad = 600, W = worldW(); const grid = { x0: -pad, y0: -2 * H, cell: U.cell, cols: Math.ceil((W + pad * 2) / U.cell), rows: Math.ceil((4 * H) / U.cell) };
+    const data = lightMap(l, grid, (x, y) => this.zoneOfPoint(x, y), (z) => this.openZone(z), this.lightSrc, occ);
+    const cv = document.createElement('canvas'); cv.width = grid.cols; cv.height = grid.rows; cv.getContext('2d')!.putImageData(new ImageData(data, grid.cols, grid.rows), 0, 0);
+    this.lightMapTex = this.tex(cv); this.lightMapSp.texture = this.lightMapTex;
+    this.lightMapSp.position.set(grid.x0, grid.y0); this.lightMapSp.width = grid.cols * grid.cell; this.lightMapSp.height = grid.rows * grid.cell; this.lightMapSp.visible = true;
   }
 
   /** 一块软边的椭圆（接触阴影用），画一次反复用 */
@@ -1351,7 +1453,7 @@ export class Scene {
     for (const t of this.winTex) { this.textures = this.textures.filter((x) => x !== t); t.destroy(true); } this.winTex = [];
     const level = this.lightLevel(), l = this.light, WL = CONFIG.light.windowLight;
     const strength = WL.alpha * l.sun; if (level === 'off' || strength < 0.01) return;
-    const side = level === 'high' ? l.side : -0.25, high = level === 'high' ? l.high : 0.85;
+    const moving = level === 'high' || level === 'ultra'; const side = moving ? l.side : -0.25, high = moving ? l.high : 0.85;
     const fy = geo.floorY, R = 10;
     for (const kind of ['kitchenWindow', 'bedroomWindow']) {
       const sp = this.objSprites.get(kind), glass = ASSETS.objects[kind]?.glass; if (!sp || !glass || sp.alpha === 0) continue;
@@ -1376,15 +1478,30 @@ export class Scene {
   private drawShadows() {
     const level = this.lightLevel(); let n = 0;
     const get = () => { let sp = this.shadowPool[n]; if (!sp) { sp = new Sprite(); this.shadowPool.push(sp); this.shadowLayer.addChild(sp); } n++; sp.visible = true; sp.skew.set(0, 0); sp.tint = 0xffffff; return sp; };
+    // 超高：太阳和灯投的影子放进家具那一层，排在投影子的东西后面一点点，这样能落在它后面的家具上（猫的影子落在沙发上），前面的家具照样盖住它
+    let m = 0; const ultraLayer = level === 'ultra';
+    const getObj = (z: number) => { let sp = this.objShadowPool[m]; if (!sp) { sp = new Sprite(); sp.eventMode = 'none'; (sp as any).isActor = true; this.objShadowPool.push(sp); this.objects.addChild(sp); } m++; sp.visible = true; sp.zIndex = z; return sp; };
     if (level !== 'off') {
       const C = CONFIG.light.contact, S = CONFIG.light.shadow; const l = this.light;
-      const sun = level === 'high' && l.sun > 0.01 ? sunShadow(l) : null; const ctex = this.contactTexture();
+      const sun = (level === 'high' || level === 'ultra') && l.sun > 0.01 ? sunShadow(l) : null; const ctex = this.contactTexture();
+      const lamps = level === 'ultra' ? this.lightSrc : [];
       /** src = 投影子的那张图；x, y = 脚底；w = 接触阴影多宽；outdoor = 有没有太阳影子 */
+      // 影子 = 自己的轮廓压扁、斜切：顶端往旁边挪 dx、高度压成 dy（都按自己的高度算）
+      const silhouette = (src: Sprite, x: number, y: number, dx: number, dy: number, alpha: number) => {
+        const sh = ultraLayer ? getObj(y - 0.5) : get(); sh.texture = src.texture; sh.anchor.set(src.anchor.x, src.anchor.y); sh.tint = 0x000000; sh.alpha = alpha;
+        const sy = Math.abs(src.scale.y); sh.scale.set(src.scale.x, sy * Math.hypot(dx, dy)); sh.skew.set(Math.atan2(-dx, dy), 0); sh.position.set(x, y);
+      };
       const cast = (src: Sprite, x: number, y: number, w: number, outdoor: boolean) => {
-        if (sun && outdoor && src.texture && src.texture !== Texture.EMPTY) {
-          const sh = get(); sh.texture = src.texture; sh.anchor.set(src.anchor.x, src.anchor.y); sh.tint = 0x000000; sh.alpha = S.alpha * l.sun;
-          // 影子 = 自己的轮廓压扁、斜切：顶端往旁边挪 dx、高度压成 dy（都按自己的高度算）
-          const sy = Math.abs(src.scale.y); sh.scale.set(src.scale.x, sy * Math.hypot(sun.dx, sun.dy)); sh.skew.set(Math.atan2(-sun.dx, sun.dy), 0); sh.position.set(x, y);
+        const real = src.texture && src.texture !== Texture.EMPTY;
+        if (sun && outdoor && real) silhouette(src, x, y, sun.dx, sun.dy, S.alpha * l.sun);
+        // 超高：同一个区域里的每个光源（窗户、灯）各投一道影子，背离光源；露天的地方互相都算同一片
+        if (real && lamps.length) {
+          const z = this.zoneOfPoint(x, y - 2);
+          for (const s of lamps) {
+            if (s.cast === false) continue;
+            if (s.zone !== z && !(this.openZone(s.zone) && this.openZone(z))) continue;
+            const t = lampShadow(s, x, y); if (t.alpha > 0) silhouette(src, x, y, t.dx, t.dy, t.alpha);
+          }
         }
         const c = get(); c.texture = ctex; c.anchor.set(0.5, 0.5); c.width = w * C.width; c.height = w * C.width * C.depth; c.position.set(x, y); c.alpha = C.alpha;
       };
@@ -1405,22 +1522,25 @@ export class Scene {
     }
     // 用不上的藏起来，并放开原来的图（家具重建时旧图会被销毁）
     for (let i = n; i < this.shadowPool.length; i++) { const sp = this.shadowPool[i]; if (sp.visible || sp.texture !== Texture.EMPTY) { sp.visible = false; sp.texture = Texture.EMPTY; } }
+    for (let i = m; i < this.objShadowPool.length; i++) { const sp = this.objShadowPool[i]; if (sp.visible || sp.texture !== Texture.EMPTY) { sp.visible = false; sp.texture = Texture.EMPTY; } }
+    this.syncRims();
   }
 
   /** 天黑了，灯的周围画一圈暖色光晕：买了的吊灯和床头灯、摆出来的落地灯和小夜灯。
    *  光跟着物品走，物品挪到哪光到哪；没买、没摆出来的灯不会亮。 */
   private drawGlow(env: Env) {
-    const g = this.glow.clear(); const G = CONFIG.light.glow;
+    const g = this.glow.clear(); const G = CONFIG.light.glow; const ultra = this.lightLevel() === 'ultra';
     // 光影效果「关」：老的三段式；高、简单：跟着时间慢慢亮起来（黄昏开始，夜里最亮）。光圈叠加在宠物上面，猫走进去会被照亮
-    const strength = this.lightLevel() === 'off' ? (env.time === 'day' ? 0 : G.strength * (env.time === 'night' ? 1 : G.duskStrength)) : G.strength * this.light.glow;
+    const strength = this.lightLevel() === 'off' ? (env.time === 'day' ? 0 : G.strength * (env.time === 'night' ? 1 : G.duskStrength)) : G.strength * this.light.glow * (ultra ? CONFIG.light.ultra.glowScale : 1);
     if (strength < 0.01) return; const color = hex(G.color);
-    const lit: [number, number][] = [];
-    for (const [kind, sp] of this.objSprites) { const light = ASSETS.objects[kind]?.light; if (light && sp.alpha !== 0) lit.push([sp.x - sp.width / 2 + sp.width * light[0], sp.y - sp.height + sp.height * light[1]]); }
-    for (const d of this.game.state.decor) { const sp = this.decorSprites.get(d.id), light = DECOR[d.kind]?.light; if (sp && light) lit.push([sp.x - sp.width / 2 + sp.width * light[0], sp.y - sp.height + sp.height * light[1]]); }
+    const lit: [number, number, string][] = this.lampSpots().map((p) => [p.x, p.y, p.kind]);
     const n = 26;
-    for (const [x, y] of lit) {
+    const flick = CONFIG.light.ultra.flicker;
+    for (const [x, y, kind] of lit) {
+      // 超高：火光、萤火虫会闪（几个不同快慢的波叠起来，看不出规律）
+      const f = ultra && flick[kind] ? 1 + flick[kind] * (Math.sin(this.now / 97 + x) * 0.5 + Math.sin(this.now / 263 + y) * 0.35 + Math.sin(this.now / 41) * 0.15) : 1;
       // 很多层很淡的圆叠起来：越靠近灯越亮，边缘慢慢淡出，看不出一圈一圈；光稍微往下落一点
-      for (let i = n; i >= 1; i--) { const r = G.radius * Math.pow(i / n, 1.5); g.circle(x, y + r * 0.2, r).fill({ color, alpha: strength / n }); }
+      for (let i = n; i >= 1; i--) { const r = G.radius * Math.pow(i / n, 1.5); g.circle(x, y + r * 0.2, r).fill({ color, alpha: (strength * f) / n }); }
     }
   }
 

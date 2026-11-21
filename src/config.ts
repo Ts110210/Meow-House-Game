@@ -421,6 +421,35 @@ export const CONFIG = {
     noShadow: ['pendantDoor', 'pendantShelf', 'bedlamp', 'album', 'door', 'ladder', 'pond', 'deckEdge'] as string[],
     /** 窗户光：最亮处的浓淡（乘以 sun）；落在地板上的那块多深（中午 near、早晚 far）；早晚最多往旁边斜出去多少（按玻璃宽度的比例） */
     windowLight: { alpha: 0.32, beam: 0.12, near: 46, far: 110, lean: 0.9 },
+    /** 光影效果「超高」：每个房间按离窗户、离灯的远近算亮暗（光照图），每个光源单独投影。
+     *  cell = 光照图一格多大（越小越细、越费）；dimDay / dimNight = 屋里离光源远的地方白天 / 夜里有多暗（1 = 不暗）；
+     *  leak = 灯光透过墙照到隔壁房间还剩多少；window = 窗户光照亮屋里的强度、照多远；
+     *  lamp = 灯光的颜色、强度、照多远（radius 可以按物品单独写在 lampRadius）；
+     *  shadow = 灯和窗户投的影子：浓淡、最多往旁边斜多少（按物品高度）、压扁成多高（灯在头顶 short，斜照 long）、太弱的光不投影、比照亮的范围远多少 */
+    ultra: {
+      cell: 16, dimDay: 0.72, dimNight: 0.6, leak: 0.1,
+      /** 家具挡光：被挡住的地方还剩多少光；哪些家具挡光（框往里缩 inset，镂空的猫爬架、栅栏、椅子不挡） */
+      block: 0.3, inset: 0.1,
+      occluders: ['bed', 'cabinet', 'sofa', 'counter', 'tub', 'nightstand', 'box', 'basket', 'feeder', 'shelf'] as string[],
+      /** 家具朝光的一面亮、背光的一面暗：最亮加多少、最暗压多少（按照到它身上的光的强弱） */
+      rim: { lit: 0.55, dark: 0.32 },
+      /** 不做朝光面亮暗的东西 */
+      noRim: ['kitchenWindow', 'bedroomWindow', 'deckEdge', 'pond'] as string[],
+      /** 家具本身当光源：at = 在图片上的位置；by = sun 白天亮（反光）、night 天黑亮；cast = 会不会让别的东西投影 */
+      extra: {
+        pond: { at: [0.5, 0.35], color: '#D6F0FF', power: 0.3, radius: 230, by: 'sun', cast: false },
+        feeder: { at: [0.62, 0.22], color: '#9ED6FF', power: 0.4, radius: 100, by: 'night', cast: false },
+      } as Record<string, { at: [number, number]; color: string; power: number; radius: number; by: 'sun' | 'night'; cast: boolean }>,
+      /** 火光、萤火虫会闪：光晕的亮度上下浮动多少 */
+      flicker: { heater: 0.22, jar: 0.3, lantern: 0.12 } as Record<string, number>,
+      window: { power: 0.5, radius: 560 },
+      lamp: { color: '#FFC27A', power: 0.95, radius: 330 },
+      lampColor: { heater: '#FF9C55', jar: '#DFFFA6', lantern: '#FFAA6A' } as Record<string, string>,
+      lampRadius: { bedlamp: 240, heater: 250, nightlight: 170, jar: 150, lantern: 220, sidelamp: 280 } as Record<string, number>,
+      shadow: { alpha: 0.36, maxLean: 2.2, short: 0.14, long: 0.42, min: 0.06, reach: 1.4 },
+      /** 灯的光晕（叠加变亮那一层）在超高里乘这个：亮暗主要交给光照图 */
+      glowScale: 0.6,
+    },
   },
 
   // ---------- 每日签到 ----------

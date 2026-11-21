@@ -302,12 +302,29 @@ console.log('光影：跟着真实时间');
   const m = light.sunShadow(at(7.5)), n = light.sunShadow(at(12.3)), e = light.sunShadow(at(17.5));
   check('影子：早上往右拉长、中午短、傍晚往左拉长', m.dx > 0.5 && e.dx < -0.5 && Math.abs(n.dx) < 0.1 && n.dy < m.dy && n.dy < e.dy);
   check('下雨：没有太阳（影子和窗户光都关掉），画面偏冷偏灰', at(12.5, 'rain').sun === 0 && at(12.5, 'rain').indoor !== '#FFFFFF' && (() => { const c = at(12.5, 'rain').indoor; return parseInt(c.slice(5, 7), 16) >= parseInt(c.slice(1, 3), 16); })());
+  // 超高：家具挡光、朝光面、每个光源的影子
+  const box = { x0: 100, y0: 100, x1: 200, y1: 200, zone: 0 };
+  check('家具挡光：光源和这一点中间隔着家具才算挡住；家具自己身上不算', light.blocked(50, 150, 260, 150, box) && !light.blocked(50, 150, 80, 150, box) && !light.blocked(50, 150, 150, 150, box) && !light.blocked(50, 50, 260, 40, box));
+  const lampL: light.LightSource = { x: 0, y: 400, zone: 1, power: 1, radius: 300, color: '#FFC27A' }, lampR: light.LightSource = { ...lampL, x: 400, color: '#FF9C55' };
+  const d1 = light.lightDir([lampL], 150, 500, 1, () => false)!;
+  check('朝光面：只有左边一盏灯，亮的一面朝左；隔壁房间的灯不算', d1.dx < 0 && light.lightDir([lampL], 150, 500, 2, () => false) === null);
+  const d2 = light.lightDir([lampL, { ...lampR, power: 3 }], 150, 500, 1, () => false)!;
+  check('两盏灯：更亮更近的那盏决定朝哪边、用它的颜色', d2.dx > 0 && d2.color === '#FF9C55');
+  const sl = light.lampShadow(lampL, 150, 600), sr = light.lampShadow(lampR, 150, 600);
+  check('每盏灯各投一道影子，背离光源：左边的灯往右投、右边的灯往左投', sl.alpha > 0 && sr.alpha > 0 && sl.dx > 0 && sr.dx < 0);
+  const near = light.lampShadow({ ...lampL, x: 140 }, 150, 600), far = light.lampShadow(lampL, 260, 600);
+  check('灯在头顶影子短、离得近更浓；斜着照影子长', near.dy < far.dy && near.alpha > far.alpha && Math.abs(near.dx) < Math.abs(far.dx));
+  const grid = { x0: 0, y0: 0, cell: 10, cols: 40, rows: 10 };
+  const lm = light.lightMap(light.lightAt(23, 'clear'), grid, () => 0, () => false, [{ x: 50, y: 50, zone: 0, power: 1, radius: 400, color: '#FFFFFF' }], [{ x0: 150, y0: 0, x1: 200, y1: 100, zone: 0 }]);
+  const px = (i: number) => lm[(5 * 40 + i) * 4];
+  const open = light.lightMap(light.lightAt(23, 'clear'), grid, () => 0, () => false, [{ x: 50, y: 50, zone: 0, power: 1, radius: 400, color: '#FFFFFF' }]);
+  check('光照图：离灯近的亮、远的暗；家具背光的那一边比没有家具时暗得多', px(8) >= px(13) && px(13) > px(30) && open[(5 * 40 + 25) * 4] > px(25) + 40);
   const s = blank();
   s.dev.enabled = true; s.dev.hour = 18.5;
   check('开发者面板拖的时间：光影和昼夜都按它', sim.lightHour(s) === 18.5 && sim.dayTime(s) === 'dusk');
   s.dev.hour = null; s.dev.time = 'night';
   check('选了「夜晚」：光影用夜里的时间', sim.dayTime(s) === 'night' && light.lightAt(sim.lightHour(s), 'clear').sun === 0);
-  check('新存档默认「简单」；读档时不认识的值修成「简单」', s.settings.light === 'simple' && repair({ ...s, settings: { ...s.settings, light: 'ultra' as any } }).settings.light === 'simple');
+  check('新存档默认「简单」；读档时不认识的值修成「简单」', s.settings.light === 'simple' && repair({ ...s, settings: { ...s.settings, light: 'max' as any } }).settings.light === 'simple');
 }
 
 console.log('装饰的摆放规则');

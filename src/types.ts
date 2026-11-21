@@ -1,4 +1,4 @@
-export type LightLevel = 'high' | 'simple' | 'off';
+export type LightLevel = 'ultra' | 'high' | 'simple' | 'off';
 import type { DayTime, Season, Sex, Trait, VisitorWho } from './config';
 import type { StatKey } from './config';
 
@@ -122,7 +122,7 @@ export interface GameState {
   /** 季节循环的起点：这一刻是春天的第一天。之后每 CONFIG.season.days 天换一季 */
   seasonStart: number;
   /** notify = 提醒；showSeason = 主界面显示现在是什么季节第几天；seasonMode = 季节跟游戏里的循环走（cycle）还是跟现实的月份走（real） */
-  /** light = 光影效果：high 全部；simple 整体光色、灯的光圈、接触阴影、不动的窗户光；off 只留老的傍晚、夜里调色 */
+  /** light = 光影效果：ultra 超高（按光源算亮暗、每个光源单独投影）；high 全部；simple 整体光色、灯的光圈、接触阴影、不动的窗户光；off 只留老的傍晚、夜里调色 */
   settings: { notify: boolean; showSeason: boolean; seasonMode: 'cycle' | 'real'; light: LightLevel };
   /** 游戏里的「现在」。平时等于真实时间，开了倍速会跑得更快。 */
   clock: number;

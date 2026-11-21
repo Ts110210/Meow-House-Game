@@ -989,8 +989,8 @@ export class UI {
         h('p', { class: 'soft' }, `现在：${this.seasonLine()}`),
         h('p', null, h('button', { class: 'btn block', onclick: () => { s.settings.showSeason = !s.settings.showSeason; this.game.changed(); } }, `在主界面显示季节：${s.settings.showSeason ? '开' : '关'}`)),
         h('h3', null, '光影效果'),
-        h('div', { class: 'seg' }, ([['high', '高'], ['simple', '简单'], ['off', '关']] as const).map(([v, label]) => h('button', { class: 'chip' + (s.settings.light === v ? ' on' : ''), onclick: () => { s.settings.light = v; this.game.changed(); } }, label))),
-        h('p', { class: 'soft' }, s.settings.light === 'high' ? '光色、影子和窗户光都跟着手机的时间变，阳台、院子、屋顶上有跟着太阳转的影子。手机卡的话调到「简单」。' : s.settings.light === 'simple' ? '光色跟着手机的时间变，有脚下的影子和不动的窗户光，没有跟着太阳转的影子。' : '只分白天、傍晚、夜晚三种颜色，最省电。'),
+        h('div', { class: 'seg' }, ([['ultra', '超高'], ['high', '高'], ['simple', '简单'], ['off', '关']] as const).map(([v, label]) => h('button', { class: 'chip' + (s.settings.light === v ? ' on' : ''), onclick: () => { s.settings.light = v; this.game.changed(); } }, label))),
+        h('p', { class: 'soft' }, s.settings.light === 'ultra' ? '最拟真：每个房间按离窗户、离灯的远近有亮有暗，白天窗户、夜里每盏灯都会让附近的家具和猫往背离光的方向投影子，几盏灯一起照就有几道影子。最费电，手机卡的话调低一档。' : s.settings.light === 'high' ? '光色、影子和窗户光都跟着手机的时间变，阳台、院子、屋顶上有跟着太阳转的影子。手机卡的话调到「简单」。' : s.settings.light === 'simple' ? '光色跟着手机的时间变，有脚下的影子和不动的窗户光，没有跟着太阳转的影子。' : '只分白天、傍晚、夜晚三种颜色，最省电。'),
         s.dev.enabled ? h('p', null, h('button', { class: 'btn block', onclick: () => this.openDev() }, '开发者面板')) : null,
         h('p', { style: 'margin-top:20px' }, h('button', { class: 'btn block danger', onclick: async () => {
           if (!this.resetArmed) { this.resetArmed = true; this.refresh(true); return; }

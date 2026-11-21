@@ -58,3 +58,77 @@ export function sunShadow(l: Light): { dx: number; dy: number } {
   const S = L.shadow; const low = 1 - l.high;
   return { dx: -l.side * S.lean * low, dy: S.short + (S.long - S.short) * low };
 }
+
+// ---------- 光影效果「超高」：光照图和每个光源的影子 ----------
+
+/** 一个光源：x、y = 世界坐标；zone = 在哪个区域（-1 = 屋顶那一层）；power = 最亮处加多少（0–1）；radius = 照多远；color = 光的颜色 */
+export interface LightSource { x: number; y: number; zone: number; power: number; radius: number; color: string; /** false = 只照亮、不投影（鱼塘的反光、喂食机的指示灯） */ cast?: boolean }
+/** 挡光的家具：世界坐标的一个框，在哪个区域 */
+export interface Occluder { x0: number; y0: number; x1: number; y1: number; zone: number }
+
+/** 从光源到这一点的线有没有穿过这个框（这一点在框里面不算：家具自己朝光的那一面是亮的） */
+export function blocked(lx: number, ly: number, px: number, py: number, o: Occluder): boolean {
+  if (px >= o.x0 && px <= o.x1 && py >= o.y0 && py <= o.y1) return false;
+  if (lx >= o.x0 && lx <= o.x1 && ly >= o.y0 && ly <= o.y1) return false;
+  let t0 = 0, t1 = 1; const dx = px - lx, dy = py - ly;
+  for (const [p, q] of [[-dx, lx - o.x0], [dx, o.x1 - lx], [-dy, ly - o.y0], [dy, o.y1 - ly]]) {
+    if (p === 0) { if (q < 0) return false; continue; }
+    const r = q / p; if (p < 0) { if (r > t1) return false; if (r > t0) t0 = r; } else { if (r < t0) return false; if (r < t1) t1 = r; }
+  }
+  return t0 <= t1;
+}
+
+/** 一件家具从哪边被照亮：所有光源按亮度加起来的方向（单位向量，指向光）、总的亮度（0–1）、最亮那个光源的颜色。没有光返回 null */
+export function lightDir(sources: LightSource[], x: number, y: number, zone: number, outdoor: (z: number) => boolean): { dx: number; dy: number; power: number; color: string } | null {
+  let vx = 0, vy = 0, sum = 0, best = 0, color = '#FFFFFF'; const reach = L.ultra.shadow.reach;
+  for (const s of sources) {
+    if (s.zone !== zone && !(outdoor(s.zone) && outdoor(zone))) continue;
+    const d = Math.hypot(s.x - x, s.y - y); const w = s.power * Math.max(0, 1 - d / (s.radius * reach)); if (w <= 0) continue;
+    vx += ((s.x - x) / Math.max(1, d)) * w; vy += ((s.y - y) / Math.max(1, d)) * w; sum += w; if (w > best) { best = w; color = s.color; }
+  }
+  const len = Math.hypot(vx, vy); if (sum < 0.05 || len < 1e-6) return null;
+  return { dx: vx / len, dy: vy / len, power: Math.min(1, sum), color };
+}
+
+/** 离光源 d 远时还剩多少（平方衰减，边缘自然淡出） */
+export const falloff = (d: number, r: number) => { const t = 1 - d / r; return t > 0 ? t * t : 0; };
+
+/**
+ * 光照图：每一格乘多少颜色（正片叠底用，RGBA，一格 4 个数）。
+ * 格子从世界坐标 (x0, y0) 开始，每格 cell 大小，cols × rows 格。
+ * zoneOf(x, y) = 这一点在哪个区域（-1 = 屋顶那一层）；outdoor(zone) = 是不是露天。
+ * 屋里离光源远的地方按 dim 压暗；窗户和灯在自己的区域里按距离加亮，透过墙到隔壁只剩 leak。
+ */
+export function lightMap(l: Light, grid: { x0: number; y0: number; cell: number; cols: number; rows: number }, zoneOf: (x: number, y: number) => number, outdoor: (zone: number) => boolean, sources: LightSource[], occluders: Occluder[] = []): Uint8ClampedArray<ArrayBuffer> {
+  const U = L.ultra; const out = new Uint8ClampedArray(new ArrayBuffer(grid.cols * grid.rows * 4));
+  const ind = rgb(l.indoor).map((v) => v / 255), outd = rgb(l.outdoor).map((v) => v / 255);
+  const dim = U.dimNight + (U.dimDay - U.dimNight) * Math.min(1, l.sun);
+  const src = sources.map((s) => ({ ...s, c: rgb(s.color).map((v) => v / 255) }));
+  for (let j = 0; j < grid.rows; j++) {
+    const y = grid.y0 + (j + 0.5) * grid.cell;
+    for (let i = 0; i < grid.cols; i++) {
+      const x = grid.x0 + (i + 0.5) * grid.cell; const z = zoneOf(x, y); const open = outdoor(z);
+      const base = open ? outd : ind; const k = open ? 1 : dim;
+      let r = base[0] * k, g = base[1] * k, b = base[2] * k;
+      for (const s of src) {
+        const d = Math.hypot(x - s.x, y - s.y); if (d >= s.radius) continue;
+        let a = s.power * falloff(d, s.radius) * (s.zone === z || (open && outdoor(s.zone)) ? 1 : U.leak);
+        // 被家具挡住：这一格在家具背着光的那一边，只剩一点光
+        for (const o of occluders) if (o.zone === s.zone && blocked(s.x, s.y, x, y, o)) { a *= U.block; break; }
+        r += s.c[0] * a; g += s.c[1] * a; b += s.c[2] * a;
+      }
+      const o = (j * grid.cols + i) * 4; out[o] = Math.min(1, r) * 255; out[o + 1] = Math.min(1, g) * 255; out[o + 2] = Math.min(1, b) * 255; out[o + 3] = 255;
+    }
+  }
+  return out;
+}
+
+/** 一个光源给一件东西投的影子：东西的脚底在 (x, y)；返回影子顶端往旁边斜多少、压扁成多高（按东西的高度）、多浓（0 = 不投）。
+ *  背离光源的方向投；灯在头顶时影子短，斜着照时长；离得越近越浓 */
+export function lampShadow(s: LightSource, x: number, y: number): { dx: number; dy: number; alpha: number } {
+  // 影子比光照图照得远一点、衰减慢一点（直线衰减），不然离灯两三百的家具就投不出影子了
+  const S = L.ultra.shadow; const d = Math.hypot(x - s.x, y - s.y); const strength = s.power * Math.max(0, 1 - d / (s.radius * S.reach));
+  if (strength < S.min) return { dx: 0, dy: 0, alpha: 0 };
+  const lean = Math.max(-S.maxLean, Math.min(S.maxLean, (x - s.x) / Math.max(40, y - s.y)));
+  return { dx: lean, dy: S.short + (S.long - S.short) * Math.min(1, Math.abs(lean) / S.maxLean), alpha: S.alpha * Math.min(1, strength * 1.6) };
+}

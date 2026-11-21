@@ -152,7 +152,7 @@ export function repair(raw: Raw, now = Date.now()): GameState {
     cattree: [0, 1, 2].map((i) => { const id = arr(raw.cattree)[i]; return typeof id === 'string' && pets.some((p) => p.id === id && !p.dead) ? id : null; }),
     pendingReturns: arr(raw.pendingReturns).filter((id) => postcards.some((c) => c.id === id)),
     dev: { enabled: !!dev.enabled, background: !!dev.background, time: ['day', 'dusk', 'night'].includes(dev.time) ? dev.time : 'auto', hour: typeof dev.hour === 'number' && dev.hour >= 0 && dev.hour < 24 ? dev.hour : null, season: ['spring', 'summer', 'autumn', 'winter'].includes(dev.season) ? dev.season : 'auto', weather: ['clear', 'rain'].includes(dev.weather) ? dev.weather : 'auto', speed: num(dev.speed, 1, 1, 100000), growth: num(dev.growth, 1, 0, 100000), decay: { food: num(decay.food, 1, 0, 1000), mood: num(decay.mood, 1, 0, 1000), clean: num(decay.clean, 1, 0, 1000) } },
-    settings: { notify: settings.notify !== false, showSeason: settings.showSeason === true, seasonMode: settings.seasonMode === 'real' ? 'real' : 'cycle', light: ['high', 'simple', 'off'].includes(settings.light) ? settings.light : 'simple' },
+    settings: { notify: settings.notify !== false, showSeason: settings.showSeason === true, seasonMode: settings.seasonMode === 'real' ? 'real' : 'cycle', light: ['ultra', 'high', 'simple', 'off'].includes(settings.light) ? settings.light : 'simple' },
   };
 }
 
