@@ -1174,7 +1174,7 @@ export class Scene {
     const a = this.actors.get(petId); if (!a || !a.root.visible) return null;
     const c = this.app.canvas.getBoundingClientRect(); const sp = a.sprite; const w = Math.abs(sp.width) * this.scale * 0.8, h = Math.abs(sp.height) * this.scale * 0.75;
     const x = c.left + this.world.x + a.root.x * this.scale, y = c.top + this.world.y + a.root.y * this.scale;
-    if (x < c.left || x > c.right) return null;
+    if (x < c.left || x > c.right || y - h > c.bottom || y < c.top) return null; // 不在画面里（走出去了、镜头在另一层）
     return { x: x - w / 2, y: y - h, w, h: h + 8 };
   }
 

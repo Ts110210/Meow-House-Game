@@ -327,13 +327,13 @@ export class UI {
 
   // ---------- 第一次打开的聚光灯引导：屏幕变暗，只亮出这一步要点的东西，其他地方点不了 ----------
   // 1 欢迎 → 2 点房间里的猫 → 3 点「猫粮」 → 4 点「摸摸」 → 5 点顶部的「引导」按钮。做完就解锁，后面的在任务清单里
-  private tut: { root: HTMLElement; blocks: HTMLElement[]; hole: HTMLElement; tip: HTMLElement; raf: number } | null = null;
+  private tut: { root: HTMLElement; blocks: HTMLElement[]; hole: HTMLElement; tip: HTMLElement; raf: number; nextFocus: number } | null = null;
   private startTutorial() {
     const s = this.game.state; if (s.tutorial >= 99 || !sim.homePets(s).length || this.tut) return;
     const blocks = [0, 1, 2, 3].map(() => h('div', { class: 'tut-block' }));
     const hole = h('div', { class: 'tut-hole' }); const tip = h('div', { class: 'tut-tip' });
     const root = h('div', { class: 'tut' }, ...blocks, hole, tip); document.body.appendChild(root);
-    this.tut = { root, blocks, hole, tip, raf: 0 };
+    this.tut = { root, blocks, hole, tip, raf: 0, nextFocus: 0 };
     const loop = () => { this.tutFrame(); if (this.tut) this.tut.raf = requestAnimationFrame(loop); }; loop();
   }
   private tutSet(step: number) { this.game.state.tutorial = step; this.game.touch(); }
@@ -344,19 +344,25 @@ export class UI {
     let rect: { x: number; y: number; w: number; h: number } | null = null; let text = ''; let card: HTMLElement | null = null;
     const el = (sel: string) => { const e = document.querySelector(sel) as HTMLElement | null; if (!e) return null; const r = e.getBoundingClientRect(); return r.width ? { x: r.left, y: r.top, w: r.width, h: r.height } : null; };
     const step = s.tutorial;
+    // 要点的是猫：猫走出画面（或者快走到边上）时镜头跟过去，不然屏幕全暗又滑不动，就卡住了
+    const petRect = () => {
+      const r = this.scene.petScreenRect(pet.id); const now = performance.now();
+      if ((!r || r.x < 0 || r.x + r.w > window.innerWidth) && now > t.nextFocus) { t.nextFocus = now + 600; this.scene.focusPet(pet.id); }
+      return r;
+    };
     if (step === 0) {
       text = `欢迎！这是${pet.name}，以后就由你照顾它啦。\n跟着提示做几步，马上就会玩。`;
       card = h('button', { class: 'btn primary', onclick: () => { this.tutSet(1); this.scene.focusPet(pet.id); } }, '开始');
     } else if (step === 1) {
-      rect = this.scene.petScreenRect(pet.id); text = `点一下${pet.name}，看看它现在怎么样`;
+      rect = petRect(); text = `点一下${pet.name}，看看它现在怎么样`;
       if (document.querySelector('[data-tut="pet"]')) this.tutSet(2); // 宠物面板打开了
     } else if (step === 2) {
       // 宠物面板开着就亮「猫粮」，被关掉了就再亮一次猫
-      rect = el('[data-tut="feed-kibble"]'); text = rect ? '喂它一碗猫粮' : `再点一下${pet.name}，喂它一碗猫粮`; rect ??= this.scene.petScreenRect(pet.id);
+      rect = el('[data-tut="feed-kibble"]'); text = rect ? '喂它一碗猫粮' : `再点一下${pet.name}，喂它一碗猫粮`; rect ??= petRect();
       if (s.quests.guide.includes('feed') || s.quests.guideDone) this.tutSet(3);
     } else if (step === 3) {
       // 喂完它会走去饭碗吃：再点它一下，打开面板摸摸它
-      rect = el('[data-tut="pet"]'); text = rect ? '再摸摸它' : `${pet.name}去吃饭了。再点它一下，摸摸它`; rect ??= this.scene.petScreenRect(pet.id);
+      rect = el('[data-tut="pet"]'); text = rect ? '再摸摸它' : `${pet.name}去吃饭了。再点它一下，摸摸它`; rect ??= petRect();
       if (s.quests.guide.includes('pet') || s.quests.guideDone) { this.close(); this.tutSet(4); }
     } else if (step === 4) {
       rect = el('.hud-top .pill.quest'); text = '还有一些可以做的事，都在这里。每做完一件可以领小鱼干';
