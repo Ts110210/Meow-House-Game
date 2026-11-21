@@ -284,7 +284,7 @@ console.log('精灵图拼装：保留跳跃高度');
   check('打开：按原图抬高，最低的那帧贴地', on.dy[0] === 0 && on.dy[1] === 100 && on.dy[2] === 200 && on.dy[3] === 0 && on.fit === 1);
   const high = rowLift(hs, [500, 300, 100, 500], 1, true, 256, 0.9);
   check('跳得太高放不下：一起压低，最高的那帧刚好顶到格子上沿，最低的还是贴地', high.fit < 1 && Math.abs(high.dy[2] + 100 - 256 * 0.9) < 1e-6 && high.dy[0] === 0 && Math.abs(high.dy[1] / high.dy[2] - 0.5) < 1e-6);
-  check('跳跃这一行默认打开，别的行默认关', SPRITE.keepHeight.includes('jump') && !SPRITE.keepHeight.includes('walk'));
+  check('默认每一行都关（跳跃是原地跳，高度由程序的弧线负责）', !SPRITE.keepHeight.includes('jump') && !SPRITE.keepHeight.includes('walk'));
 }
 
 console.log('装饰的摆放规则');
