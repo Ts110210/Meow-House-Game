@@ -17,7 +17,7 @@ import { exportLayout, isChanged, resetBackground, resetObjects, saveLayout } fr
 import { bgCfg } from './geo';
 import { composeSheet, splitStrip, type Assembled, type StripPart } from './assemble';
 import { fishingGame, wandGame, type MiniGame } from './minigames';
-import { canvasBytes, cropPieces, cutGlass, glassOf, makeZip, readSheet, type Sheet as CutSheet } from './sheetCut';
+import { canvasBytes, cropPieces, cutGlass, glassOf, makeZip, matchAssetPath, readSheet, readZip, type Sheet as CutSheet } from './sheetCut';
 import { canvasToBlob, saveBlob, saveMessage } from './platform/download';
 import { lookFromPhoto } from './lookFromPhoto';
 import { isNative, notifyPermission, notifyStatus, testNotification } from './platform/native';
@@ -220,7 +220,7 @@ export class UI {
     this.hudQuest.textContent = qs.mode === 'guide' ? `引导 ${qs.items.filter((x) => x.claimed).length}/${qs.items.length}` : qs.claimable > 0 ? `任务 ${qs.claimable}` : '任务';
     this.hudDev.style.display = s.dev.enabled ? '' : 'none';
     this.hudMenu?.classList.toggle('has-dot', sim.diaryUnread(s)); // 日记有新写的
-    this.hudDev.textContent = `调试×${s.dev.speed}`;
+    this.hudDev.textContent = `×${s.dev.speed}`; this.hudDev.title = '开发者面板'; // 写短一点：顶上一行放得下（多了「出门」）
     this.scene.relayout();
     const sig = sim.alivePets(s).map((p) => `${p.id}${p.name}${p.tripId || p.outing ? 1 : 0}${sim.isLost(p) ? 1 : 0}${p.spriteId}`).join('|') + this.game.avatarRev;
     if (sig !== this.stripSig) {
@@ -1401,7 +1401,12 @@ export class UI {
   openAssets() {
     const A = this.game.assets;
     this.open({ title: '素材替换', render: () => {
-      const out: Kid[] = [h('p', null, h('button', { class: 'btn block primary', onclick: () => this.openSheetCut() }, '整张切图：一张白底图切成很多件')), h('div', { class: 'grid2' }, h('button', { class: 'btn primary', onclick: () => this.startEdit() }, '调整点击区域'), h('button', { class: 'btn primary', onclick: () => this.startBgEdit() }, '调整背景')),
+      const out: Kid[] = [h('p', null, h('button', { class: 'btn block primary', onclick: () => this.openSheetCut() }, '整张切图：一张白底图切成很多件')),
+        // 导入素材包：一个 zip 里按 public/assets/ 的文件夹和文件名放好，一次换掉一整套（只存在这台设备里，不进仓库）
+        h('div', { class: 'grid2' },
+          h('div', { class: 'btn file' }, '导入素材包（zip）', h('input', { type: 'file', accept: '.zip,application/zip', onchange: (e: Event) => { const f = (e.target as HTMLInputElement).files?.[0]; if (f) this.importPack(f); } })),
+          h('button', { class: 'btn', disabled: !this.packKeys().length, onclick: () => this.clearPack() }, `清空导入的素材包${this.packKeys().length ? `（${this.packKeys().length}）` : ''}`)),
+        this.hint('素材包只存在这台设备里，不进仓库。', 'zip 里的图片按 public/assets/ 下的文件夹和文件名放（和 docs/素材模板.md 一样，外面套几层文件夹都行）。没有的图继续用占位图；清空后整套回到占位图。适合先在手机上试看一整套素材，比如授权不允许放进公开仓库的免费素材。'), h('div', { class: 'grid2' }, h('button', { class: 'btn primary', onclick: () => this.startEdit() }, '调整点击区域'), h('button', { class: 'btn primary', onclick: () => this.startBgEdit() }, '调整背景')),
         h('p', { class: 'soft' }, '调整点击区域：拖动每件物品的位置和大小。调整背景：上传背景长图后，拖地板线和 5 个区域的分界线，宠物和物品会跟着对齐。'),
         h('p', { class: 'soft' }, '给任意一项上传图片，马上就能在游戏里看到。上传的图只存在这个浏览器里；要正式放进游戏，把文件按下面的文件名放到 public/assets/ 文件夹。没有图片的项目用代码画的占位图。')];
       let group = '';
@@ -1423,6 +1428,35 @@ export class UI {
       }
       return out;
     } });
+  }
+
+  // ---------- 导入素材包 ----------
+
+  private packKeys(): string[] { try { return JSON.parse(localStorage.getItem('meow-pack-keys') ?? '[]'); } catch { return []; } }
+  private setPackKeys(keys: string[]) { try { localStorage.setItem('meow-pack-keys', JSON.stringify(keys)); } catch { /* 存不了就算了 */ } }
+  /** 读一个 zip，按路径对上素材格子，一张张换进去（存在这台设备里） */
+  private async importPack(file: File) {
+    this.toast('正在读素材包……');
+    try {
+      const A = this.game.assets; const slots = A.slots(); const srcs = slots.map((sl) => sl.src);
+      const files = (await readZip(new Uint8Array(await file.arrayBuffer()))).filter((f) => /\.(png|jpe?g|webp)$/i.test(f.name));
+      const done = new Set(this.packKeys()); const missed: string[] = []; let n = 0;
+      for (const f of files) {
+        const src = matchAssetPath(f.name, srcs); const slot = src ? slots.find((sl) => sl.src === src) : null;
+        if (!slot) { missed.push(f.name.split('/').pop()!); continue; }
+        const type = /\.png$/i.test(f.name) ? 'image/png' : /\.webp$/i.test(f.name) ? 'image/webp' : 'image/jpeg';
+        const url = await new Promise<string>((ok, bad) => { const r = new FileReader(); r.onload = () => ok(String(r.result)); r.onerror = bad; r.readAsDataURL(new Blob([f.data as BlobPart], { type })); });
+        if (await A.uploadDataUrl(slot.key, url, false)) { done.add(slot.key); n++; }
+      }
+      this.setPackKeys([...done]); this.assetsChanged?.();
+      this.toast(n ? `换上了 ${n} 张` + (missed.length ? `，${missed.length} 张对不上文件名（比如 ${missed.slice(0, 3).join('、')}）` : '') : '一张也没对上：图片要按素材模板的文件夹和文件名放');
+      this.refresh(true);
+    } catch (e) { this.toast('这个 zip 读不出来' + (e instanceof Error && e.message ? `：${e.message}` : '')); }
+  }
+  /** 把导入的整套素材都撤掉，回到占位图（或者仓库里的正式图） */
+  private async clearPack() {
+    const keys = this.packKeys(); for (const k of keys) await this.game.assets.clear(k);
+    this.setPackKeys([]); this.assetsChanged?.(); this.toast(`撤掉了 ${keys.length} 张，回到原来的图`); this.refresh(true);
   }
 
   // ---------- 整张切图：一张白底、画了好几件东西的图 → 自动切开、去白底、选文件名 → 预览 / 打包 zip ----------

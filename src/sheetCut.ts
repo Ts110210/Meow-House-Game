@@ -142,3 +142,42 @@ export function cutGlass(cv: HTMLCanvasElement, glass: [number, number, number, 
 }
 
 export const canvasBytes = (cv: HTMLCanvasElement) => new Promise<Uint8Array>((resolve, reject) => cv.toBlob(async (b) => (b ? resolve(new Uint8Array(await b.arrayBuffer())) : reject(new Error('PNG 生成失败'))), 'image/png'));
+
+// ---------- 读 zip（导入素材包用）：支持不压缩和 deflate 压缩（浏览器自带的 DecompressionStream 解压） ----------
+
+/** 解压 deflate（zip 里最常见的压缩方式） */
+async function inflateRaw(data: Uint8Array): Promise<Uint8Array> {
+  const ds = new DecompressionStream('deflate-raw');
+  const out = new Response(new Blob([data as BlobPart]).stream().pipeThrough(ds));
+  return new Uint8Array(await out.arrayBuffer());
+}
+
+/** 读出 zip 里的每个文件（按中央目录读，带数据描述符的 zip 也行）。文件夹、加密的、不认识的压缩方式跳过 */
+export async function readZip(bytes: Uint8Array): Promise<{ name: string; data: Uint8Array }[]> {
+  const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  let end = -1;
+  for (let i = bytes.length - 22; i >= Math.max(0, bytes.length - 65557); i--) if (dv.getUint32(i, true) === 0x06054b50) { end = i; break; }
+  if (end < 0) throw new Error('不是 zip 文件');
+  const count = dv.getUint16(end + 10, true); let p = dv.getUint32(end + 16, true);
+  const out: { name: string; data: Uint8Array }[] = []; const dec = new TextDecoder();
+  for (let n = 0; n < count; n++) {
+    if (dv.getUint32(p, true) !== 0x02014b50) break;
+    const flags = dv.getUint16(p + 8, true), method = dv.getUint16(p + 10, true), csize = dv.getUint32(p + 20, true);
+    const nameLen = dv.getUint16(p + 28, true), extraLen = dv.getUint16(p + 30, true), commentLen = dv.getUint16(p + 32, true), local = dv.getUint32(p + 42, true);
+    const name = dec.decode(bytes.subarray(p + 46, p + 46 + nameLen));
+    p += 46 + nameLen + extraLen + commentLen;
+    if (name.endsWith('/') || flags & 1) continue;
+    const start = local + 30 + dv.getUint16(local + 26, true) + dv.getUint16(local + 28, true);
+    const raw = bytes.subarray(start, start + csize);
+    if (method === 0) out.push({ name, data: raw.slice() });
+    else if (method === 8) out.push({ name, data: await inflateRaw(raw) });
+  }
+  return out;
+}
+
+/** zip 里的路径对应哪个素材格子：去掉前面的 public/assets/、assets/ 或者任意外层文件夹，和素材模板的路径（slot.src）对上 */
+export function matchAssetPath(name: string, srcs: string[]): string | null {
+  const n = name.replace(/\\/g, '/').replace(/^\/+/, '');
+  const hit = srcs.filter((src) => n === src || n.endsWith('/' + src));
+  return hit.sort((a, b) => b.length - a.length)[0] ?? null;
+}

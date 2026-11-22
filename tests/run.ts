@@ -439,6 +439,22 @@ console.log('长大的意义、送养、走失被收养');
   check('读档时送养的状态原样保留', JSON.stringify(repair(JSON.parse(JSON.stringify(f))).pets.map((p) => p.rehomed)) === JSON.stringify(f.pets.map((p) => p.rehomed)));
 }
 
+console.log('导入素材包');
+{
+  const files = [{ name: 'public/assets/objects/door.png', data: new Uint8Array([1, 2, 3]) }, { name: 'mypack/assets/pets/orange.png', data: new Uint8Array([9, 9]) }];
+  const got = await sheetCut.readZip(sheetCut.makeZip(files));
+  check('读得出自己打的 zip', got.length === 2 && got[0].name === files[0].name && got[1].data[1] === 9);
+  // 压缩过的（deflate）：用 Node 自带的压缩做一个
+  const raw = new TextEncoder().encode('喵'.repeat(200));
+  const comp = new Uint8Array(await new Response(new Blob([raw]).stream().pipeThrough(new CompressionStream('deflate-raw'))).arrayBuffer());
+  const z = sheetCut.makeZip([{ name: 'a.png', data: comp }]); z[8] = 8; // 把压缩方式改成 deflate（本地头）
+  const cen = z.length - 22 - 46 - 5; z[cen + 10] = 8; // 中央目录里的压缩方式
+  const dz = new DataView(z.buffer); dz.setUint32(cen + 24, raw.length, true);
+  check('读得出 deflate 压缩的 zip', new TextDecoder().decode((await sheetCut.readZip(z))[0].data) === '喵'.repeat(200));
+  const srcs = ['objects/door.png', 'pets/orange.png', 'pets/orange-2.png'];
+  check('zip 里的路径对上素材模板的文件名（外面套几层文件夹都行）', sheetCut.matchAssetPath('public/assets/objects/door.png', srcs) === 'objects/door.png' && sheetCut.matchAssetPath('pack/pets/orange-2.png', srcs) === 'pets/orange-2.png' && sheetCut.matchAssetPath('readme.txt', srcs) === null);
+}
+
 console.log('装饰的摆放规则');
 {
   const world = (extra: Partial<sim.PlaceWorld> = {}): sim.PlaceWorld => ({ zoneW: 432, floorY: 560, height: 720, wall: [{ x0: 28, y0: 156, x1: 216, y1: 312, label: '厨房的窗户' }], foot: [{ x0: 40, y0: 539, x1: 200, y1: 573, label: '橱柜' }], keepClear: [{ x0: 100, y0: 560, x1: 330, y1: 640, label: '门前的路' }], ...extra });
