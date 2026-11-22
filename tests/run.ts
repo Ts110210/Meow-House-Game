@@ -6,6 +6,7 @@ import * as sim from '../src/sim';
 import * as sheetCut from '../src/sheetCut';
 import { rowLift } from '../src/assembleLift';
 import * as light from '../src/light';
+import { TREASURES } from '../src/config';
 import { diaryPlaceCount, writeDiary } from '../src/diary';
 import { buildExport, migrate, parseImport, repair, SAVE_VERSION } from '../src/save';
 
@@ -326,6 +327,44 @@ console.log('光影：跟着真实时间');
   s.dev.hour = null; s.dev.time = 'night';
   check('选了「夜晚」：光影用夜里的时间', sim.dayTime(s) === 'night' && light.lightAt(sim.lightHour(s), 'clear').sun === 0);
   check('新存档默认「简单」；读档时不认识的值修成「简单」', s.settings.light === 'simple' && repair({ ...s, settings: { ...s.settings, light: 'max' as any } }).settings.light === 'simple');
+}
+
+console.log('猫的日记、猫叼回来的礼物');
+{
+  const s = blank(); const p = s.pets[0]; p.name = '豆豆'; s.inv.kibble = 5;
+  sim.feed(s, p.id, 'kibble'); sim.feed(s, p.id, 'kibble'); sim.petPet(s, p.id);
+  const today = sim.diaryDay(s.clock); const facts = s.diary.days[today];
+  check('照顾它会记进日记；同一天吃两顿只记一条、算 2 次', facts.filter((f) => f.k === 'feed').length === 1 && facts.find((f) => f.k === 'feed')!.c === 2 && facts.some((f) => f.k === 'pet'));
+  const pg = sim.diaryPage(s, today);
+  check('日记写成句子：有名字、吃了几顿', pg.featured.length === 1 && pg.featured[0].lines.some((l) => l.includes('豆豆') && l.includes('2')) && pg.featured[0].lines.length <= CONFIG.diary.linesEach);
+  check('同一天的句子每次打开都一样', JSON.stringify(sim.diaryPage(s, today)) === JSON.stringify(pg));
+  check('看过日记之后红点消失，有新的又亮', (sim.markDiarySeen(s), !sim.diaryUnread(s)) && (sim.advance(s, 1000), sim.petPet(s, p.id), sim.diaryUnread(s)));
+  // 多只猫：每页主角最多 3 只，其他的各一句；连着几天都是同一只最热闹，好几天没当主角的会被轮上
+  const m = blank(); m.pets = []; for (let i = 0; i < 5; i++) { const q = sim.newPet('猫' + i, 'default:orange', m.clock); m.pets.push(q); }
+  for (let d = 0; d < 4; d++) {
+    const t = m.clock + d * DAY;
+    m.pets.forEach((q, i) => { for (let j = 0; j <= (i === 0 ? 3 : 0); j++) sim.note(m, q.id, ['tripBack', 'gift', 'neighbor', 'feed'][j], undefined, t); if (i > 0) sim.note(m, q.id, 'feed', undefined, t); });
+  }
+  m.clock += 5 * DAY; sim.tidyDiary(m);
+  const page = sim.diaryPage(m, sim.diaryDay(m.clock - 5 * DAY));
+  check('多只猫：每页最多 3 只写得详细，其他的各一句', page.featured.length === 3 && page.others.length === 2 && page.others.every((o) => o.line.length > 0));
+  const leads = Object.values(m.diary.lead).flat();
+  check('轮流当主角：4 天里每只猫都当过', m.pets.every((q) => leads.includes(q.id)));
+  // 只留 30 天，收藏的一直留着
+  const k = sim.diaryDay(m.clock - 5 * DAY); sim.starDiary(m, k);
+  m.clock += 40 * DAY; sim.note(m, m.pets[0].id, 'pet'); 
+  check('超过 30 天的日记删掉，收藏的一页留着', !!m.diary.days[k] && Object.keys(m.diary.days).length === 2);
+  check('读档时日记原样保留', JSON.stringify(repair(JSON.parse(JSON.stringify(m))).diary.days[k]) === JSON.stringify(m.diary.days[k]));
+  // 礼物
+  const g = blank(); const rnd = Math.random;
+  check('离开没多久：没有礼物', sim.welcomeBack(g, HOUR).length === 0);
+  Math.random = () => 0.01; // 一定会叼回来，而且是稀有的
+  const got = sim.welcomeBack(g, 6 * HOUR); Math.random = rnd;
+  check('离开很久：在门口留了礼物，日记里也记着；你不在时的事也补进日记', got.length === 1 && g.gifts.length === 1 && Object.values(g.diary.days).flat().some((f) => f.k === 'gift') && Object.values(g.diary.days).flat().some((f) => f.k.startsWith('away')));
+  const r = sim.collectGift(g, got[0].id);
+  check('稀有礼物捡起来进图鉴，还是一件能摆出来的装饰', r.ok && !!g.treasures[got[0].kind] && TREASURES[got[0].kind].rare === true && g.decor.some((d) => d.kind === got[0].kind && d.zone === null));
+  g.gifts.push({ id: 'x', kind: 'feather', petId: g.pets[0].id, at: g.clock }); sim.advance(g, CONFIG.gifts.expire + MIN);
+  check('门口的礼物放太久没捡会不见', g.gifts.length === 0);
 }
 
 console.log('装饰的摆放规则');

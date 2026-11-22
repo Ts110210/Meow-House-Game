@@ -1,8 +1,9 @@
 // 游戏规则。这个文件不碰画面，只改存档数据，方便单独测试。
 import { writeDiary } from './diary';
+import { TREASURES, DIARY_LINES } from './config';
 import { CONFIG, DAY, QUESTS, SEX_IDS, type Sex, MOMENTS, NEIGHBORS, FIND_KINDS, SEASON_FINDS, SEASON_EVENTS, SEASON_IDS, SKINS, DEFAULT_SKIN, SKIN_PRICE, skinSize, ROOM_THEMES, DEFAULT_ROOM, DESTS, FOODS, FRY, FUR_COLORS, GEAR, GOODS, HOUR, MIN, SOUVENIRS, TOOLS, TREAT, type DayTime, type Season, type StatKey, decodeLook, TRAIT_IDS, type Trait, VISITORS, type VisitorWho, SPECIAL_DECOR, DECOR, ZONES } from './config';
 import { ASSETS } from './assets.config';
-import type { Decor, Find, Moment, GameEvent, GameState, Pet, Postcard, RepeatKey, Result, Trip, Visitor, Weather } from './types';
+import type { Decor, DiaryFact, Find, Gift, Moment, GameEvent, GameState, Pet, Postcard, RepeatKey, Result, Trip, Visitor, Weather } from './types';
 
 const T = CONFIG.traits;
 const clamp = (v: number, lo = 0, hi = 100) => Math.max(lo, Math.min(hi, v));
@@ -72,7 +73,7 @@ export function newState(now: number): GameState {
   const s: GameState = {
     v: 7, createdAt: now, seasonStart: now, settings: { notify: true, showSeason: false, seasonMode: 'cycle', light: 'simple' }, clock: now, lastReal: now, fish: CONFIG.startFish, slots: 1,
     pets: [], trips: [], postcards: [], souvenirs: {}, inv: { ...CONFIG.startItems }, owned: {},
-    pond: Array(CONFIG.pond.slots).fill(null), lastCheckin: '', pendingReturns: [], friends: {}, variants: {}, milestones: [], decor: [], quests: newQuests(false), tutorial: 0, visitors: [], visitorQuota: 0, visitorDay: '', lastVisitorAt: 0, errand: null, display: { souvenirs: [], postcards: [] }, cattree: [null, null, null], hood: { now: null, bonds: {}, day: '', quota: 0, last: 0, stories: [] }, seasonal: { key: '', got: {}, done: false, last: 0, day: '', quota: 0 }, seasonalClaimed: [], moments: [], favor: {}, favorClaimed: [], finds: [], keepsakes: {}, skins: {}, skinsOwned: {}, room: DEFAULT_ROOM, roomsOwned: [],
+    pond: Array(CONFIG.pond.slots).fill(null), lastCheckin: '', pendingReturns: [], friends: {}, variants: {}, milestones: [], decor: [], quests: newQuests(false), tutorial: 0, visitors: [], visitorQuota: 0, visitorDay: '', lastVisitorAt: 0, errand: null, display: { souvenirs: [], postcards: [] }, cattree: [null, null, null], hood: { now: null, bonds: {}, day: '', quota: 0, last: 0, stories: [] }, seasonal: { key: '', got: {}, done: false, last: 0, day: '', quota: 0 }, seasonalClaimed: [], moments: [], favor: {}, favorClaimed: [], finds: [], keepsakes: {}, diary: { days: {}, lead: {}, starred: [], seenAt: now }, gifts: [], treasures: {}, lastSeenReal: Date.now(), skins: {}, skinsOwned: {}, room: DEFAULT_ROOM, roomsOwned: [],
     dev: { enabled: false, background: false, time: 'auto', season: 'auto', weather: 'auto', speed: 1, growth: 1, decay: { food: 1, mood: 1, clean: 1 } },
   };
   s.pets.push(newPet(CONFIG.startPet.name, `default:${CONFIG.startPet.color}`, now));
@@ -183,7 +184,7 @@ const STEP = MIN;
 /** 把游戏时间往前推 dt 毫秒。关掉 App 再打开时，也是用它把离线期间一次算清。 */
 export function advance(s: GameState, dt: number): GameEvent[] {
   const events: GameEvent[] = [];
-  let left = Math.max(0, dt);
+  let left = Math.max(0, dt); let noted = 0;
   while (left > 0) {
     const step = Math.min(STEP, left);
     left -= step;
@@ -198,8 +199,25 @@ export function advance(s: GameState, dt: number): GameEvent[] {
     for (const trip of s.trips) if (!trip.letterSent && s.clock >= trip.letterAt) sendLetter(s, trip, events);
     for (const trip of [...s.trips]) if (s.clock >= trip.returnAt) resolveTrip(s, trip, events);
     for (const p of s.pets) if (p.searchUntil !== null && s.clock >= p.searchUntil) resolveSearch(s, p, events);
+    expireGifts(s);
+    // 这一步里发生的事写进日记（记在发生的时刻）
+    for (; noted < events.length; noted++) diaryFromEvent(s, events[noted]);
   }
   return events;
+}
+
+/** 把游戏里发生的事（回家、长大、邻居来了…）记进日记 */
+function diaryFromEvent(s: GameState, e: GameEvent) {
+  const first = () => homePets(s)[0]?.id;
+  switch (e.type) {
+    case 'return': { const pc = s.postcards.find((c) => c.id === e.postcardId); if (!pc) break; for (const id of pc.petIds) { note(s, id, 'tripBack', pc.destId); if (pc.souvenir) note(s, id, 'souvenir', pc.souvenir); } break; }
+    case 'visitor': { const v = s.visitors.find((x) => x.id === e.visitorId); const p = first(); if (v && p) note(s, p, 'visitor', v.who); break; }
+    case 'neighbor': for (const p of homePets(s).slice(0, 2)) note(s, p.id, 'neighbor', e.id); break;
+    case 'outingBack': note(s, e.petId, 'outing', e.neighborId); break;
+    case 'stage': note(s, e.petId, 'grew', String(e.stage)); break;
+    case 'ranAway': note(s, e.petId, 'lost'); break;
+    case 'found': note(s, e.petId, 'found'); break;
+  }
 }
 
 function stepPets(s: GameState, step: number, events: GameEvent[]) {
@@ -283,7 +301,7 @@ export function feed(s: GameState, petId: string, foodId: string): Result {
     p!.mood = clamp(p!.mood - CONFIG.weak.rescueMoodPenalty); questEvent(s, 'feed');
     return { ok: true, msg: `${p!.name}被救回来了，但心情很差（-${CONFIG.weak.rescueMoodPenalty}）` };
   }
-  questEvent(s, 'feed');
+  questEvent(s, 'feed'); note(s, p!.id, 'feed', foodId);
   return { ok: true, msg: `饱食 +${fmt(gain)}` + (yum ? `　心情 +${yum}` : '') };
 }
 
@@ -291,7 +309,7 @@ export function petPet(s: GameState, petId: string, amount = CONFIG.actions.petM
   const p = s.pets.find((x) => x.id === petId);
   const u = usable(p); if (!u.ok) return u;
   const gain = amount * (p!.trait === 'clingy' ? T.clingy.petMood : 1) * repeatMult(s, p!, 'pet');
-  p!.mood = clamp(p!.mood + gain); p!.lastCare = s.clock; questEvent(s, 'pet');
+  p!.mood = clamp(p!.mood + gain); p!.lastCare = s.clock; questEvent(s, 'pet'); note(s, p!.id, 'pet');
   return { ok: true, msg: `心情 +${fmt(gain)}` };
 }
 
@@ -300,7 +318,7 @@ export function bath(s: GameState, petId: string): Result {
   const u = usable(p); if (!u.ok) return u;
   if (isWeak(p!)) return { ok: false, msg: `${p!.name}太虚弱了，先喂点东西` };
   const gain = CONFIG.actions.bathClean * repeatMult(s, p!, 'bath');
-  p!.clean = clamp(p!.clean + gain); p!.lastCare = s.clock; questEvent(s, 'bath');
+  p!.clean = clamp(p!.clean + gain); p!.lastCare = s.clock; questEvent(s, 'bath'); note(s, p!.id, 'bath');
   return { ok: true, msg: `干净 +${fmt(gain)}` };
 }
 
@@ -311,7 +329,7 @@ export function play(s: GameState, petId: string): Result {
   const a = CONFIG.actions;
   const base = s.owned.wand ? a.playMoodWand : a.playMoodHand;
   const gain = base * repeatMult(s, p!, 'play');
-  p!.mood = clamp(p!.mood + gain); p!.lastCare = s.clock; questEvent(s, 'play');
+  p!.mood = clamp(p!.mood + gain); p!.lastCare = s.clock; questEvent(s, 'play'); note(s, p!.id, 'play');
   return { ok: true, msg: `心情 +${fmt(gain)}` };
 }
 
@@ -624,7 +642,7 @@ export function recordMoment(s: GameState, kind: string, petIds: string[], extra
   const last = s.moments.find((m) => m.kind === kind); if (last && s.clock - last.at < CONFIG.moments.cooldown) return null;
   const m: Moment = { id: newId('moment'), kind, at: s.clock, petIds: pets.map((p) => p.id), names: pets.map((p) => p.name), sprites: pets.map((p) => p.spriteId), season: season(s), time: dayTime(s), extra };
   // 和明信片一样：满了也先收下，多出来的请主人自己挑着删（见 momentsOver / discardMomentOverflow），不会自动删
-  s.moments = [m, ...s.moments];
+  s.moments = [m, ...s.moments]; for (const p of pets) note(s, p.id, 'moment', kind);
   return m;
 }
 /** 瞬间相册里超出上限的张数。大于 0 时要请主人删掉几张，或者放弃新拍的 */
@@ -765,7 +783,7 @@ export function dispatch(s: GameState, plan: DispatchPlan): Result {
   if (errand) { trip.errandReward = errand.reward; s.errand = null; }
   s.trips.push(trip);
   for (const id of plan.petIds) s.pets.find((p) => p.id === id)!.tripId = trip.id;
-  questEvent(s, 'trip');
+  questEvent(s, 'trip'); for (const id of plan.petIds) note(s, id, 'tripGo', dest.id);
   return { ok: true, msg: '出门啦，路上小心' };
 }
 
@@ -1014,3 +1032,138 @@ export function adopt(s: GameState, name: string, spriteId: string, trait?: Trai
 
 export { DAY, HOUR, MIN };
 export type { StatKey };
+
+// ============================================================
+// 猫的日记、猫叼回来的礼物
+// ============================================================
+
+const pad2 = (n: number) => String(n).padStart(2, '0');
+/** 某个时刻是哪一天（本地日期 YYYY-MM-DD，补零，能直接按字符串排序），日记按这个分页（签到用的 dayKey 不补零，别混用） */
+export const diaryDay = (t: number) => { const d = new Date(t); return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`; };
+/** 同一天、同一只猫、同一件事只记一条，多做几次算次数（吃、摸、洗、玩不分吃的什么） */
+const COUNTED = ['feed', 'pet', 'bath', 'play'];
+
+/** 在日记里记下一件事 */
+export function note(s: GameState, petId: string, k: string, x?: string, t = s.clock) {
+  if (!DIARY_LINES[k]) return;
+  const key = diaryDay(t); const fresh = !s.diary.days[key]; const list = (s.diary.days[key] ??= []);
+  const same = list.find((f) => f.p === petId && f.k === k && (COUNTED.includes(k) || f.x === x));
+  if (same) { same.c = (same.c ?? 1) + 1; if (x) same.x = x; same.t = Math.max(same.t, t); return; } // 记最后一次的时刻（有新的就亮红点）
+  if (list.length < 200) list.push({ p: petId, k, x, t });
+  if (fresh) tidyDiary(s);
+}
+
+/** 过去的每一天定下主角（之后不变）；超过 keepDays 天又没收藏的日子删掉 */
+export function tidyDiary(s: GameState) {
+  const D = CONFIG.diary; const today = diaryDay(s.clock);
+  const keys = Object.keys(s.diary.days).sort();
+  for (const k of keys) if (k < today && !s.diary.lead[k]) s.diary.lead[k] = pickLead(s, k);
+  const oldest = diaryDay(s.clock - D.keepDays * DAY);
+  for (const k of keys) if (k < oldest && !s.diary.starred.includes(k)) { delete s.diary.days[k]; delete s.diary.lead[k]; }
+  for (const k of Object.keys(s.diary.lead)) if (!s.diary.days[k]) delete s.diary.lead[k];
+}
+
+const factWeight = (f: DiaryFact) => CONFIG.diary.weight[f.k] ?? 1;
+/** 这一天挑谁当主角：当天的事越重要越优先；好几天没当过主角的猫加分（轮流来，一周里每只都能写到） */
+function pickLead(s: GameState, key: string): string[] {
+  const D = CONFIG.diary; const facts = s.diary.days[key] ?? [];
+  const recent = Object.entries(s.diary.lead).filter(([k]) => k < key && k >= diaryDay(new Date(key + 'T12:00').getTime() - D.rotateDays * DAY)).flatMap(([, v]) => v);
+  const score = (p: string) => facts.filter((f) => f.p === p).map(factWeight).sort((a, b) => b - a).slice(0, D.linesEach).reduce((a, b) => a + b, 0) + (recent.includes(p) ? 0 : D.rotateBonus);
+  return [...new Set(facts.map((f) => f.p))].sort((a, b) => score(b) - score(a)).slice(0, D.featured);
+}
+
+/** 同一天、同一件事挑的句子固定（不会每次打开都变） */
+const pickBy = (seed: string, n: number) => { let h = 2166136261; for (let i = 0; i < seed.length; i++) h = Math.imul(h ^ seed.charCodeAt(i), 16777619); return (h >>> 0) % Math.max(1, n); };
+/** 日记里提到的东西叫什么 */
+function factLabel(f: DiaryFact): string {
+  const x = f.x ?? '';
+  switch (f.k) {
+    case 'feed': return FOODS.find((d) => d.id === x)?.name ?? '饭';
+    case 'tripGo': case 'tripBack': return DESTS.find((d) => d.id === x)?.name ?? '远方';
+    case 'souvenir': return SOUVENIRS[x]?.name ?? '一件纪念品';
+    case 'neighbor': case 'outing': return NEIGHBORS[x]?.name ?? '邻居家的猫';
+    case 'visitor': return VISITORS[x as VisitorWho]?.name ?? '客人';
+    case 'grew': return CONFIG.growth.stageNames[Number(x)] ?? '大猫';
+    case 'gift': return TREASURES[x]?.name ?? '一样小东西';
+    default: return '';
+  }
+}
+/** 一件事写成一句话（按性格挑写法） */
+export function factText(s: GameState, f: DiaryFact, key: string): string {
+  const p = s.pets.find((x) => x.id === f.p); const name = p?.name ?? '它';
+  if (f.k === 'moment' && f.x && MOMENTS[f.x]) return MOMENTS[f.x].title.replace('{pets}', name) + '。';
+  const e = DIARY_LINES[f.k]; const seed = `${key}|${f.p}|${f.k}|${f.x ?? ''}`;
+  const own = p ? e[p.trait] : undefined;
+  const pool = (f.c ?? 1) > 1 && e.many ? e.many : own && pickBy(seed + 'T', 10) < 6 ? own : e.all;
+  return pool[pickBy(seed, pool.length)].replace(/\{n\}/g, name).replace(/\{x\}/g, factLabel(f)).replace(/\{c\}/g, String(f.c ?? 1));
+}
+
+/** 日记的一页：主角每只写几句（按重要程度挑），其他猫各一句 */
+export function diaryPage(s: GameState, key: string) {
+  const D = CONFIG.diary; const facts = [...(s.diary.days[key] ?? [])].sort((a, b) => a.t - b.t);
+  const lead = key < diaryDay(s.clock) ? s.diary.lead[key] ?? pickLead(s, key) : pickLead(s, key);
+  const best = (p: string, n: number) => facts.filter((f) => f.p === p).sort((a, b) => factWeight(b) - factWeight(a) || a.t - b.t).slice(0, n).sort((a, b) => a.t - b.t);
+  const name = (p: string) => s.pets.find((x) => x.id === p)?.name ?? '它';
+  const featured = lead.map((p) => ({ petId: p, name: name(p), lines: best(p, D.linesEach).map((f) => factText(s, f, key)) }));
+  const others = [...new Set(facts.map((f) => f.p))].filter((p) => !lead.includes(p)).map((p) => ({ petId: p, name: name(p), line: factText(s, best(p, 1)[0], key) }));
+  return { key, featured, others, starred: s.diary.starred.includes(key), empty: !facts.length };
+}
+/** 有日记的日子（新的在前） */
+export const diaryDays = (s: GameState) => Object.keys(s.diary.days).filter((k) => s.diary.days[k].length).sort().reverse();
+/** 上次看日记之后有没有新写的 */
+export const diaryUnread = (s: GameState) => Object.values(s.diary.days).some((l) => l.some((f) => f.t > s.diary.seenAt));
+export function markDiarySeen(s: GameState) { s.diary.seenAt = s.clock; }
+/** 收藏 / 取消收藏一页（收藏的不会被删，最多 maxStarred 页） */
+export function starDiary(s: GameState, key: string): Result {
+  if (s.diary.starred.includes(key)) { s.diary.starred = s.diary.starred.filter((k) => k !== key); return { ok: true, msg: '取消收藏了，30 天后会被翻过去' }; }
+  if (!s.diary.days[key]) return { ok: false, msg: '这一页是空的' };
+  if (s.diary.starred.length >= CONFIG.diary.maxStarred) return { ok: false, msg: `最多收藏 ${CONFIG.diary.maxStarred} 页，先取消几页` };
+  s.diary.starred.push(key); return { ok: true, msg: '收藏了，这一页会一直留着' };
+}
+
+/** 你不在的时候它做了些什么：按经过的时间段和天气挑几件，写进日记 */
+function noteAway(s: GameState, awayMs: number) {
+  const D = CONFIG.diary; if (awayMs < D.awayMin) return;
+  const from = s.clock - awayMs; const rain = weather(s) === 'rain';
+  for (const p of homePets(s)) {
+    const kinds: { k: string; t: number }[] = [];
+    for (let i = 0; i < 6; i++) {
+      const t = from + (awayMs * (i + 0.5)) / 6; const h = new Date(t).getHours();
+      const k = rain && i % 3 === 1 ? 'awayRain' : h >= 6 && h < 11 ? 'awayMorning' : h >= 11 && h < 16 ? 'awayNoon' : h >= 16 && h < 20 ? 'awayEvening' : 'awayNight';
+      if (!kinds.some((x) => x.k === k)) kinds.push({ k, t });
+    }
+    if (awayMs >= 8 * HOUR) kinds.push({ k: 'awayMiss', t: s.clock - 10 * MIN });
+    // 洗一下顺序，挑前几件
+    kinds.sort(() => Math.random() - 0.5).slice(0, D.awayFacts).forEach((x) => note(s, p.id, x.k, undefined, x.t));
+  }
+}
+
+/** 礼物放在门口多久没捡，被它叼走 */
+function expireGifts(s: GameState) { if (s.gifts.length) s.gifts = s.gifts.filter((g) => s.clock - g.at < CONFIG.gifts.expire); }
+
+/** 你离开了一段时间又回来（打开游戏、从后台切回来）：在家的猫可能在门口留了礼物，日记里补上你不在时的事 */
+export function welcomeBack(s: GameState, awayMs: number): Gift[] {
+  noteAway(s, awayMs);
+  const G = CONFIG.gifts; const got: Gift[] = []; if (awayMs < G.minAway) return got;
+  const sn = season(s);
+  const rareLeft = Object.keys(TREASURES).filter((k) => TREASURES[k].rare && decorCount(s, k) === 0 && !s.gifts.some((g) => g.kind === k));
+  const common = Object.keys(TREASURES).filter((k) => !TREASURES[k].rare && (!TREASURES[k].season || TREASURES[k].season === sn));
+  for (const p of homePets(s).sort(() => Math.random() - 0.5)) {
+    if (got.length >= G.maxPerReturn || s.gifts.length >= 6) break;
+    if (Math.random() >= G.chance + (p.mood >= G.moodGood ? G.moodBonus : 0)) continue;
+    const kind = rareLeft.length && Math.random() < G.rareChance ? rareLeft.splice(Math.floor(Math.random() * rareLeft.length), 1)[0] : common[Math.floor(Math.random() * common.length)];
+    const g: Gift = { id: newId('gift'), kind, petId: p.id, at: s.clock }; s.gifts.push(g); got.push(g);
+    note(s, p.id, 'gift', kind);
+  }
+  return got;
+}
+
+/** 捡起门口的礼物：进「猫的宝贝」图鉴；稀有的是一件装饰，放进仓库 */
+export function collectGift(s: GameState, id: string): Result {
+  const g = s.gifts.find((x) => x.id === id); if (!g) return { ok: false, msg: '已经不在了' };
+  s.gifts = s.gifts.filter((x) => x.id !== id);
+  const def = TREASURES[g.kind]; const who = s.pets.find((p) => p.id === g.petId)?.name ?? '它';
+  const had = s.treasures[g.kind]; s.treasures[g.kind] = { n: (had?.n ?? 0) + 1, first: had?.first ?? s.clock, petId: had?.petId ?? g.petId };
+  if (def.rare && DECOR[g.kind]) { s.decor.push({ id: newId('decor'), kind: g.kind, zone: null, x: 0, y: 0 }); return { ok: true, msg: `${who}叼回来的${def.name}！这件可以摆出来，到菜单的「布置房间」里找它` }; }
+  return { ok: true, msg: `${who}叼回来的${def.name}，收进「猫的宝贝」了${had ? '' : '（新的！）'}` };
+}

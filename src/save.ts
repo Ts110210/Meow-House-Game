@@ -5,6 +5,7 @@
 //   2. 在 MIGRATIONS 里加一条「从上一个版本升到这个版本」的函数
 //   3. 在 repair() 里给新字段补默认值
 // 旧存档会在打开时自动一步一步升上来，升级前的原样会另存一份。
+import { TREASURES, DIARY_LINES } from './config';
 import { QUESTS, DAY, MOMENTS, SEASON_IDS, NEIGHBORS, FIND_KINDS, SEASON_FINDS, CONFIG, DESTS, FOODS, SOUVENIRS, TRAIT_IDS, SEX_IDS, type Sex, VISITORS, ZONES, DECOR, SKINS, DEFAULT_SKIN, ROOM_THEMES, DEFAULT_ROOM, skinSize } from './config';
 import { kv } from './platform/storage';
 import type { GameState, Pet, Postcard, Trip } from './types';
@@ -148,6 +149,10 @@ export function repair(raw: Raw, now = Date.now()): GameState {
     seasonal: (() => { const q = obj(raw.seasonal); return { key: str(q.key, ''), got: Object.fromEntries(Object.entries(obj(q.got)).filter(([k, v]) => SEASON_FINDS[k] && typeof v === 'number').map(([k, v]) => [k, Math.max(0, Math.floor(v as number))])), done: !!q.done, last: num(q.last, 0), day: str(q.day, ''), quota: num(q.quota, 0, 0, 20) }; })(),
     seasonalClaimed: [...new Set(arr(raw.seasonalClaimed).filter((x) => (SEASON_IDS as string[]).includes(x)))],
     moments: arr(raw.moments).filter((m) => m && typeof m.id === 'string' && MOMENTS[m.kind]).slice(0, CONFIG.moments.max * 2).map((m) => ({ id: m.id, kind: m.kind, at: num(m.at, clock), petIds: arr(m.petIds).filter((x) => typeof x === 'string').slice(0, 5), names: arr(m.names).filter((x) => typeof x === 'string').slice(0, 5), sprites: arr(m.sprites).filter((x) => typeof x === 'string').slice(0, 5), season: (SEASON_IDS as string[]).includes(m.season) ? m.season : 'spring', time: ['day', 'dusk', 'night'].includes(m.time) ? m.time : 'day', extra: typeof m.extra === 'string' ? m.extra.slice(0, 40) : undefined })),
+    diary: repairDiary(raw.diary, clock),
+    gifts: arr(raw.gifts).filter((g) => g && typeof g.id === 'string' && TREASURES[g.kind] && typeof g.petId === 'string').slice(0, 10).map((g) => ({ id: g.id, kind: g.kind, petId: g.petId, at: num(g.at, clock) })),
+    treasures: Object.fromEntries(Object.entries(obj(raw.treasures)).filter(([k, v]) => TREASURES[k] && v && typeof v === 'object').map(([k, v]: [string, any]) => [k, { n: Math.max(1, Math.floor(num(v.n, 1))), first: num(v.first, clock), petId: typeof v.petId === 'string' ? v.petId : '' }])),
+    lastSeenReal: num(raw.lastSeenReal, now),
     keepsakes: Object.fromEntries(Object.entries(obj(raw.keepsakes)).filter(([k, v]) => typeof v === 'number' && v > 0 && k.length < 60).map(([k, v]) => [k, Math.floor(v as number)])),
     cattree: [0, 1, 2].map((i) => { const id = arr(raw.cattree)[i]; return typeof id === 'string' && pets.some((p) => p.id === id && !p.dead) ? id : null; }),
     pendingReturns: arr(raw.pendingReturns).filter((id) => postcards.some((c) => c.id === id)),
@@ -223,4 +228,21 @@ export function parseImport(text: string, now = Date.now()): ImportResult {
   const sprites: Record<string, string> = {};
   for (const [k, v] of Object.entries(obj(data?.sprites))) if (k.startsWith('custom:') && typeof v === 'string') sprites[k] = v;
   return { ok: true, state: r.state, sprites, layout: typeof data?.layout === 'string' ? data.layout : null, from: r.from };
+}
+
+/** 日记：只留认得的事、合法的日期；每天最多 200 件 */
+function repairDiary(raw: any, clock: number) {
+  const o = raw && typeof raw === 'object' ? raw : {};
+  const day = (k: string) => /^\d{4}-\d{2}-\d{2}$/.test(k);
+  const days: Record<string, any[]> = {};
+  for (const [k, v] of Object.entries(o.days && typeof o.days === 'object' ? o.days : {})) {
+    if (!day(k) || !Array.isArray(v)) continue;
+    const facts = v.filter((f: any) => f && typeof f.p === 'string' && DIARY_LINES[f.k] && typeof f.t === 'number').slice(0, 200)
+      .map((f: any) => ({ p: f.p, k: f.k, x: typeof f.x === 'string' ? f.x.slice(0, 40) : undefined, t: f.t, c: typeof f.c === 'number' && f.c > 1 ? Math.floor(f.c) : undefined }));
+    if (facts.length) days[k] = facts;
+  }
+  const lead: Record<string, string[]> = {};
+  for (const [k, v] of Object.entries(o.lead && typeof o.lead === 'object' ? o.lead : {})) if (day(k) && Array.isArray(v)) lead[k] = v.filter((x: any) => typeof x === 'string').slice(0, 10);
+  const starred = (Array.isArray(o.starred) ? o.starred : []).filter((k: any) => typeof k === 'string' && day(k)).slice(0, 50);
+  return { days, lead, starred, seenAt: typeof o.seenAt === 'number' ? o.seenAt : clock };
 }

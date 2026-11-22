@@ -190,3 +190,12 @@ textarea.export { width: 100%; font: 12px/1.5 ui-monospace, Menlo, Consolas, mon
 .tut-tip p { margin: 0 0 6px; white-space: pre-line; line-height: 1.5; font-weight: 600; }
 .tut-tip .btn { margin-top: 6px; min-width: 120px; }
 @keyframes tutPulse { 50% { box-shadow: 0 0 0 3px #fff, 0 0 0 12px rgba(232,138,122,.5); } }
+
+/* 有新东西的红点（菜单按钮：日记有新写的） */
+.has-dot { position: relative; }
+.has-dot::after { content: ''; position: absolute; top: 4px; right: 4px; width: 9px; height: 9px; border-radius: 50%; background: #E0533D; box-shadow: 0 0 0 2px #fff; }
+/* 猫的日记 */
+.diary { padding: 12px 14px; line-height: 1.7; }
+.diary-pet + .diary-pet { margin-top: 10px; padding-top: 10px; border-top: 1px dashed rgba(90,70,52,.25); }
+.diary-pet b { display: block; margin-bottom: 2px; }
+.diary-pet p { margin: 0; }

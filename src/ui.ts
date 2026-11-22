@@ -1,4 +1,5 @@
 // 界面：顶部和底部的按钮，以及所有从下方弹出的面板。
+import { TREASURES } from './config';
 import { MOMENTS, QUESTS, SEXES, SEX_IDS, type Sex, NEIGHBORS, FIND_KINDS, SEASON_EVENTS, SEASON_FINDS, SKINS, SKIN_PRICE, ROOM_THEMES, ZONES, CONFIG, DAY, DESTS, TREAT, TIME_NAMES, SEASON_NAMES, FOODS, FRY, FUR_COLORS, DECOR, VISITORS, SEASON_IDS, TIME_IDS, SPECIAL_DECOR, TRAITS, TRAIT_IDS, type Trait, PATTERN_NAMES, DEFAULT_LOOK, encodeLook, decodeLook, type Look, type CoatPattern, GEAR, GOODS, HOUR, MIN, SOUVENIRS, SPRITE, TOOLS, type ActionName } from './config';
 import { renderPostcard } from './art/postcard';
 import { drawDefaultSheet } from './art/defaultPet';
@@ -90,6 +91,7 @@ export class UI {
       if (e.type === 'neighbor') { this.toast(`${NEIGHBORS[e.id]?.name ?? '邻居'}来串门了（${NEIGHBORS[e.id]?.route === 'roof' ? '从屋顶那边过来' : '从院子那边进来'}）`); sfx('door'); meow('short'); }
       if (e.type === 'neighborLeft') this.toast(`${NEIGHBORS[e.id]?.name ?? '邻居'}回去了` + (e.find ? `，在院子里留下了${FIND_KINDS[e.find]?.name ?? '一点东西'}` : ''));
       if (e.type === 'outingBack') { this.toast(e.text); sfx('return'); meow('happy'); }
+      if (e.type === 'gift') { const p = this.game.state.pets.find((x) => x.id === e.petId); this.toast(`${p?.name ?? '它'}在门口放了一样东西，好像是给你的`); meow('happy'); }
       if (e.type === 'errandDone') { const d = DESTS.find((x) => x.id === e.destId); this.toast(`信送到${d?.name ?? ''}了，谢礼：小鱼干 +${e.reward}`); sfx('coin'); }
       if (e.type === 'hungry' || e.type === 'weak') meow('hungry');
       if (e.type === 'ranAway' || e.type === 'notFound') meow('sad');
@@ -166,7 +168,7 @@ export class UI {
     this.hudDev = h('button', { class: 'pill dev', onclick: () => this.openDev() });
     const top = h('div', { class: 'hud-top' }, this.hudFish, this.hudCheck, this.hudQuest, h('div', { class: 'spacer' }), this.hudDev,
       h('button', { class: 'pill', onclick: () => this.openShop() }, '商店'),
-      h('button', { class: 'pill', onclick: () => this.openMenu() }, '菜单'));
+      this.hudMenu = h('button', { class: 'pill', onclick: () => this.openMenu() }, '菜单'));
     this.strip = h('div', { class: 'petstrip' });
     // 最后一个按钮是「屋顶」：切到房子上面那一层（编号 = 区域个数）
     this.zonesEl = h('div', { class: 'zones' }, [...ZONES.map((z, i) => h('button', { class: 'zone', onclick: () => this.scene.scrollToZone(i) }, z.name)), h('button', { class: 'zone', onclick: () => this.scene.goRoof() }, '屋顶')]);
@@ -199,7 +201,7 @@ export class UI {
     return cv;
   }
 
-  private stripSig = '';
+  private stripSig = ''; private hudMenu: HTMLElement | null = null;
   private updateHud() {
     const s = this.game.state;
     this.hudFish.textContent = `🐟 ${s.fish}`;
@@ -209,6 +211,7 @@ export class UI {
     const qs = sim.questStatus(s); this.hudQuest.classList.toggle('hot', qs.claimable > 0);
     this.hudQuest.textContent = qs.mode === 'guide' ? `引导 ${qs.items.filter((x) => x.claimed).length}/${qs.items.length}` : qs.claimable > 0 ? `任务 ${qs.claimable}` : '任务';
     this.hudDev.style.display = s.dev.enabled ? '' : 'none';
+    this.hudMenu?.classList.toggle('has-dot', sim.diaryUnread(s)); // 日记有新写的
     this.hudDev.textContent = `调试×${s.dev.speed}`;
     this.scene.relayout();
     const sig = sim.alivePets(s).map((p) => `${p.id}${p.name}${p.tripId || p.outing ? 1 : 0}${sim.isLost(p) ? 1 : 0}${p.spriteId}`).join('|') + this.game.avatarRev;
@@ -301,6 +304,7 @@ export class UI {
   onObject(kind: ObjectKind, id?: string) {
     if (kind === 'visitor' && id) { this.openVisitor(id); return; }
     if (kind === 'neighbor') { this.openNeighbors(); return; }
+    if (kind === 'gift' && id) { const r = this.game.act((st) => sim.collectGift(st, id)); this.say(r); sfx(r.ok ? 'coin' : 'error'); return; }
     if (kind === 'find' && id) { const r = this.game.act((st) => sim.collectFind(st, id)); this.say(r); sfx(r.ok ? 'coin' : 'error'); return; }
     if (kind === 'door') this.openDoor();
     else if (kind === 'album') this.openAlbum();
@@ -897,6 +901,53 @@ export class UI {
     } });
   }
 
+  // ---------- 猫的日记、猫的宝贝 ----------
+
+  private diaryKey = ''; private diaryPet = 'all';
+  openDiary() {
+    const days = sim.diaryDays(this.game.state); this.diaryKey = days[0] ?? sim.diaryDay(this.game.state.clock); this.diaryPet = 'all';
+    this.game.act((st) => { sim.markDiarySeen(st); return { ok: true, msg: '' }; });
+    this.open({ title: '猫的日记', render: () => {
+      const s = this.game.state; const days = sim.diaryDays(s); const i = days.indexOf(this.diaryKey);
+      if (!days.length) return [h('p', { class: 'soft' }, '还没有日记。照顾它们、派它们出门、或者离开一会儿再回来，它们做过的事会写在这里。')];
+      const pg = sim.diaryPage(s, this.diaryKey);
+      const [y, m, d] = this.diaryKey.split('-').map(Number); const wk = '日一二三四五六'[new Date(y, m - 1, d).getDay()];
+      const today = sim.diaryDay(s.clock); const label = this.diaryKey === today ? '今天' : this.diaryKey === sim.diaryDay(s.clock - DAY) ? '昨天' : `${m} 月 ${d} 日`;
+      const pets = [...new Set((s.diary.days[this.diaryKey] ?? []).map((f) => f.p))];
+      const show = (p: string) => this.diaryPet === 'all' || this.diaryPet === p;
+      const out: Kid[] = [
+        h('div', { class: 'grid2', style: 'grid-template-columns:auto 1fr auto;align-items:center' },
+          h('button', { class: 'btn small', disabled: i >= days.length - 1, onclick: () => { this.diaryKey = days[i + 1]; this.refresh(true); } }, '‹ 前一天'),
+          h('b', { style: 'text-align:center' }, `${label} · 星期${wk}`),
+          h('button', { class: 'btn small', disabled: i <= 0, onclick: () => { this.diaryKey = days[i - 1]; this.refresh(true); } }, '后一天 ›')),
+      ];
+      if (pets.length > 1) out.push(h('div', { class: 'seg', style: 'margin-top:8px' }, [['all', '全部'] as [string, string], ...pets.map((p) => [p, s.pets.find((x) => x.id === p)?.name ?? '它'] as [string, string])].map(([v, n]) => h('button', { class: 'chip' + (this.diaryPet === v ? ' on' : ''), onclick: () => { this.diaryPet = v; this.refresh(true); } }, n))));
+      const card: Kid[] = [];
+      for (const f of pg.featured) if (show(f.petId)) card.push(h('div', { class: 'diary-pet' }, h('b', null, f.name), ...f.lines.map((l) => h('p', null, l))));
+      const rest = pg.others.filter((o) => show(o.petId));
+      if (rest.length) card.push(h('div', { class: 'diary-pet' }, ...rest.map((o) => h('p', null, o.line))));
+      out.push(h('div', { class: 'card diary' }, card.length ? card : [h('p', { class: 'soft' }, '这一天它没有什么特别的事。')]));
+      out.push(h('button', { class: 'btn block' + (pg.starred ? ' on' : ''), onclick: () => { const r = this.game.act((st) => sim.starDiary(st, this.diaryKey)); this.say(r); sfx(r.ok ? 'click' : 'error'); } }, pg.starred ? '★ 已收藏这一页' : '☆ 收藏这一页（不会被翻过去）'));
+      out.push(h('p', { class: 'soft' }, `只留最近 ${CONFIG.diary.keepDays} 天，收藏的页一直留着（最多 ${CONFIG.diary.maxStarred} 页，现在 ${s.diary.starred.length} 页）。`));
+      return out;
+    } });
+  }
+
+  openTreasures() {
+    this.open({ title: '猫的宝贝', render: () => {
+      const s = this.game.state; const all = Object.entries(TREASURES); const got = all.filter(([k]) => s.treasures[k]).length;
+      const out: Kid[] = [h('p', { class: 'soft' }, `你离开一段时间再回来，它们有时会在门口放一样东西。已经收到 ${got} / ${all.length} 种。标「能摆出来」的是稀有的，收到后在「布置房间」里能摆出来。`)];
+      out.push(h('div', { class: 'card' }, all.map(([k, def]) => {
+        const t = s.treasures[k]; const who = t ? s.pets.find((p) => p.id === t.petId)?.name : '';
+        const when = t ? new Date(t.first) : null;
+        return h('div', { class: 'item' + (t ? '' : ' dim') }, h('span', { class: 'ico' }, t ? def.icon : '？'),
+          h('div', { class: 'txt' }, h('b', null, t ? def.name : '还没收到', def.rare ? h('span', { class: 'tagchip rare' }, '能摆出来') : def.season ? h('span', { class: 'tagchip' }, SEASON_NAMES[def.season]) : null),
+            t ? h('span', { class: 'soft' }, `${def.desc}　第一次是${who ? who + '在' : ''}${when!.getMonth() + 1} 月 ${when!.getDate()} 日叼回来的` + (t.n > 1 ? `，一共 ${t.n} 次` : '')) : null));
+      })));
+      return out;
+    } });
+  }
+
   openCabinet() {
     this.open({ title: '收藏柜', render: () => {
       const s = this.game.state; const shown = sim.shownSouvenirs(s); const max = CONFIG.travel.displaySouvenirs;
@@ -966,6 +1017,7 @@ export class UI {
     this.open({ title: '菜单', render: () => {
       const s = this.game.state;
       return [h('div', { class: 'grid2' },
+        h('button', { class: 'btn' + (sim.diaryUnread(s) ? ' primary has-dot' : ''), onclick: () => this.openDiary() }, '猫的日记'), h('button', { class: 'btn', onclick: () => this.openTreasures() }, '猫的宝贝'),
         h('button', { class: 'btn', onclick: () => this.openFamily() }, '家庭成员'), h('button', { class: 'btn', onclick: () => this.openAlbum() }, '纪念相册'),
         h('button', { class: 'btn', onclick: () => this.openCabinet() }, '收藏柜'), h('button', { class: 'btn' + (sim.milestoneStatus(s).some((m) => m.ready) ? ' primary' : ''), onclick: () => this.openCodex() }, '图鉴'), h('button', { class: 'btn', onclick: () => this.openBack() }, '背屏预览'),
         h('button', { class: 'btn', onclick: () => this.startDecor() }, '布置房间'), h('button', { class: 'btn', onclick: () => this.openNeighbors() }, '邻居'),

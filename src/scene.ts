@@ -2,6 +2,7 @@
 // 前后关系：家具、摆在地上的装饰、宠物都放在同一层里，按「脚底的位置」排序——脚底越靠下（离镜头越近）越盖在前面。
 // 背景和物品都是贴图：有图片就用图片（见 assets.config.ts），没有就用 art/room.ts 里代码画的占位图。
 import 'pixi.js/unsafe-eval';
+import { TREASURES } from './config';
 import { Application, Circle, Container, Graphics, Rectangle, Sprite, Text, Texture, type FederatedPointerEvent } from 'pixi.js';
 import { ASSETS, type ObjectDef } from './assets.config';
 import type { AssetStore } from './assets';
@@ -15,7 +16,7 @@ import * as sim from './sim';
 import { lampShadow, lightAt, lightDir, lightMap, sunShadow, type Light, type LightSource, type Occluder } from './light';
 import { extraFrame, frameIndex, rowFor } from './sprites';
 
-export type ObjectKind = 'neighbor' | 'find' | 'ladder' | 'deckEdge' | 'hooks' | 'umbrella' | 'kitchenWindow' | 'bedroomWindow' | 'kitchenShelf' | 'mirror' | 'bathShelf' | 'towel' | 'shelfRack' | 'chair' | 'tree' | 'fence' | 'door' | 'bowl' | 'tub' | 'bed' | 'cabinet' | 'album' | 'pond' | 'scratcher' | 'feeder' | 'ball' | 'sofa' | 'counter' | 'nightstand' | 'bedlamp' | 'pendantDoor' | 'pendantShelf' | 'cattree' | 'npc' | 'visitor';
+export type ObjectKind = 'neighbor' | 'find' | 'gift' | 'ladder' | 'deckEdge' | 'hooks' | 'umbrella' | 'kitchenWindow' | 'bedroomWindow' | 'kitchenShelf' | 'mirror' | 'bathShelf' | 'towel' | 'shelfRack' | 'chair' | 'tree' | 'fence' | 'door' | 'bowl' | 'tub' | 'bed' | 'cabinet' | 'album' | 'pond' | 'scratcher' | 'feeder' | 'ball' | 'sofa' | 'counter' | 'nightstand' | 'bedlamp' | 'pendantDoor' | 'pendantShelf' | 'cattree' | 'npc' | 'visitor';
 
 /** 家具的位置：每件家具能同时容纳几只、各自在哪、脸朝哪边。
  *  有位置才过去，位置满了就不去挤，所以不会重叠，也不会互相打断。
@@ -381,7 +382,7 @@ export class Scene {
 
   private rebuildObjects() {
     const s = this.game.state;
-    const sig = JSON.stringify([this.editMode, this.decorMode, sim.season(s), s.decor, s.owned, s.skins, s.finds.map((f) => f.id), sim.shownSouvenirs(s), sim.shownPostcards(s).map((c) => c.id), s.pets.map((p) => p.spriteId), sim.lostPets(s).length, s.pets.some((p) => p.searchUntil !== null), s.visitors.map((v) => v.id), s.pond.map((p, i) => (p == null ? 0 : sim.pondReady(s, i) ? 2 : 1))]);
+    const sig = JSON.stringify([this.editMode, this.decorMode, sim.season(s), s.decor, s.owned, s.skins, s.finds.map((f) => f.id), s.gifts.map((g) => g.id), sim.shownSouvenirs(s), sim.shownPostcards(s).map((c) => c.id), s.pets.map((p) => p.spriteId), sim.lostPets(s).length, s.pets.some((p) => p.searchUntil !== null), s.visitors.map((v) => v.id), s.pond.map((p, i) => (p == null ? 0 : sim.pondReady(s, i) ? 2 : 1))]);
     if (sig === this.objSig) return;
     this.objSig = sig;
     this.clearObjects(); this.objSprites.clear(); this.editBoxes.clear(); this.findSprites = [];
@@ -473,6 +474,15 @@ export class Scene {
       n.position.set(zx(gi) + zw(gi) * Math.max(0.05, Math.min(0.95, f.x)), Math.min(depthMax(), depthMin() + 14 + (i % 3) * 22));
       n.eventMode = 'static'; n.cursor = 'pointer'; n.hitArea = new Rectangle(-34, -60, 68, 72);
       n.on('pointertap', this.tap(() => this.hooks.onObject('find', f.id)));
+      this.addSorted(n, n.y); this.findSprites.push(n);
+    });
+    // 猫叼回来放在门口的礼物：点一下收起来（图标是占位的表情符号）
+    if (!this.editMode && !this.decorMode) s.gifts.forEach((g, i) => {
+      const door = objPos(ASSETS.objects.door); const icon = TREASURES[g.kind]?.icon ?? '🎁';
+      const n = new Text({ text: icon, style: { fontSize: 40 } }); n.anchor.set(0.5, 1);
+      n.position.set(door.x + 70 + (i % 3) * 46, Math.min(depthMax(), depthMin() + 18 + Math.floor(i / 3) * 26));
+      n.eventMode = 'static'; n.cursor = 'pointer'; n.hitArea = new Rectangle(-30, -54, 60, 64);
+      n.on('pointertap', this.tap(() => this.hooks.onObject('gift', g.id)));
       this.addSorted(n, n.y); this.findSprites.push(n);
     });
     // 访客：站在门口，头顶有个小气泡，点一下看它来干什么

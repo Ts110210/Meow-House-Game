@@ -73,6 +73,10 @@ const ART: Record<string, { w: number; h: number; draw(s: Sketch): void }> = {
   // 里程碑奖励的特殊装饰
   globe: { w: 80, h: 100, draw(s) { s.rect(34, 78, 12, 14, { fill: P.woodDark }); s.rect(20, 90, 40, 8, { fill: P.woodDark, r: 4 }); s.ellipse(40, 44, 32, 32, { fill: P.mist }); s.poly([[22, 36], [36, 26], [44, 40], [34, 56], [24, 50]], { fill: P.sage }); s.poly([[48, 46], [60, 40], [62, 56], [52, 62]], { fill: P.sage }); } },
   goldframe: { w: 110, h: 130, draw(s) { s.rect(4, 4, 102, 122, { fill: '#E3B341', r: 6 }); s.rect(16, 16, 78, 98, { fill: '#FBF6EC' }); s.ellipse(55, 58, 22, 20, { fill: P.coral }); s.poly([[38, 44], [44, 26], [52, 44]], { fill: P.coral }); s.poly([[58, 44], [66, 26], [72, 44]], { fill: P.coral }); s.rect(30, 86, 50, 16, { fill: P.coral, r: 8 }); } },
+  // 猫叼回来的稀有礼物
+  featherCharm: { w: 60, h: 86, draw(s) { s.line(30, 0, 30, 14, P.ink, 1.3); s.ellipse(30, 22, 12, 10, { fill: P.woodDark }); for (const [x, c] of [[16, P.mist], [30, P.coral], [44, P.mustard]] as [number, string][]) { s.line(30, 28, x, 44, P.ink, 1); s.poly([[x - 6, 44], [x + 6, 44], [x + 2, 82], [x - 2, 82]], { fill: c }); } } },
+  paperBoat: { w: 90, h: 44, draw(s) { s.poly([[4, 26], [86, 26], [70, 42], [20, 42]], { fill: '#FBF6EC' }); s.poly([[30, 26], [46, 2], [62, 26]], { fill: '#F2EADB' }); s.ellipse(56, 34, 4, 3, { fill: P.ink }); s.ellipse(62, 31, 2, 2, { fill: P.ink }); s.ellipse(60, 37, 2, 2, { fill: P.ink }); } },
+  shellBox: { w: 70, h: 40, draw(s) { s.ellipse(35, 28, 32, 12, { fill: '#F4D9C6' }); s.poly([[6, 26], [35, 2], [64, 26]], { fill: '#F7E3D3' }); for (const x of [20, 35, 50]) s.line(35, 4, x, 26, '#C99A84', 1.2); } },
   trophy: { w: 80, h: 104, draw(s) { s.rect(24, 92, 32, 10, { fill: P.woodDark, r: 3 }); s.rect(35, 70, 10, 24, { fill: '#E3B341' }); s.poly([[16, 10], [64, 10], [56, 56], [40, 70], [24, 56]], { fill: '#E3B341' }); s.curve([[16, 18], [4, 22], [8, 42], [22, 46]], '#B8891F', 5, 1); s.curve([[64, 18], [76, 22], [72, 42], [58, 46]], '#B8891F', 5, 1); s.ellipse(40, 32, 9, 9, { fill: '#FBF6EC' }); } },
 };
 

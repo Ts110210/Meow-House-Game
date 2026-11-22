@@ -34,6 +34,17 @@ export const CONFIG = {
 
   // ---------- 宠物数量 ----------
   maxPets: 5,
+  /** 猫的日记：留最近几天、收藏最多几页；每页最多几只猫写得详细（其他的各一句）、每只写几句；
+   *  多久没当过主角的猫优先（天）；你离开多久以上，日记里补几件你不在时它做的小事（awayFacts 件以内） */
+  diary: {
+    keepDays: 30, maxStarred: 50, featured: 3, linesEach: 3, rotateDays: 6, awayMin: 2 * 60 * 60 * 1000, awayFacts: 3,
+    /** 挑主角和挑写哪几句时，每种事有多重要（越大越先写）；没当主角超过 rotateDays 天的猫再加 rotateBonus */
+    weight: { tripBack: 9, grew: 9, found: 9, lost: 9, gift: 7, souvenir: 7, moment: 6, neighbor: 6, outing: 6, tripGo: 6, visitor: 5, awayMiss: 4, awayRain: 3, awayMorning: 3, awayNoon: 3, awayEvening: 3, awayNight: 3, feed: 2, pet: 2, bath: 2, play: 2 } as Record<string, number>,
+    rotateBonus: 8,
+  },
+  /** 猫叼回来的礼物：你离开多久以上才会有；每只在家的猫叼回来的几率（心情好再加 moodBonus）；一次最多几件；
+   *  稀有礼物（能摆出来的装饰）的几率；放在门口多久没捡会被它叼走 */
+  gifts: { minAway: 4 * 60 * 60 * 1000, chance: 0.35, moodBonus: 0.15, moodGood: 60, maxPerReturn: 2, rareChance: 0.08, expire: 3 * 24 * 60 * 60 * 1000 },
   /** 第 N 个空位的解锁价格（小鱼干）。第 1 个免费。 */
   slotUnlockCost: [0, 80, 200, 400, 800],
 
@@ -794,6 +805,58 @@ export const FIND_KINDS: Record<string, { name: string; icon: string }> = {
   fish: { name: '一条小鱼', icon: '🐟' }, flower: { name: '一朵小花', icon: '🌼' }, note: { name: '脚印纸条', icon: '🐾' },
 };
 
+// ============================================================
+// 猫的日记、猫叼回来的礼物
+// ============================================================
+
+/** 猫叼回来的小东西（「猫的宝贝」图鉴，只进图鉴不进房间）。season = 只在这个季节叼回来。
+ *  rare = 稀有礼物，是一件能摆出来的装饰（DECOR 里同名），收到后进「布置房间」的仓库 */
+export const TREASURES: Record<string, { name: string; icon: string; desc: string; season?: Season; rare?: boolean }> = {
+  feather: { name: '一根羽毛', icon: '🪶', desc: '不知道是哪只鸟掉的，被叼得有点弯。' },
+  bottlecap: { name: '瓶盖', icon: '🔘', desc: '汽水瓶的盖子，在地上拍着玩了很久。' },
+  pebble: { name: '圆石子', icon: '🪨', desc: '很圆很滑的一颗，大概是院子里捡的。' },
+  ribbon: { name: '一截红绳', icon: '🎀', desc: '从哪里扯下来的？它不肯说。' },
+  button: { name: '纽扣', icon: '🟤', desc: '一颗木纽扣，你好像也不知道是哪件衣服的。' },
+  cork: { name: '软木塞', icon: '🍾', desc: '咬起来软软的，它很喜欢。' },
+  marble: { name: '玻璃珠', icon: '🔵', desc: '在太阳底下会发光的小珠子。' },
+  twig: { name: '小树枝', icon: '🌿', desc: '刚好能叼住的长度。' },
+  dandelion: { name: '蒲公英', icon: '🌼', desc: '叼回来的路上被风吹掉了一半。', season: 'spring' },
+  cicada: { name: '蝉蜕', icon: '🦗', desc: '空空的，很轻。它好像很得意。', season: 'summer' },
+  foxtail: { name: '狗尾巴草', icon: '🌾', desc: '毛茸茸的，用来逗它正好。', season: 'autumn' },
+  yarnend: { name: '毛线头', icon: '🧶', desc: '从围巾上拆下来的，你的围巾还好吗？', season: 'winter' },
+  featherCharm: { name: '羽毛挂饰', icon: '🪶', desc: '一串编好的羽毛，不像是猫能做出来的……', rare: true },
+  paperBoat: { name: '小纸船', icon: '⛵', desc: '折得很整齐的纸船，上面有个小小的脚印。', rare: true },
+  shellBox: { name: '贝壳小盒', icon: '🐚', desc: '能打开的贝壳，里面是空的。', rare: true },
+};
+
+/** 日记里每种事怎么写。{n} = 猫的名字，{x} = 相关的东西（吃的、去的地方、邻居、礼物…），{c} = 今天第几次。
+ *  all = 通用的几种写法（随机挑一句，同一天同一只猫挑的都一样）；按性格的写法有的话优先用；many = 同一件事今天做了好几次 */
+export const DIARY_LINES: Record<string, { all: string[]; many?: string[] } & Partial<Record<Trait, string[]>>> = {
+  feed: { all: ['{n}吃了{x}。', '{n}埋头吃了一碗{x}。'], many: ['{n}今天吃了 {c} 顿。'], glutton: ['{n}把{x}吃得干干净净，还把碗舔了好几遍。', '{n}吃完{x}，又在碗边守了很久。'] },
+  pet: { all: ['{n}被摸了摸头，呼噜了好一会儿。'], many: ['{n}今天被摸了 {c} 次，很满足。'], clingy: ['{n}被摸的时候一直往你手里蹭。', '{n}被摸完还跟着你转了好几圈。'] },
+  bath: { all: ['{n}洗了个澡，湿漉漉的样子有点委屈。'], tidy: ['{n}洗完澡，又把自己从头到尾舔了一遍。'] },
+  play: { all: ['{n}玩得很开心。', '{n}扑来扑去玩了好一阵。'], adventurer: ['{n}玩得满屋子乱跑。'] },
+  tripGo: { all: ['{n}带着便当出发去{x}了。'], adventurer: ['{n}迫不及待地出发去{x}，头都没回。'], clingy: ['{n}出发去{x}之前，在门口回头看了你好几次。'] },
+  tripBack: { all: ['{n}从{x}回来了，看起来很累，但是很满足。'], clingy: ['{n}从{x}回来，一进门就来找你。'] },
+  souvenir: { all: ['{n}还从路上带回了{x}。'] },
+  neighbor: { all: ['{x}来家里串门，{n}陪它玩了一会儿。', '{x}来了，{n}和它在院子里待了好久。'] },
+  outing: { all: ['{n}去找{x}玩了。'] },
+  visitor: { all: ['门口来了{x}，{n}躲在后面偷偷看。'], adventurer: ['门口来了{x}，{n}第一个跑过去闻了闻。'] },
+  grew: { all: ['{n}好像又长大了一点，今天开始是{x}了。'] },
+  lost: { all: ['{n}离家出走了……希望它快点回来。'] },
+  found: { all: ['{n}被狸花猫找回来了，一进门就钻进了窝里。'] },
+  gift: { all: ['{n}叼回来一样东西：{x}。'], clingy: ['{n}叼回来{x}，放在你常坐的地方。'] },
+  // 瞬间：用瞬间相册里那张照片的标题（MOMENTS 的 title），这里是找不到标题时的写法
+  moment: { all: ['{n}有个可爱的瞬间被拍下来了。'] },
+  // 你不在的时候（按时间和天气挑）
+  awayMorning: { all: ['早上{n}趴在窗台晒太阳。', '早上{n}在屋里巡逻了一圈。'], glutton: ['早上{n}在饭碗旁边坐了很久。'] },
+  awayNoon: { all: ['中午{n}睡了一个长长的午觉。', '中午{n}追着一只小虫跑了半天，没追到。'], tidy: ['中午{n}把自己的毛舔得整整齐齐。'] },
+  awayEvening: { all: ['傍晚{n}在窗边看外面的鸟。', '傍晚{n}把毛线球拍到了沙发底下。'], adventurer: ['傍晚{n}在门口闻了很久，好像想出去。'] },
+  awayNight: { all: ['夜里{n}在客厅里走来走去。', '夜里{n}团成一团睡得很香。'] },
+  awayRain: { all: ['外面下雨，{n}一直盯着窗户上的水珠。'] },
+  awayMiss: { all: ['{n}在你上次待的地方坐了一会儿。'], clingy: ['{n}在门口等了你好久。', '{n}一直在等你回来。'] },
+};
+
 export const SEASON_IDS: Season[] = ['spring', 'summer', 'autumn', 'winter'];
 export const TIME_IDS: DayTime[] = ['day', 'dusk', 'night'];
 /** 房间装饰。layer：wall 挂在墙上；floor 铺在地上（宠物踩在上面）；stand 摆在地上。
@@ -829,6 +892,10 @@ export const DECOR: Record<string, DecorDef> = {
   lantern: { name: '小灯笼', icon: '🏮', price: 0, height: 110, layer: 'stand', desc: '邻居家的猫的回礼：常客才有，天黑了会亮', special: true, light: [0.5, 0.45] },
   parcel: { name: '快递纸箱摆件', icon: '📦', price: 0, height: 80, layer: 'stand', desc: '快递猫的回礼：常客才有', special: true },
   trophy: { name: '收藏家奖杯', icon: '🏆', price: 0, height: 100, layer: 'stand', desc: '图鉴里程碑的奖励', special: true },
+  // 猫叼回来的稀有礼物（见 TREASURES 的 rare）
+  featherCharm: { name: '羽毛挂饰', icon: '🪶', price: 0, height: 86, layer: 'wall', desc: '猫叼回来的稀有礼物', special: true },
+  paperBoat: { name: '小纸船', icon: '⛵', price: 0, height: 44, layer: 'stand', desc: '猫叼回来的稀有礼物', special: true },
+  shellBox: { name: '贝壳小盒', icon: '🐚', price: 0, height: 40, layer: 'stand', desc: '猫叼回来的稀有礼物', special: true },
 };
 /** 兼容旧名字：里程碑奖励的特殊装饰 */
 export const SPECIAL_DECOR: Record<string, { name: string; icon: string }> = Object.fromEntries(Object.entries(DECOR).filter(([, d]) => d.special).map(([k, d]) => [k, { name: d.name, icon: d.icon }]));

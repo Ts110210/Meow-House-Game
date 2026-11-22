@@ -48,6 +48,13 @@ export interface Moment { id: string; kind: string; at: number; petIds: string[]
 /** 院子里的一样小东西。x = 在院子里的左右位置（0–1） */
 export interface Find { id: string; kind: string; from?: string; at: number; x: number; text?: string }
 
+/** 日记里记下的一件事：p = 哪只猫，k = 什么事（DIARY_LINES 的键），x = 相关的东西的编号，t = 什么时候，c = 今天第几次 */
+export interface DiaryFact { p: string; k: string; x?: string; t: number; c?: number }
+/** 猫的日记：days = 每天（本地日期 YYYY-MM-DD）记下的事；lead = 过去每天当主角的猫；starred = 收藏的日期；seenAt = 上次看日记的时刻（之后有新的就亮红点） */
+export interface Diary { days: Record<string, DiaryFact[]>; lead: Record<string, string[]>; starred: string[]; seenAt: number }
+/** 猫叼回来放在门口、还没捡的礼物 */
+export interface Gift { id: string; kind: string; petId: string; at: number }
+
 export interface Visitor {
   id: string; who: VisitorWho; kind: 'gift' | 'trade' | 'errand';
   arrivedAt: number; leaveAt: number;
@@ -179,6 +186,14 @@ export interface GameState {
   moments: Moment[];
   /** 捡到的纪念：种类:来自谁 → 几个 */
   keepsakes: Record<string, number>;
+  /** 猫的日记 */
+  diary: Diary;
+  /** 门口等着捡的礼物 */
+  gifts: Gift[];
+  /** 「猫的宝贝」图鉴：收到过几次、第一次是哪天、谁叼回来的 */
+  treasures: Record<string, { n: number; first: number; petId: string }>;
+  /** 上次离开游戏（切到后台）的真实时间，用来算你走了多久（礼物、日记补写） */
+  lastSeenReal: number;
   /** 猫爬架的三层（顶层、中层、底层）各指定给哪只宠物；null = 谁都可以上去 */
   cattree: (string | null)[];
   /** 还没给主人看过的回家明信片 */
@@ -200,7 +215,8 @@ export type GameEvent =
   | { type: 'hungry'; petId: string }
   | { type: 'neighbor'; id: string }
   | { type: 'neighborLeft'; id: string; find?: string }
-  | { type: 'outingBack'; petId: string; neighborId: string; text: string };
+  | { type: 'outingBack'; petId: string; neighborId: string; text: string }
+  | { type: 'gift'; petId: string; kind: string };
 
 export type Result = { ok: true; msg?: string } | { ok: false; msg: string };
 

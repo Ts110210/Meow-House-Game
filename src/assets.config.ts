@@ -186,6 +186,7 @@ export const ASSETS = {
     bell: 'decor/bell.png', lantern: 'decor/lantern.png', parcel: 'decor/parcel.png',
     bigrug: 'decor/bigrug.png', midrug: 'decor/midrug.png', leafpic: 'decor/leafpic.png', sunpic: 'decor/sunpic.png', duopic: 'decor/duopic.png', triopic: 'decor/triopic.png',
     lamp: 'decor/lamp.png', sidelamp: 'decor/sidelamp.png', nightlight: 'decor/nightlight.png', bigplant: 'decor/bigplant.png', shelf: 'decor/shelf.png', globe: 'decor/globe.png', goldframe: 'decor/goldframe.png', trophy: 'decor/trophy.png',
+    featherCharm: 'decor/featherCharm.png', paperBoat: 'decor/paperBoat.png', shellBox: 'decor/shellBox.png',
   } as Record<string, string>,
   postcards: {
     singapore: 'postcards/singapore.png', penang: 'postcards/penang.png', langkawi: 'postcards/langkawi.png', bangkok: 'postcards/bangkok.png', chiangmai: 'postcards/chiangmai.png',

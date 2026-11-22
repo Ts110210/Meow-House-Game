@@ -149,7 +149,10 @@ export class Game {
 
   /** 主人打开 App、或者从后台回来：看看今天有没有访客上门 */
   welcome() {
-    const events = [...sim.openDoorToVisitors(this.state), ...sim.openDoorToNeighbors(this.state)];
+    // 你走了多久（真实时间）：够久的话猫会在门口留礼物、日记里补上你不在时的事
+    const now = Date.now(); const away = Math.max(0, now - this.state.lastSeenReal); this.state.lastSeenReal = now;
+    const gifts = sim.welcomeBack(this.state, away).map((g): GameEvent => ({ type: 'gift', petId: g.petId, kind: g.kind }));
+    const events = [...gifts, ...sim.openDoorToVisitors(this.state), ...sim.openDoorToNeighbors(this.state)];
     if (events.length) { events.forEach((e) => this.emitEvent(e)); this.changed(); }
   }
 
