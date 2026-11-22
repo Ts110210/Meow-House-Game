@@ -433,7 +433,8 @@ console.log('公母和体型');
   check('领养时可以指定公母', sim.newPet('a', 'default:orange', s.clock, 'tidy', 'f').sex === 'f' && sim.adopt(s, '小母', 'default:grey', undefined, 'm').ok && s.pets[s.pets.length - 1].sex === 'm');
   const p = s.pets[0];
   sim.devSetStage(s, p.id, 0); const kid = sim.bodySize(p); sim.devSetStage(s, p.id, 1); const young = sim.bodySize(p); sim.devSetStage(s, p.id, 2); const adult = sim.bodySize(p);
-  check('开发者面板能直接设成幼年、青年、成年；幼年是自己成年的一半，青年 2/3', sim.stageOf(p) === 2 && Math.abs(kid - adult / 2) < 1e-9 && Math.abs(young - adult * 2 / 3) < 1e-9 && adult === p.size);
+  // 2026-11-22 重定：成年 = 原来青年的 1.2 倍（青年 = 成年 ÷ 1.2），幼年 = 原来幼年的 1.1 倍（原来是成年的一半，成年缩到 0.8）
+  check('开发者面板能直接设成幼年、青年、成年；青年是成年的 1/1.2，幼年是原来幼年的 1.1 倍', sim.stageOf(p) === 2 && Math.abs(kid - adult * 0.55 / 0.8) < 1e-9 && Math.abs(young - adult / 1.2) < 1e-9 && adult === p.size && kid < young && young < adult);
   check('三个阶段叫幼年、青年、成年', CONFIG.growth.stageNames.join() === '幼年,青年,成年');
   const old = JSON.parse(JSON.stringify(s)); delete old.pets[0].sex; delete old.pets[0].size; old.pets[1].size = 5;
   const r1 = repair(JSON.parse(JSON.stringify(old)), T0), r2 = repair(JSON.parse(JSON.stringify(old)), T0);
