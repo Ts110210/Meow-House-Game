@@ -1476,7 +1476,7 @@ export class Scene {
     const pad = 600, W = worldW(); const grid = { x0: -pad, y0: -2 * H, cell: U.cell, cols: Math.ceil((W + pad * 2) / U.cell), rows: Math.ceil((4 * H) / U.cell) };
     const data = lightMap(l, grid, (x, y) => this.zoneOfPoint(x, y), (z) => this.openZone(z), this.lightSrc, occ);
     const cv = document.createElement('canvas'); cv.width = grid.cols; cv.height = grid.rows; cv.getContext('2d')!.putImageData(new ImageData(data, grid.cols, grid.rows), 0, 0);
-    this.lightMapTex = this.tex(cv); this.lightMapSp.texture = this.lightMapTex;
+    this.lightMapTex = Texture.from(cv); this.lightMapSp.texture = this.lightMapTex; // 自己管销毁，不放进 this.textures（同上）
     this.lightMapSp.position.set(grid.x0, grid.y0); this.lightMapSp.width = grid.cols * grid.cell; this.lightMapSp.height = grid.rows * grid.cell; this.lightMapSp.visible = true;
   }
 
@@ -1487,7 +1487,8 @@ export class Scene {
     c.translate(64, 16); c.scale(1, 0.25); const g = c.createRadialGradient(0, 0, 0, 0, 0, 64);
     g.addColorStop(0, 'rgba(40,28,20,1)'); g.addColorStop(0.55, 'rgba(40,28,20,0.6)'); g.addColorStop(1, 'rgba(40,28,20,0)');
     c.fillStyle = g; c.beginPath(); c.arc(0, 0, 64, 0, Math.PI * 2); c.fill();
-    return (this.contactTex = this.tex(cv));
+    // 不放进 this.textures：rebuildArt() 会销毁那里面的贴图，而这块一直被宠物的影子用着（换素材后影子会画不出来）
+    return (this.contactTex = Texture.from(cv));
   }
 
   /** 窗户光：从窗户斜着照进来，落在墙上和地板上的一块柔和的光。早上往右斜、中午短、傍晚往左斜；夜里和下雨没有。
@@ -1514,7 +1515,7 @@ export class Scene {
       const cv = document.createElement('canvas'); cv.width = Math.max(2, Math.ceil(bw / R)); cv.height = Math.max(2, Math.ceil(bh / R)); const c = cv.getContext('2d')!;
       const poly = (p: [number, number][], a: number) => { c.globalAlpha = a; c.beginPath(); p.forEach(([x, y], i) => (i ? c.lineTo((x - bx) / R, (y - by) / R) : c.moveTo((x - bx) / R, (y - by) / R))); c.closePath(); c.fill(); };
       c.fillStyle = l.win; poly(beam, WL.beam / WL.alpha * 0.9); poly(floor, 0.75); poly(floor, 0.25);
-      const t = this.tex(cv); this.winTex.push(t);
+      const t = Texture.from(cv); this.winTex.push(t); // 自己管销毁，不放进 this.textures（同上）
       const s2 = new Sprite(t); s2.position.set(bx, by); s2.width = bw; s2.height = bh; s2.alpha = strength / 0.75; this.winLayer.addChild(s2);
     }
   }

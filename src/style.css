@@ -219,5 +219,5 @@ textarea.export { width: 100%; font: 12px/1.5 ui-monospace, Menlo, Consolas, mon
 .menu-sec { margin: 14px 0 6px; font-size: 13px; color: rgba(90,70,52,.7); letter-spacing: 1px; }
 
 /* 顶上一行多了「出门」：窄屏上按钮挤一挤，开着开发者模式也放得下一行 */
-@media (max-width: 430px) { .hud-top { gap: 3px; padding-left: 6px; padding-right: 6px; } .pill { padding: 0 7px; font-size: 13px; } }
+@media (max-width: 480px) { .hud-top { gap: 3px; padding-left: 6px; padding-right: 6px; } .pill { padding: 0 7px; font-size: 13px; } }
 @media (max-width: 375px) { .pill { padding: 0 6px; font-size: 12px; } }
