@@ -73,7 +73,7 @@ export function newState(now: number): GameState {
   const s: GameState = {
     v: 7, createdAt: now, seasonStart: now, settings: { notify: true, showSeason: false, seasonMode: 'cycle', light: 'simple' }, clock: now, lastReal: now, fish: CONFIG.startFish, slots: 1,
     pets: [], trips: [], postcards: [], souvenirs: {}, inv: { ...CONFIG.startItems }, owned: {},
-    pond: Array(CONFIG.pond.slots).fill(null), lastCheckin: '', pendingReturns: [], friends: {}, variants: {}, milestones: [], decor: [], quests: newQuests(false), tutorial: 0, visitors: [], visitorQuota: 0, visitorDay: '', lastVisitorAt: 0, errand: null, display: { souvenirs: [], postcards: [] }, cattree: [null, null, null], hood: { now: null, bonds: {}, day: '', quota: 0, last: 0, stories: [] }, seasonal: { key: '', got: {}, done: false, last: 0, day: '', quota: 0 }, seasonalClaimed: [], moments: [], favor: {}, favorClaimed: [], finds: [], keepsakes: {}, diary: { days: {}, lead: {}, starred: [], seenAt: now }, gifts: [], treasures: {}, lastSeenReal: Date.now(), minigame: { day: '', wand: 0, fishing: 0, auto: 0 }, firsts: {}, lastView: null, skins: {}, skinsOwned: {}, room: DEFAULT_ROOM, roomsOwned: [],
+    pond: Array(CONFIG.pond.slots).fill(null), lastCheckin: '', pendingReturns: [], friends: {}, variants: {}, milestones: [], decor: [], quests: newQuests(false), tutorial: 0, visitors: [], visitorQuota: 0, visitorDay: '', lastVisitorAt: 0, errand: null, display: { souvenirs: [], postcards: [] }, cattree: [null, null, null], hood: { now: null, bonds: {}, day: '', quota: 0, last: 0, stories: [] }, seasonal: { key: '', got: {}, done: false, last: 0, day: '', quota: 0 }, seasonalClaimed: [], moments: [], favor: {}, favorClaimed: [], finds: [], keepsakes: {}, diary: { days: {}, lead: {}, starred: [], seenAt: now }, gifts: [], treasures: {}, lastSeenReal: Date.now(), minigame: { day: '', wand: 0, fishing: 0, auto: 0 }, firsts: {}, lastView: null, rehomeLog: { last: 0, visit: 0 }, skins: {}, skinsOwned: {}, room: DEFAULT_ROOM, roomsOwned: [],
     dev: { enabled: false, background: false, time: 'auto', season: 'auto', weather: 'auto', speed: 1, growth: 1, decay: { food: 1, mood: 1, clean: 1 } },
   };
   s.pets.push(newPet(CONFIG.startPet.name, `default:${CONFIG.startPet.color}`, now));
@@ -87,9 +87,16 @@ export function newState(now: number): GameState {
 export const awaySpeed = (s: GameState) => (s.dev.enabled && s.dev.background ? Math.max(1, s.dev.speed) : 1);
 /** 家里有没有能让宠物自己玩的东西 */
 export const hasToy = (s: GameState) => !!(s.owned.scratcher || s.owned.ball);
-export const alivePets = (s: GameState) => s.pets.filter((p) => !p.dead);
+/** 家里的猫（不算送走的；送走的不占位置） */
+export const alivePets = (s: GameState) => s.pets.filter((p) => !p.dead && !p.rehomed);
 export const isLost = (p: Pet) => p.lostSince !== null && !p.dead;
-export const homePets = (s: GameState) => s.pets.filter((p) => !p.dead && !p.tripId && !p.outing && p.lostSince === null);
+export const homePets = (s: GameState) => s.pets.filter((p) => !p.dead && !p.rehomed && !p.tripId && !p.outing && p.lostSince === null);
+/** 送走的猫里正在回来串门的 */
+export const visitingPets = (s: GameState) => s.pets.filter((p) => !p.dead && p.rehomed && p.visit);
+/** 画面里要画的猫：在家的，加上回来串门的 */
+export const scenePets = (s: GameState) => [...homePets(s), ...visitingPets(s)];
+/** 住在别处的家人（送养的、走失后被收养的），新送走的在前 */
+export const formerPets = (s: GameState) => s.pets.filter((p) => !p.dead && p.rehomed).sort((a, b) => b.rehomed!.at - a.rehomed!.at);
 export const lostPets = (s: GameState) => s.pets.filter(isLost);
 export const albumLimit = () => Math.round(DESTS.length * CONFIG.travel.albumPerDest);
 
@@ -195,6 +202,7 @@ export function advance(s: GameState, dt: number): GameEvent[] {
     if (s.hood.now && s.clock >= s.hood.now.leaveAt) neighborLeaves(s, events);
     for (const p of s.pets) if (p.outing && s.clock >= p.outing.until) outingBack(s, p, events);
     for (const p of s.pets) if (p.fishing && s.clock >= p.fishing.until) autoFishBack(s, p, events);
+    for (const p of s.pets) if (p.visit && s.clock >= p.visit.until) { p.visit = null; events.push({ type: 'visitLeft', petId: p.id }); }
     if (s.finds.length) s.finds = s.finds.filter((f) => s.clock - f.at < CONFIG.neighbors.findExpire);
     spawnSeasonFind(s);
     for (const trip of s.trips) if (!trip.letterSent && s.clock >= trip.letterAt) sendLetter(s, trip, events);
@@ -219,6 +227,7 @@ function diaryFromEvent(s: GameState, e: GameEvent) {
     case 'ranAway': note(s, e.petId, 'lost'); break;
     case 'found': note(s, e.petId, 'found'); break;
     case 'autoFish': note(s, e.petId, 'autoFish', String(e.fish)); break;
+    case 'adoptedAway': note(s, e.petId, 'adoptedAway', e.home); break;
   }
 }
 
@@ -227,7 +236,10 @@ function stepPets(s: GameState, step: number, events: GameEvent[]) {
   const hours = step / HOUR;
   const companions = homePets(s).length >= 2;
   for (const p of s.pets) {
-    if (p.dead || p.lostSince !== null) continue; // 离家出走期间不长大、不掉状态
+    if (p.dead || p.rehomed) continue; // 送走的猫不在这里过日子了
+    // 走失太久、也没在找：被好心人收养了（空出位置，之后和送养的一样偶尔回来串门）
+    if (p.lostSince !== null && p.searchUntil === null && s.clock - p.lostSince >= CONFIG.rehome.lostAdoptAfter) { adoptAway(s, p, events); continue; }
+    if (p.lostSince !== null) continue; // 离家出走期间不长大、不掉状态
     const before = stageOf(p);
     p.age += step * s.dev.growth;
     const after = stageOf(p);
@@ -280,6 +292,7 @@ export function peekMult(s: GameState, p: Pet, key: RepeatKey): number {
 
 function usable(p: Pet | undefined): Result {
   if (!p || p.dead) return { ok: false, msg: '找不到这只宠物' };
+  if (p.rehomed && !p.visit) return { ok: false, msg: `${p.name}住在${p.rehomed.home}了` };
   if (p.lostSince !== null) return { ok: false, msg: `${p.name}离家出走了` };
   if (p.tripId) return { ok: false, msg: `${p.name}出门了` };
   if (p.outing) return { ok: false, msg: `${p.name}去邻居家玩了` };
@@ -674,7 +687,8 @@ export const CATTREE_LEVELS = ['顶层', '中层', '底层'];
 export function setCatTree(s: GameState, level: number, petId: string | null): Result {
   if (!s.owned.cattree) return { ok: false, msg: '还没有猫爬架' };
   if (!(level >= 0 && level < CATTREE_LEVELS.length)) return { ok: false, msg: '没有这一层' };
-  if (petId !== null && !s.pets.some((p) => p.id === petId && !p.dead)) return { ok: false, msg: '找不到这只宠物' };
+  if (petId !== null && !s.pets.some((p) => p.id === petId && !p.dead && !p.rehomed)) return { ok: false, msg: '找不到这只宠物' };
+  if (petId !== null && level === 0 && stageOf(s.pets.find((p) => p.id === petId)!) === 0) return { ok: false, msg: '幼年还跳不上顶层，等它长大一点' };
   if (petId !== null) s.cattree = s.cattree.map((id) => (id === petId ? null : id));
   s.cattree[level] = petId;
   return { ok: true, msg: petId === null ? `${CATTREE_LEVELS[level]}谁都可以上去` : `${s.pets.find((p) => p.id === petId)!.name}以后爱待在${CATTREE_LEVELS[level]}` };
@@ -753,6 +767,7 @@ export function checkDispatch(s: GameState, plan: DispatchPlan): Result {
     if (p!.mood < t.moodRefuseBelow) return { ok: false, msg: `${p!.name}心情太差，不愿意出门` };
   }
   if (!FOODS.some((f) => f.id === plan.bento)) return { ok: false, msg: '先选一份便当' };
+  if (plan.errand && s.errand && kittenOnly(s, plan.petIds) && (DESTS.find((d) => d.id === s.errand!.destId)?.tier ?? 9) > CONFIG.growth.kittenMaxTier) return { ok: false, msg: '幼年的猫自己只能去近处，带一只成年猫一起去吧' };
   if (count(s, plan.bento) < 1) return { ok: false, msg: '便当不够了，去商店买一些' };
   if (plan.tool && count(s, plan.tool) < 1) return { ok: false, msg: '没有这件行李' };
   if (plan.goods.length > t.goodsCapacity) return { ok: false, msg: `行李箱最多放 ${t.goodsCapacity} 件货物` };
@@ -779,7 +794,9 @@ export function dispatch(s: GameState, plan: DispatchPlan): Result {
   if (tool) addItem(s, tool.id, -1); // 行李回家时还回来
   for (const g of plan.goods) addItem(s, g, -1);
   const errand = plan.errand && errandReachable(s, plan.bento) ? s.errand : null;
-  const dest = errand ? DESTS.find((d) => d.id === errand.destId)! : pickDest(food.tier, tool?.type ?? null, plan.petIds.some((id) => s.pets.find((p) => p.id === id)?.trait === 'adventurer'));
+  // 幼年自己出门最远只到近处（带着成年猫一起就不限）
+  const tier = kittenOnly(s, plan.petIds) ? Math.min(food.tier, CONFIG.growth.kittenMaxTier) : food.tier;
+  const dest = errand ? DESTS.find((d) => d.id === errand.destId)! : pickDest(tier, tool?.type ?? null, plan.petIds.some((id) => s.pets.find((p) => p.id === id)?.trait === 'adventurer'));
   const trip: Trip = {
     id: newId('trip'), petIds: [...plan.petIds], bento: plan.bento, tool: tool?.id ?? null, goods: [...plan.goods],
     startAt: s.clock, returnAt: s.clock + food.tripTime, destId: dest.id,
@@ -835,7 +852,8 @@ function resolveTrip(s: GameState, trip: Trip, events: GameEvent[]) {
   if (Math.random() < chance) {
     // 每个地方两件：一件普通一件稀有。已经有的不会再带，两件都有了就不带。
     const [normal, rare] = dest.souvenirs;
-    const first = Math.random() < t.souvenirRareChance ? rare : normal;
+    // 有成年猫同行：更会找东西，稀有纪念品的几率高一些
+    const first = Math.random() < t.souvenirRareChance * (pets.some((p) => stageOf(p) === 2) ? CONFIG.growth.adultRareMult : 1) ? rare : normal;
     const pick = [first, first === rare ? normal : rare].find((id) => !s.souvenirs[id]);
     if (pick) { souvenir = pick; s.souvenirs[pick] = 1; }
   }
@@ -1090,7 +1108,7 @@ function factLabel(f: DiaryFact): string {
     case 'visitor': return VISITORS[x as VisitorWho]?.name ?? '客人';
     case 'grew': return CONFIG.growth.stageNames[Number(x)] ?? '大猫';
     case 'gift': return TREASURES[x]?.name ?? '一样小东西';
-    case 'wandGame': case 'fishGame': case 'autoFish': return x;
+    case 'wandGame': case 'fishGame': case 'autoFish': case 'rehome': case 'adoptedAway': case 'visitBack': case 'letter': return x;
     default: return '';
   }
 }
@@ -1258,4 +1276,66 @@ export function addPetBond(s: GameState, p: Pet, why: string) {
 export function bondLevel(p: Pet) {
   const L = CONFIG.bond.levels; const v = p.bond ?? 0; let i = 0; while (i < L.length - 1 && v >= L[i + 1][0]) i++;
   return { value: v, level: i, name: L[i][1], next: i < L.length - 1 ? L[i + 1][0] : null };
+}
+
+// ============================================================
+// 长大的意义、送养、走失的猫被收养、老家人回来串门
+// ============================================================
+
+/** 这一趟只有幼年（和青年）、没有成年猫带着：只能去近处 */
+export function kittenOnly(s: GameState, petIds: string[]) {
+  const pets = petIds.map((id) => s.pets.find((p) => p.id === id)).filter((p): p is Pet => !!p);
+  return pets.some((p) => stageOf(p) === 0) && !pets.some((p) => stageOf(p) === 2);
+}
+
+/** 挑一户人家（尽量不和还会回来串门的老家人住同一家） */
+function pickHome(s: GameState) {
+  const used = formerPets(s).filter((p) => !p.rehomed!.far).map((p) => p.rehomed!.home); const H = CONFIG.rehome.homes;
+  const free = H.filter((h) => !used.includes(h)); const list = free.length ? free : H; return list[Math.floor(Math.random() * list.length)];
+}
+/** 送走一只后：还会回来串门的老家人超过上限，最早送走的那只「搬去远方」（只偶尔寄信） */
+function moveFarOldest(s: GameState) {
+  const near = formerPets(s).filter((p) => !p.rehomed!.far);
+  for (const p of near.slice(CONFIG.rehome.maxVisitors)) { p.rehomed!.far = true; p.visit = null; }
+}
+function sendAway(s: GameState, p: Pet, home: string, lost: boolean) {
+  p.rehomed = { at: s.clock, home, far: false, lost }; p.visit = null; p.fishing = null; p.lostSince = null; p.searchUntil = null; p.weakSince = null;
+  s.cattree = s.cattree.map((id) => (id === p.id ? null : id));
+  moveFarOldest(s);
+}
+
+/** 能不能送养（只有成年、在家、两次送养至少隔一阵）。dry = 只检查不执行 */
+export function rehomeCheck(s: GameState, petId: string): Result {
+  const p = s.pets.find((x) => x.id === petId); const u = usable(p); if (!u.ok) return u;
+  if (p!.rehomed) return { ok: false, msg: `${p!.name}已经住在${p!.rehomed.home}了` };
+  if (stageOf(p!) < 2) return { ok: false, msg: `${p!.name}还没长大，长成大猫以后才能为它找新家` };
+  if (p!.fishing) return { ok: false, msg: `${p!.name}在鱼塘边，等它回来` };
+  const wait = s.rehomeLog.last + CONFIG.rehome.gap - s.clock;
+  if (s.rehomeLog.last && wait > 0) return { ok: false, msg: `刚送走过一只，再过 ${Math.ceil(wait / DAY)} 天才能再为别的猫找新家` };
+  return { ok: true };
+}
+/** 为它找个新家：搬去邻居那边住，家里空出一个位置；以后会偶尔回来串门，纪念册和日记都留着。没有奖励 */
+export function rehome(s: GameState, petId: string): Result {
+  const c = rehomeCheck(s, petId); if (!c.ok) return c;
+  const p = s.pets.find((x) => x.id === petId)!; const home = pickHome(s);
+  note(s, p.id, 'rehome', home); sendAway(s, p, home, false); s.rehomeLog.last = s.clock;
+  return { ok: true, msg: `${p.name}搬去${home}住了。它会偶尔回来看你` };
+}
+/** 走失太久，被好心人收养 */
+function adoptAway(s: GameState, p: Pet, events: GameEvent[]) {
+  const home = pickHome(s); sendAway(s, p, home, true);
+  events.push({ type: 'adoptedAway', petId: p.id, home });
+}
+
+/** 打开游戏时：住在别处的家人偶尔回来串门（离上次老家人来至少隔一阵），搬去远方的偶尔寄信 */
+export function formerCatsWelcome(s: GameState): GameEvent[] {
+  const R = CONFIG.rehome; const ev: GameEvent[] = []; const all = formerPets(s);
+  const near = all.filter((p) => !p.rehomed!.far && !p.visit);
+  if (near.length && !visitingPets(s).length && s.clock - s.rehomeLog.visit >= R.visitGap && Math.random() < R.visitChance) {
+    const p = near[Math.floor(Math.random() * near.length)];
+    p.visit = { until: s.clock + between(R.visitFor) }; s.rehomeLog.visit = s.clock;
+    note(s, p.id, 'visitBack', p.rehomed!.home); ev.push({ type: 'visitBack', petId: p.id });
+  }
+  for (const p of all.filter((x) => x.rehomed!.far)) if (Math.random() < R.letterChance) { note(s, p.id, 'letter', p.rehomed!.home); ev.push({ type: 'letterFrom', petId: p.id }); }
+  return ev;
 }

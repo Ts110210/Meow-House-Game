@@ -92,6 +92,11 @@ export class UI {
       if (e.type === 'neighbor') { this.toast(`${NEIGHBORS[e.id]?.name ?? '邻居'}来串门了（${NEIGHBORS[e.id]?.route === 'roof' ? '从屋顶那边过来' : '从院子那边进来'}）`); sfx('door'); meow('short'); }
       if (e.type === 'neighborLeft') this.toast(`${NEIGHBORS[e.id]?.name ?? '邻居'}回去了` + (e.find ? `，在院子里留下了${FIND_KINDS[e.find]?.name ?? '一点东西'}` : ''));
       if (e.type === 'outingBack') { this.toast(e.text); sfx('return'); meow('happy'); }
+      if (e.type === 'visitBack' || e.type === 'visitLeft' || e.type === 'letterFrom' || e.type === 'adoptedAway') {
+        const p = this.game.state.pets.find((x) => x.id === e.petId); const n = p?.name ?? '它'; const home = p?.rehomed?.home ?? '新家';
+        this.toast(e.type === 'visitBack' ? `${n}从${home}回来串门了` : e.type === 'visitLeft' ? `${n}回${home}去了` : e.type === 'letterFrom' ? `收到${n}从${home}寄来的信，按了一个小爪印` : `狸花猫带回消息：${n}被${home}收留了，过得挺好`);
+        if (e.type === 'visitBack') meow('happy');
+      }
       if (e.type === 'autoFish') { const p = this.game.state.pets.find((x) => x.id === e.petId); this.toast(`${p?.name ?? '它'}从鱼塘回来了，带回 ${e.fish} 条小鱼：小鱼干 +${e.fish}`); sfx('coin'); }
       if (e.type === 'gift') { const p = this.game.state.pets.find((x) => x.id === e.petId); this.toast(`${p?.name ?? '它'}在门口放了一样东西，好像是给你的`); meow('happy'); }
       if (e.type === 'errandDone') { const d = DESTS.find((x) => x.id === e.destId); this.toast(`信送到${d?.name ?? ''}了，谢礼：小鱼干 +${e.reward}`); sfx('coin'); }
@@ -631,6 +636,12 @@ export class UI {
       h('div', { class: 'pethead' }, this.avatarCanvas(p, 208), h('div', null, h('b', null, p.name), h('p', { class: 'soft' }, `陪伴了 ${fmtDur(p.age)}`), h('p', { class: 'soft' }, `${fmtDate(p.adoptedAt)} – ${fmtDate(p.diedAt ?? s.clock)}`))),
       h('div', { class: 'banner grey' }, `${p.name}已经离开了。它的明信片还留在相册里。`),
     ];
+    // 住在别处的家人（送养的、走失后被收养的）：不在串门时只能看看它和它的纪念册
+    if (p.rehomed && !p.visit) return [
+      h('div', { class: 'pethead' }, this.avatarCanvas(p, 208), h('div', null, h('b', null, p.name), h('p', { class: 'soft' }, `${p.rehomed.lost ? '被' : '搬去'}${p.rehomed.home}${p.rehomed.lost ? '收留了' : '住了'}`), h('p', { class: 'soft' }, `${fmtDate(p.rehomed.at)} 起`))),
+      h('div', { class: 'banner grey' }, p.rehomed.far ? `${p.name}跟着新家人搬去了远方，偶尔会寄信回来。` : `${p.name}过得很好，偶尔会回来串门。`),
+      h('p', null, h('button', { class: 'btn block', onclick: () => this.openFirsts(p.id) }, `翻开${p.name}的纪念册`)),
+    ];
     if (sim.isLost(p)) {
       const searching = p.searchUntil !== null;
       return [h('div', { class: 'pethead' }, this.avatarCanvas(p, 208), h('div', null, h('b', { style: 'font-size:20px' }, p.name), h('p', { class: 'soft' }, `${sim.stageName(p)} · 离家出走了`))),
@@ -729,9 +740,21 @@ export class UI {
           h('div', { class: 'fbar' }, h('i', { style: `width:${(f.value / CONFIG.friendship.best) * 100}%` })))))));
     if (sim.isProtected(s, p)) out.push(h('p', { class: 'soft' }, '新手保护：它还小，是家里的第一只，长大前饿得比较慢。'));
     if (!s.owned.wand) out.push(h('p', { class: 'soft' }, `现在是空手逗它。商店里有逗猫棒，买了以后玩耍变成心情 +${CONFIG.actions.playMoodWand}。`));
+    if (p.visit) { out.unshift(h('div', { class: 'banner' }, `${p.name}从${p.rehomed?.home ?? '新家'}回来串门了，过一会儿就回去。`)); return out; }
     out.push(h('p', null, h('button', { class: 'btn block', onclick: () => { this.plan = { petIds: [id], bento: this.plan.bento, tool: null, goods: [] }; this.openDoor(); } }, '派它出门')));
+    // 为它找个新家（只有成年；确认两次才生效）
+    if (sim.stageOf(p) === 2) {
+      const chk = sim.rehomeCheck(s, id); const step = this.rehomeStep?.id === id ? this.rehomeStep.n : 0;
+      if (step === 0) out.push(h('p', null, h('button', { class: 'btn block', disabled: !chk.ok, onclick: () => { this.rehomeStep = { id, n: 1 }; this.refresh(true); } }, '为它找个新家'), chk.ok ? null : h('small', { class: 'soft' }, chk.msg)));
+      else out.push(h('div', { class: 'card', style: 'padding:12px' },
+        h('b', null, step === 1 ? `要让${p.name}搬去邻居那边住吗？` : `真的确定吗？`),
+        h('p', { class: 'soft' }, step === 1 ? `家里会空出一个位置。它以后会偶尔回来串门，纪念册和日记都会留着。这不会给你任何奖励。` : `${p.name}走了以后，不能把它接回来。`),
+        h('div', { class: 'grid2' }, h('button', { class: 'btn', onclick: () => { this.rehomeStep = null; this.refresh(true); } }, '再想想'),
+          h('button', { class: 'btn' + (step === 2 ? ' primary' : ''), onclick: () => { if (step === 1) { this.rehomeStep = { id, n: 2 }; this.refresh(true); return; } this.rehomeStep = null; const r = this.game.act((st) => sim.rehome(st, id)); this.say(r); if (r.ok) this.close(); } }, step === 1 ? '是的' : `送${p.name}去新家`))));
+    }
     return out;
   }
+  private rehomeStep: { id: string; n: number } | null = null;
 
   // ---------- 门口：派宠物出门 ----------
 
@@ -792,6 +815,7 @@ export class UI {
         h('button', { class: 'btn small' + (plan.errand ? ' on' : ''), disabled: !can, onclick: () => { plan.errand = !plan.errand; this.refresh(true); } }, plan.errand ? '顺路送' : '不送'))));
     }
     const chk = sim.checkDispatch(s, plan);
+    if (plan.petIds.length && sim.kittenOnly(s, plan.petIds)) out.push(h('p', { class: 'soft' }, `幼年的猫自己只能去近处（${DESTS.filter((d) => d.tier <= CONFIG.growth.kittenMaxTier).map((d) => d.name).join('、')}），带的便当再好也只是走得久一些。带一只成年猫一起去就不限了。`));
     out.push(h('p', { style: 'margin-top:16px' }, h('button', { class: 'btn primary block', disabled: !chk.ok, onclick: () => {
       const r = this.game.act((st) => sim.dispatch(st, plan)); this.say(r);
       if (r.ok) { this.plan = { petIds: [], bento: plan.bento, tool: null, goods: [] }; this.close(); sfx('door'); meow('short'); } else sfx('error');
@@ -1127,6 +1151,14 @@ export class UI {
       if (alive.length < s.slots) out.push(h('p', null, h('button', { class: 'btn primary block', onclick: () => this.openAdopt() }, '有空位：领养一只新宠物')));
       else if (cost !== null) out.push(h('p', null, h('button', { class: 'btn block', disabled: s.fish < cost, onclick: () => this.say(this.game.act((st) => sim.unlockSlot(st))) }, `解锁下一个空位（🐟 ${cost}）`)));
       else out.push(h('p', { class: 'soft center' }, '位置已经全部解锁。'));
+      // 住在别处的家人
+      const former = sim.formerPets(s);
+      if (former.length) {
+        out.push(h('h3', null, '住在别处的家人'));
+        out.push(h('div', { class: 'card' }, former.map((p) => h('div', { class: 'item' }, h('span', { class: 'ico' }, h('span', { class: 'chip', style: 'padding:0;box-shadow:none;background:none' }, this.avatarCanvas(p, 56))),
+          h('div', { class: 'txt' }, h('b', null, p.name), h('span', { class: 'soft' }, p.visit ? '正在家里串门' : p.rehomed!.far ? `跟着新家人搬去了远方（${p.rehomed!.home}）` : `住在${p.rehomed!.home}，偶尔回来串门`)),
+          h('button', { class: 'btn small', onclick: () => this.openPet(p.id) }, '看看')))));
+      }
       return out;
     } });
   }

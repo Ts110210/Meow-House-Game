@@ -84,6 +84,8 @@ export function repair(raw: Raw, now = Date.now()): GameState {
     lastNibble: typeof p.lastNibble === 'number' ? p.lastNibble : null,
     // 老存档里的猫还没有亲密度：已经一起住了一阵，从「熟悉」开始（这样它们照旧会迎接你）；新领养的在 newPet 里是 0
     bond: Math.max(0, Math.min(100, num(p.bond, CONFIG.bond.greetAt))), bondDay: p.bondDay && typeof p.bondDay.day === 'string' ? { day: p.bondDay.day, got: Math.max(0, num(p.bondDay.got, 0)) } : undefined,
+    rehomed: p.rehomed && typeof p.rehomed.home === 'string' ? { at: num(p.rehomed.at, 0), home: p.rehomed.home.slice(0, 20), far: !!p.rehomed.far, lost: !!p.rehomed.lost } : null,
+    visit: p.visit && typeof p.visit.until === 'number' && p.rehomed ? { until: p.visit.until } : null,
     fishing: p.fishing && typeof p.fishing.until === 'number' && !p.dead ? { until: p.fishing.until } : null,
     outing: p.outing && typeof p.outing.neighborId === 'string' && NEIGHBORS[p.outing.neighborId] && !p.dead ? { neighborId: p.outing.neighborId, until: num(p.outing.until, 0) } : null,
     repeats: obj(p.repeats), hungryNotified: !!p.hungryNotified, adoptedAt: num(p.adoptedAt, clock),
@@ -156,6 +158,7 @@ export function repair(raw: Raw, now = Date.now()): GameState {
     gifts: arr(raw.gifts).filter((g) => g && typeof g.id === 'string' && TREASURES[g.kind] && typeof g.petId === 'string').slice(0, 10).map((g) => ({ id: g.id, kind: g.kind, petId: g.petId, at: num(g.at, clock) })),
     treasures: Object.fromEntries(Object.entries(obj(raw.treasures)).filter(([k, v]) => TREASURES[k] && v && typeof v === 'object').map(([k, v]: [string, any]) => [k, { n: Math.max(1, Math.floor(num(v.n, 1))), first: num(v.first, clock), petId: typeof v.petId === 'string' ? v.petId : '' }])),
     lastSeenReal: num(raw.lastSeenReal, now),
+    rehomeLog: { last: num(raw.rehomeLog?.last, 0), visit: num(raw.rehomeLog?.visit, 0) },
     firsts: repairFirsts(raw.firsts, clock),
     lastView: raw.lastView && typeof raw.lastView.x === 'number' && isFinite(raw.lastView.x) ? { x: raw.lastView.x, roof: !!raw.lastView.roof } : null,
     minigame: { day: typeof raw.minigame?.day === 'string' ? raw.minigame.day : '', wand: Math.max(0, Math.floor(num(raw.minigame?.wand, 0))), fishing: Math.max(0, Math.floor(num(raw.minigame?.fishing, 0))), auto: Math.max(0, Math.floor(num(raw.minigame?.auto, 0))) },

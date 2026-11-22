@@ -151,7 +151,7 @@ console.log('性格和友情');
     const r1 = repair(JSON.parse(JSON.stringify(raw)), T0), r2 = repair(JSON.parse(JSON.stringify(raw)), T0);
     check('旧存档的宠物补上一种性格，每次读档都一样；没有主的友情被清掉', !!r1.pets[0].trait && r1.pets[0].trait === r2.pets[0].trait && Object.keys(r1.friends).length === 0); }
   { // 爱冒险：统计去远处的比例和纪念品
-    const far = (trait: any) => { let n = 0; for (let i = 0; i < 1500; i++) { const s = blank(); s.pets[0].trait = trait; s.inv.can = 1; s.pets[0].food = s.pets[0].mood = s.pets[0].clean = 90; sim.dispatch(s, { petIds: [s.pets[0].id], bento: 'can', tool: null, goods: [] }); if (DESTS.find((d) => d.id === s.trips[0].destId)!.tier > 1) n++; } return n / 1500; };
+    const far = (trait: any) => { let n = 0; for (let i = 0; i < 1500; i++) { const s = blank(); s.pets[0].trait = trait; s.pets[0].age = CONFIG.growth.stageDuration; /* 青年（幼年自己只能去近处） */ s.inv.can = 1; s.pets[0].food = s.pets[0].mood = s.pets[0].clean = 90; sim.dispatch(s, { petIds: [s.pets[0].id], bento: 'can', tool: null, goods: [] }); if (DESTS.find((d) => d.id === s.trips[0].destId)!.tier > 1) n++; } return n / 1500; };
     const fa = far('adventurer'), fo = far('tidy'); check('爱冒险：更常去远的地方', fa > fo + 0.03, `${fa} ${fo}`); }
 }
 
@@ -187,7 +187,7 @@ console.log('访客');
     check('手上有信时，新来的访客不会再托信', Array.from({ length: 200 }, () => sim.makeVisitor(s)).every((x) => x.kind !== 'errand'));
     const tier = DESTS.find((d) => d.id === 'bali')!.tier; const bento = ['', 'kibble', 'can', 'feast'][tier]; s.inv[bento] = 1; s.inv.kibble = 1;
     if (tier > 1) check('便当不够好到不了那里', !sim.errandReachable(s, 'kibble'));
-    const p = s.pets[0]; p.food = p.mood = p.clean = 90; const reward = s.errand!.reward;
+    const p = s.pets[0]; p.food = p.mood = p.clean = 90; p.age = 2 * CONFIG.growth.stageDuration; const reward = s.errand!.reward; // 成年猫（幼年自己只能去近处）
     sim.dispatch(s, { petIds: [p.id], bento, tool: null, goods: [], errand: true });
     check('选了顺路送信，就一定去那里', s.trips[0].destId === 'bali' && s.errand === null && s.trips[0].errandReward === reward);
     const f = s.fish; const ev = sim.advance(s, s.trips[0].returnAt - s.clock + MIN);
@@ -399,6 +399,44 @@ console.log('纪念册、亲密度、迎接');
   check('读档时纪念册原样保留', JSON.stringify(repair(JSON.parse(JSON.stringify(s))).firsts) === JSON.stringify(s.firsts));
   const v = blank(); v.lastView = { x: 1234, roof: false };
   check('离开时看着的地方会存下来', repair(JSON.parse(JSON.stringify(v))).lastView?.x === 1234);
+}
+
+console.log('长大的意义、送养、走失被收养');
+{
+  const s = blank(); s.slots = 4; s.inv.feast = 9; s.inv.kibble = 9;
+  const kid = s.pets[0]; kid.age = 0; kid.mood = 90; kid.food = 90;
+  sim.adopt(s, '大猫', kid.spriteId); const big = s.pets[1]; big.age = 2 * CONFIG.growth.stageDuration; big.mood = 90; big.food = 90;
+  const near = DESTS.filter((d) => d.tier <= CONFIG.growth.kittenMaxTier).map((d) => d.id);
+  let farAlone = false;
+  for (let i = 0; i < 30; i++) { const t = blank(); t.inv.feast = 2; const k = t.pets[0]; k.age = 0; k.mood = 90; sim.dispatch(t, { petIds: [k.id], bento: 'feast', tool: null, goods: [] }); if (!near.includes(t.trips[0].destId)) farAlone = true; }
+  check('幼年自己出门：带豪华便当也只去近处', !farAlone);
+  let farWithAdult = false;
+  for (let i = 0; i < 40; i++) { const t = blank(); t.slots = 3; t.inv.feast = 2; const k = t.pets[0]; k.age = 0; k.mood = 90; sim.adopt(t, '大', k.spriteId); const b = t.pets[1]; b.age = 3 * CONFIG.growth.stageDuration; b.mood = 90; b.food = 90; sim.dispatch(t, { petIds: [k.id, b.id], bento: 'feast', tool: null, goods: [] }); if (!near.includes(t.trips[0].destId)) farWithAdult = true; }
+  check('带着成年猫一起：能去远方', farWithAdult);
+  s.owned.cattree = true as any;
+  check('幼年不能指定到猫爬架顶层', !sim.setCatTree(s, 0, kid.id).ok && sim.setCatTree(s, 1, kid.id).ok);
+  // 送养
+  check('幼年不能送养，成年可以', !sim.rehomeCheck(s, kid.id).ok && sim.rehomeCheck(s, big.id).ok);
+  sim.setCatTree(s, 0, big.id);
+  const r = sim.rehome(s, big.id);
+  check('送养：搬去邻居那边住，不占位置，猫爬架的位置空出来，日记里记着，不能再照顾它', r.ok && !!big.rehomed && !sim.alivePets(s).includes(big) && !sim.homePets(s).includes(big) && s.cattree[0] === null && !sim.petPet(s, big.id).ok && Object.values(s.diary.days).flat().some((f) => f.k === 'rehome'));
+  sim.adopt(s, '第三只', kid.spriteId); const c3 = s.pets[2]; c3.age = 3 * CONFIG.growth.stageDuration; c3.mood = 90;
+  check('两次送养至少隔一阵', !sim.rehomeCheck(s, c3.id).ok && (s.clock += CONFIG.rehome.gap, sim.rehomeCheck(s, c3.id).ok));
+  // 回来串门
+  const rnd = Math.random; Math.random = () => 0; s.clock += CONFIG.rehome.visitGap;
+  const ev = sim.formerCatsWelcome(s); Math.random = rnd;
+  check('老家人回来串门：在画面里、能摸它，到点自己回去', ev.some((e) => e.type === 'visitBack') && sim.scenePets(s).includes(big) && sim.petPet(s, big.id).ok && (sim.advance(s, CONFIG.rehome.visitFor[1] + MIN), !big.visit && !sim.scenePets(s).includes(big)));
+  Math.random = () => 0; const again = sim.formerCatsWelcome(s); Math.random = rnd;
+  check('老家人串门之间至少隔一阵', !again.some((e) => e.type === 'visitBack'));
+  // 会回来串门的最多 3 只：再多的话最早送走的搬去远方
+  const f = blank(); f.slots = 5;
+  for (let i = 0; i < 4; i++) { sim.adopt(f, '猫' + i, f.pets[0].spriteId); const q = f.pets[f.pets.length - 1]; q.age = 3 * CONFIG.growth.stageDuration; q.mood = 90; f.clock += CONFIG.rehome.gap + MIN; sim.rehome(f, q.id); }
+  check(`会回来串门的老家人最多 ${CONFIG.rehome.maxVisitors} 只，最早送走的搬去远方`, sim.formerPets(f).filter((p) => !p.rehomed!.far).length === CONFIG.rehome.maxVisitors && sim.formerPets(f).filter((p) => p.rehomed!.far).length === 1 && sim.formerPets(f).at(-1)!.rehomed!.far);
+  // 走失太久被收养
+  const l = blank(); const lp = l.pets[0]; lp.lostSince = l.clock;
+  const ev2 = sim.advance(l, CONFIG.rehome.lostAdoptAfter + HOUR);
+  check('走失 7 天没找回来：被好心人收养，空出位置，以后也会回来串门', ev2.some((e) => e.type === 'adoptedAway') && !!lp.rehomed?.lost && lp.lostSince === null && sim.alivePets(l).length === 0);
+  check('读档时送养的状态原样保留', JSON.stringify(repair(JSON.parse(JSON.stringify(f))).pets.map((p) => p.rehomed)) === JSON.stringify(f.pets.map((p) => p.rehomed)));
 }
 
 console.log('装饰的摆放规则');
@@ -625,7 +663,7 @@ console.log('新场景和新家具');
 
 console.log('猫爬架');
 {
-  const s = blank(); s.fish = 1000; sim.adopt(Object.assign(s, { slots: 3 }), '二号', 'default:grey'); const [a, b] = s.pets;
+  const s = blank(); s.fish = 1000; sim.adopt(Object.assign(s, { slots: 3 }), '二号', 'default:grey'); const [a, b] = s.pets; a.age = b.age = CONFIG.growth.stageDuration; // 青年（幼年跳不上顶层）
   check('没买猫爬架不能指定位置', !sim.setCatTree(s, 0, a.id).ok);
   check('买得到猫爬架', sim.buy(s, 'cattree').ok && !!s.owned.cattree);
   check('指定谁待在哪一层', sim.setCatTree(s, 0, a.id).ok && sim.setCatTree(s, 2, b.id).ok && s.cattree[0] === a.id && s.cattree[2] === b.id && s.cattree[1] === null);

@@ -152,7 +152,7 @@ export class Game {
     // 你走了多久（真实时间）：够久的话猫会在门口留礼物、日记里补上你不在时的事
     const now = Date.now(); const away = Math.max(0, now - this.state.lastSeenReal); this.state.lastSeenReal = now;
     const gifts = sim.welcomeBack(this.state, away).map((g): GameEvent => ({ type: 'gift', petId: g.petId, kind: g.kind }));
-    const events = [...gifts, ...sim.openDoorToVisitors(this.state), ...sim.openDoorToNeighbors(this.state)];
+    const events = [...gifts, ...sim.formerCatsWelcome(this.state), ...sim.openDoorToVisitors(this.state), ...sim.openDoorToNeighbors(this.state)];
     if (events.length) { events.forEach((e) => this.emitEvent(e)); this.changed(); }
   }
 

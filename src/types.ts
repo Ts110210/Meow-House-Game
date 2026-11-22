@@ -35,6 +35,10 @@ export interface Pet {
   outing?: { neighborId: string; until: number } | null;
   /** 自己去鱼塘捞鱼：什么时候回来；null = 没去 */
   fishing?: { until: number } | null;
+  /** 送养了（或者走失后被好心人收养）：什么时候、住在哪、是不是搬去远方了（只寄信、不回来串门）。送养的猫不占家里的位置 */
+  rehomed?: { at: number; home: string; far: boolean; lost?: boolean } | null;
+  /** 送养的猫回来串门：什么时候走；null = 没在串门 */
+  visit?: { until: number } | null;
   /** 和主人的亲密度（0–100，只涨不掉）；bondDay = 今天涨了多少（每天有上限） */
   bond?: number;
   bondDay?: { day: string; got: number };
@@ -203,6 +207,8 @@ export interface GameState {
   firsts: Record<string, Record<string, FirstShot>>;
   /** 上次离开游戏时镜头停在哪（世界坐标的中心 x，是不是在屋顶那一层）：下次打开从这里开始，最亲近的猫在这里等你 */
   lastView: { x: number; roof: boolean } | null;
+  /** 上一次送养、上一次老家人回来串门的时刻 */
+  rehomeLog: { last: number; visit: number };
   /** 小玩法今天玩了几局（有奖励的局数按天算）、让猫自己去捞了几次 */
   minigame: { day: string; wand: number; fishing: number; auto: number };
   /** 上次离开游戏（切到后台）的真实时间，用来算你走了多久（礼物、日记补写） */
@@ -230,7 +236,11 @@ export type GameEvent =
   | { type: 'neighborLeft'; id: string; find?: string }
   | { type: 'outingBack'; petId: string; neighborId: string; text: string }
   | { type: 'gift'; petId: string; kind: string }
-  | { type: 'autoFish'; petId: string; fish: number };
+  | { type: 'autoFish'; petId: string; fish: number }
+  | { type: 'adoptedAway'; petId: string; home: string }
+  | { type: 'visitBack'; petId: string }
+  | { type: 'visitLeft'; petId: string }
+  | { type: 'letterFrom'; petId: string };
 
 export type Result = { ok: true; msg?: string } | { ok: false; msg: string };
 

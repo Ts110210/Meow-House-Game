@@ -64,6 +64,8 @@ v0.7.0，存档格式第 8 版。README 的「功能清单」是完整的现状�
   猫在屋顶上时 `a.roof` 有值、爬梯子时 `a.climb` 有值，这时地上的逻辑全部跳过（`roofStep()`），`a.x、a.y` 停在梯子底下。镜头切层用 `layer` 和 `lift`。
 - `think()` 之后如果已经定了下一件事（`a.pending`），不要再把动作设回 idle，否则睡觉的猫会抽一下（修过一次）。
 - **安排通知一定要带 `isExactNotification: false`**（`src/platform/native.ts` 的 `NOT_EXACT`）。通知插件 8.3 起，想要精确闹钟又没权限时 `schedule()` 会自己跳到系统的「闹钟和提醒」设置页；而 AndroidManifest 故意去掉了这个权限，不带这个参数就会每次都跳，荣耀手机上卡死在设置页（build-31 修过）。
+- **送养的猫**（`pet.rehomed`）还在 `s.pets` 里：`alivePets` / `homePets` 不算它们（不占位置、不在画面里）；回来串门时（`pet.visit`）画面用 `scenePets`，能摸能玩。新写遍历 `s.pets` 的地方记得跳过 `rehomed`。
+- **幼年**自己出门只到近处（`kittenOnly`）、不上屋顶、不上猫爬架顶层；写测试要出远门或上顶层时，先把猫的 `age` 设成青年或成年。
 - 测试里有随机的地方要么循环很多次看比例，要么把随机数固定住；出现过偶发失败。
 
 ## 怎么验证

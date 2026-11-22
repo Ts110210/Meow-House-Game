@@ -39,7 +39,7 @@ export const CONFIG = {
   diary: {
     keepDays: 30, maxStarred: 50, featured: 3, linesEach: 3, rotateDays: 6, awayMin: 2 * 60 * 60 * 1000, awayFacts: 3,
     /** 挑主角和挑写哪几句时，每种事有多重要（越大越先写）；没当主角超过 rotateDays 天的猫再加 rotateBonus */
-    weight: { first: 8, wandGame: 5, fishGame: 5, autoFish: 5, tripBack: 9, grew: 9, found: 9, lost: 9, gift: 7, souvenir: 7, moment: 6, neighbor: 6, outing: 6, tripGo: 6, visitor: 5, awayMiss: 4, awayRain: 3, awayMorning: 3, awayNoon: 3, awayEvening: 3, awayNight: 3, feed: 2, pet: 2, bath: 2, play: 2 } as Record<string, number>,
+    weight: { rehome: 9, adoptedAway: 9, visitBack: 8, letter: 6, first: 8, wandGame: 5, fishGame: 5, autoFish: 5, tripBack: 9, grew: 9, found: 9, lost: 9, gift: 7, souvenir: 7, moment: 6, neighbor: 6, outing: 6, tripGo: 6, visitor: 5, awayMiss: 4, awayRain: 3, awayMorning: 3, awayNoon: 3, awayEvening: 3, awayNight: 3, feed: 2, pet: 2, bath: 2, play: 2 } as Record<string, number>,
     rotateBonus: 8,
   },
   /** 猫叼回来的礼物：你离开多久以上才会有；每只在家的猫叼回来的几率（心情好再加 moodBonus）；一次最多几件；
@@ -283,6 +283,10 @@ export const CONFIG = {
     stageScale: [0.55 / 0.8, 1 / 1.2, 1],
     /** 成年后有多大（按最初设计的大小算，1 = 最初设计）。领养时在范围里随机定一次，之后不变。公猫稍大，母猫稍小 */
     adultSize: { m: [0.85, 0.9], f: [0.8, 0.85] } as Record<Sex, [number, number]>,
+    /** 长大的意义：幼年自己出门最远只到第几档（带着成年猫一起就不限）；有成年猫同行时带回稀有纪念品的几率乘多少 */
+    kittenMaxTier: 1, adultRareMult: 1.6,
+    /** 两只猫凑一起时，有成年也有幼年，大的去给小的舔毛的几率（不看友情） */
+    adultGroomChance: 0.6,
     /** 背屏上的体型。背屏只有 2.86 寸，按房间里的比例幼年会太小，所以单独一套 */
     backScale: [0.8, 0.9, 1],
   },
@@ -350,6 +354,16 @@ export const CONFIG = {
     dayMax: 12,
     levels: [[0, '陌生'], [20, '熟悉'], [50, '亲近'], [80, '形影不离']] as [number, string][],
     greetAt: 20, rubAt: 50, waitAt: 20,
+  },
+
+  // ---------- 送养、走失的猫被收养 ----------
+  /** 只有成年猫能送养，两次送养至少隔 gap；会回来串门的「老家人」最多 maxVisitors 只（更早送走的「搬去远方」，只偶尔寄信）；
+   *  回来串门：离上一次老家人串门至少隔 visitGap、打开游戏时有 visitChance 的几率、待多久；远方的寄信几率；
+   *  走失多久没找回来，就被好心人收养（空出位置，之后和送养的一样偶尔回来）；搬去的人家 */
+  rehome: {
+    gap: 7 * 24 * 60 * 60 * 1000, maxVisitors: 3, visitGap: 2 * 24 * 60 * 60 * 1000, visitChance: 0.4, visitFor: [30 * MIN, 60 * MIN] as [number, number], letterChance: 0.05,
+    lostAdoptAfter: 7 * 24 * 60 * 60 * 1000,
+    homes: ['隔壁奶茶店', '巷子口的书店', '楼上的老奶奶家', '街角的花店', '河边的面包店'],
   },
 
   // ---------- 小玩法（可玩可不玩：原来的「玩耍」按钮照旧一点就加心情） ----------
@@ -883,6 +897,11 @@ export const DIARY_LINES: Record<string, { all: string[]; many?: string[] } & Pa
   wandGame: { all: ['{n}追着逗猫棒扑了 {x} 次，玩得气喘吁吁。', '你陪{n}玩逗猫棒，它扑中了 {x} 次。'], clingy: ['你陪{n}玩了逗猫棒，它玩完还一直跟着你。'] },
   fishGame: { all: ['你陪{n}在鱼塘边捞鱼，捞到了 {x} 条。', '{n}在鱼塘边伸爪子，捞上来 {x} 条小鱼。'], glutton: ['{n}捞到 {x} 条鱼，眼睛一直盯着不放。'] },
   autoFish: { all: ['{n}自己去鱼塘待了一会儿，带回来 {x} 条小鱼。'], adventurer: ['{n}在鱼塘边守了好久，叼回来 {x} 条小鱼。'] },
+  // 送养、走失被收养、回来串门、来信
+  rehome: { all: ['{n}搬去{x}住了。走的时候回头看了好几次。'] },
+  adoptedAway: { all: ['狸花猫带回消息：{n}被{x}收留了，过得挺好。'] },
+  visitBack: { all: ['{n}从{x}回来串门了，在家里转了一圈，每个角落都闻了闻。', '{n}回来看你了，还记得自己以前最爱待的地方。'] },
+  letter: { all: ['收到{n}从{x}寄来的信，上面按了一个小小的爪印。'] },
 };
 
 /** 「第一次」纪念册：每只猫每件事只记一次，记的时候拍一张照片（照片不存图，看的时候用 art/moment.ts 按 LAYOUT 画）。

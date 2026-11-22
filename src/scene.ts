@@ -1088,6 +1088,7 @@ export class Scene {
   /** 夜里想不想上屋顶：概率低、有间隔、最多两只 */
   private wantsRoof(a: Actor, adv: boolean) {
     const R = CONFIG.roof; const up = this.roofers();
+    const p = this.game.pet(a.id); if (!p || sim.stageOf(p) === 0) return false; // 幼年还爬不了梯子
     if (up.length >= R.max || this.now < this.roofNext || this.now - a.selfPlayAt < SELF_PLAY_COOLDOWN * 3 || Math.random() >= (adv ? R.chanceAdventurer : R.chance)) return false;
     const slot = [0, 1].find((k) => !up.some((o) => (o.roof?.slot ?? o.climb?.slot ?? o.pending?.roof) === k)) ?? 0;
     const L = this.ladder(); this.go(a, L.x, L.y); a.pending = { action: 'sit', dur: between(D.stargaze), roof: slot };
@@ -1152,7 +1153,9 @@ export class Scene {
     const slots = STATIONS[kind]; if (!slots || !this.anchor(kind)) return false;
     const taken = new Set([...this.actors.values()].filter((o) => o !== a && o.station === kind).map((o) => o.slot));
     const owner = kind === 'cattree' ? this.game.state.cattree : null;
-    const free = (k: number) => k >= 0 && k < slots.length && !taken.has(k) && (!owner?.[k] || owner[k] === a.id);
+    // 幼年跳不上猫爬架顶层（第 0 层）
+    const kitten = kind === 'cattree' && sim.stageOf(this.game.pet(a.id) ?? ({ age: 0 } as any)) === 0;
+    const free = (k: number) => k >= 0 && k < slots.length && !taken.has(k) && (!owner?.[k] || owner[k] === a.id) && !(kitten && k === 0);
     // 已经待在这件家具上：优先留在原来的位置，不用跳下来再跳上去
     const order = want != null ? [want] : [...(a.perch?.kind === kind ? [a.perch.slot] : []), ...slots.map((_, k) => k)];
     const i = order.find(free); if (i === undefined) return false;
@@ -1316,10 +1319,15 @@ export class Scene {
     const free = [...this.actors.values()].filter((a) => !a.pending && !a.station && !a.perch && !a.hop && !a.roof && !a.climb && !this.far(a) && a.action === 'idle' && this.now - a.selfPlayAt > SELF_PLAY_COOLDOWN);
     const ok = free.filter((a) => { const p = this.game.pet(a.id); return p && !sim.isWeak(p) && p.mood >= 30 && p.food >= CONFIG.stats.lowThreshold; });
     if (ok.length < 2 || Math.random() > 0.3) return;
-    const a = ok[0]; const b = ok.slice(1).sort((m, n) => Math.abs(m.x - a.x) - Math.abs(n.x - a.x))[0];
+    let a = ok[0]; let b = ok.slice(1).sort((m, n) => Math.abs(m.x - a.x) - Math.abs(n.x - a.x))[0];
+    // 成年猫和幼年猫都闲着：大的常常去给小的舔毛（大的走过去，小的眯着眼享受）
+    const stage = (x: Actor) => { const p = this.game.pet(x.id); return p ? sim.stageOf(p) : 1; };
+    const big = ok.find((x) => stage(x) === 2), small = ok.find((x) => stage(x) === 0);
+    const parent = !!big && !!small && Math.random() < CONFIG.growth.adultGroomChance;
+    if (parent) { a = big!; b = small!; }
     if (Math.abs(a.x - b.x) > zw(2) * 1.5) return; // 离得太远就算了
     const close = sim.friendship(s, a.id, b.id) >= CONFIG.friendship.close;
-    if (close && Math.random() < 0.6) {
+    if (parent || (close && Math.random() < 0.6)) {
       // 关系好：一只走到另一只身边，给它舔毛（被舔的眯着眼享受），或者互相蹭头
       const nuzzle = Math.random() < 0.45; const side = a.x < b.x ? -1 : 1;
       this.release(a); this.release(b); this.stop(b); b.dir = side === -1 ? -1 : 1; this.setAction(b, 'idle', 9000);
@@ -1737,7 +1745,7 @@ export class Scene {
 
     // 宠物
     const s = this.game.state;
-    const home = sim.homePets(s);
+    const home = sim.scenePets(s); // 在家的，加上回来串门的老家人
     for (const [id, a] of this.actors) if (!home.some((p) => p.id === id)) { a.root.destroy({ children: true }); this.actors.delete(id); }
     const inUse = new Set<string>();
     home.forEach((p, i) => {
