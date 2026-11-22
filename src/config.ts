@@ -39,7 +39,7 @@ export const CONFIG = {
   diary: {
     keepDays: 30, maxStarred: 50, featured: 3, linesEach: 3, rotateDays: 6, awayMin: 2 * 60 * 60 * 1000, awayFacts: 3,
     /** 挑主角和挑写哪几句时，每种事有多重要（越大越先写）；没当主角超过 rotateDays 天的猫再加 rotateBonus */
-    weight: { wandGame: 5, fishGame: 5, autoFish: 5, tripBack: 9, grew: 9, found: 9, lost: 9, gift: 7, souvenir: 7, moment: 6, neighbor: 6, outing: 6, tripGo: 6, visitor: 5, awayMiss: 4, awayRain: 3, awayMorning: 3, awayNoon: 3, awayEvening: 3, awayNight: 3, feed: 2, pet: 2, bath: 2, play: 2 } as Record<string, number>,
+    weight: { first: 8, wandGame: 5, fishGame: 5, autoFish: 5, tripBack: 9, grew: 9, found: 9, lost: 9, gift: 7, souvenir: 7, moment: 6, neighbor: 6, outing: 6, tripGo: 6, visitor: 5, awayMiss: 4, awayRain: 3, awayMorning: 3, awayNoon: 3, awayEvening: 3, awayNight: 3, feed: 2, pet: 2, bath: 2, play: 2 } as Record<string, number>,
     rotateBonus: 8,
   },
   /** 猫叼回来的礼物：你离开多久以上才会有；每只在家的猫叼回来的几率（心情好再加 moodBonus）；一次最多几件；
@@ -340,6 +340,16 @@ export const CONFIG = {
     slots: 3,
     growTime: 6 * HOUR,
     fishPerFry: 18,
+  },
+
+  // ---------- 亲密度（和主人亲不亲） ----------
+  /** 0–100，只涨不掉（很久没来会闹脾气，见 greet，但不扣亲密度）。每次照顾涨多少；每只猫一天最多涨 dayMax；
+   *  levels = 几级的门槛和名字；greetAt = 到这一级会在你回来时跑过来迎接；waitAt = 最亲近的那只到这一级会在你上次离开的地方等你；rubAt = 迎接完会蹭你 */
+  bond: {
+    gain: { feed: 1, pet: 1.5, bath: 0.5, play: 1, wand: 2, fishing: 2, gift: 1, trip: 3 } as Record<string, number>,
+    dayMax: 12,
+    levels: [[0, '陌生'], [20, '熟悉'], [50, '亲近'], [80, '形影不离']] as [number, string][],
+    greetAt: 20, rubAt: 50, waitAt: 20,
   },
 
   // ---------- 小玩法（可玩可不玩：原来的「玩耍」按钮照旧一点就加心情） ----------
@@ -867,10 +877,26 @@ export const DIARY_LINES: Record<string, { all: string[]; many?: string[] } & Pa
   awayNight: { all: ['夜里{n}在客厅里走来走去。', '夜里{n}团成一团睡得很香。'] },
   awayRain: { all: ['外面下雨，{n}一直盯着窗户上的水珠。'] },
   awayMiss: { all: ['{n}在你上次待的地方坐了一会儿。'], clingy: ['{n}在门口等了你好久。', '{n}一直在等你回来。'] },
+  // 纪念册：用 FIRSTS 的 title；这里是找不到时的写法
+  first: { all: ['今天是{n}值得记住的一天。'] },
   // 小玩法
   wandGame: { all: ['{n}追着逗猫棒扑了 {x} 次，玩得气喘吁吁。', '你陪{n}玩逗猫棒，它扑中了 {x} 次。'], clingy: ['你陪{n}玩了逗猫棒，它玩完还一直跟着你。'] },
   fishGame: { all: ['你陪{n}在鱼塘边捞鱼，捞到了 {x} 条。', '{n}在鱼塘边伸爪子，捞上来 {x} 条小鱼。'], glutton: ['{n}捞到 {x} 条鱼，眼睛一直盯着不放。'] },
   autoFish: { all: ['{n}自己去鱼塘待了一会儿，带回来 {x} 条小鱼。'], adventurer: ['{n}在鱼塘边守了好久，叼回来 {x} 条小鱼。'] },
+};
+
+/** 「第一次」纪念册：每只猫每件事只记一次，记的时候拍一张照片（照片不存图，看的时候用 art/moment.ts 按 LAYOUT 画）。
+ *  title 里的 {pet} 换成猫的名字；zone = 照片在哪个区域 */
+export const FIRSTS: Record<string, { title: string; zone: ZoneId | 'roof'; icon: string }> = {
+  meal: { title: '{pet}在家里吃的第一顿饭', zone: 'kitchen', icon: '🍚' },
+  pet: { title: '第一次被摸头的{pet}', zone: 'living', icon: '🤚' },
+  treeTop: { title: '{pet}第一次跳上猫爬架顶层', zone: 'living', icon: '🗼' },
+  roof: { title: '{pet}第一次爬上屋顶', zone: 'roof', icon: '🏠' },
+  trip: { title: '{pet}第一次出远门回来', zone: 'door', icon: '🧳' },
+  friend: { title: '{pet}交到了第一个邻居朋友', zone: 'living', icon: '🐾' },
+  grewYouth: { title: '{pet}长成了青年', zone: 'living', icon: '🌱' },
+  grewAdult: { title: '{pet}长成了大猫', zone: 'living', icon: '🌳' },
+  bond: { title: '{pet}第一次主动来蹭你', zone: 'living', icon: '💞' },
 };
 
 export const SEASON_IDS: Season[] = ['spring', 'summer', 'autumn', 'winter'];

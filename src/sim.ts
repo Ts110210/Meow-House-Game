@@ -1,9 +1,9 @@
 // 游戏规则。这个文件不碰画面，只改存档数据，方便单独测试。
 import { writeDiary } from './diary';
-import { TREASURES, DIARY_LINES } from './config';
+import { TREASURES, DIARY_LINES, FIRSTS } from './config';
 import { CONFIG, DAY, QUESTS, SEX_IDS, type Sex, MOMENTS, NEIGHBORS, FIND_KINDS, SEASON_FINDS, SEASON_EVENTS, SEASON_IDS, SKINS, DEFAULT_SKIN, SKIN_PRICE, skinSize, ROOM_THEMES, DEFAULT_ROOM, DESTS, FOODS, FRY, FUR_COLORS, GEAR, GOODS, HOUR, MIN, SOUVENIRS, TOOLS, TREAT, type DayTime, type Season, type StatKey, decodeLook, TRAIT_IDS, type Trait, VISITORS, type VisitorWho, SPECIAL_DECOR, DECOR, ZONES } from './config';
 import { ASSETS } from './assets.config';
-import type { Decor, DiaryFact, Find, Gift, Moment, GameEvent, GameState, Pet, Postcard, RepeatKey, Result, Trip, Visitor, Weather } from './types';
+import type { Decor, DiaryFact, FirstShot, Find, Gift, Moment, GameEvent, GameState, Pet, Postcard, RepeatKey, Result, Trip, Visitor, Weather } from './types';
 
 const T = CONFIG.traits;
 const clamp = (v: number, lo = 0, hi = 100) => Math.max(lo, Math.min(hi, v));
@@ -18,7 +18,7 @@ export function newPet(name: string, spriteId: string, clock: number, trait: Tra
   return {
     id: newId('pet'), name, spriteId, age: 0, trait, sex, size: randomAdultSize(sex), lastCare: clock,
     food: CONFIG.stats.start.food, mood: CONFIG.stats.start.mood, clean: CONFIG.stats.start.clean,
-    weakSince: null, dead: false, lostSince: null, searchUntil: null, tripId: null, repeats: {}, hungryNotified: false, adoptedAt: clock,
+    bond: 0, weakSince: null, dead: false, lostSince: null, searchUntil: null, tripId: null, repeats: {}, hungryNotified: false, adoptedAt: clock,
   };
 }
 
@@ -73,7 +73,7 @@ export function newState(now: number): GameState {
   const s: GameState = {
     v: 7, createdAt: now, seasonStart: now, settings: { notify: true, showSeason: false, seasonMode: 'cycle', light: 'simple' }, clock: now, lastReal: now, fish: CONFIG.startFish, slots: 1,
     pets: [], trips: [], postcards: [], souvenirs: {}, inv: { ...CONFIG.startItems }, owned: {},
-    pond: Array(CONFIG.pond.slots).fill(null), lastCheckin: '', pendingReturns: [], friends: {}, variants: {}, milestones: [], decor: [], quests: newQuests(false), tutorial: 0, visitors: [], visitorQuota: 0, visitorDay: '', lastVisitorAt: 0, errand: null, display: { souvenirs: [], postcards: [] }, cattree: [null, null, null], hood: { now: null, bonds: {}, day: '', quota: 0, last: 0, stories: [] }, seasonal: { key: '', got: {}, done: false, last: 0, day: '', quota: 0 }, seasonalClaimed: [], moments: [], favor: {}, favorClaimed: [], finds: [], keepsakes: {}, diary: { days: {}, lead: {}, starred: [], seenAt: now }, gifts: [], treasures: {}, lastSeenReal: Date.now(), minigame: { day: '', wand: 0, fishing: 0, auto: 0 }, skins: {}, skinsOwned: {}, room: DEFAULT_ROOM, roomsOwned: [],
+    pond: Array(CONFIG.pond.slots).fill(null), lastCheckin: '', pendingReturns: [], friends: {}, variants: {}, milestones: [], decor: [], quests: newQuests(false), tutorial: 0, visitors: [], visitorQuota: 0, visitorDay: '', lastVisitorAt: 0, errand: null, display: { souvenirs: [], postcards: [] }, cattree: [null, null, null], hood: { now: null, bonds: {}, day: '', quota: 0, last: 0, stories: [] }, seasonal: { key: '', got: {}, done: false, last: 0, day: '', quota: 0 }, seasonalClaimed: [], moments: [], favor: {}, favorClaimed: [], finds: [], keepsakes: {}, diary: { days: {}, lead: {}, starred: [], seenAt: now }, gifts: [], treasures: {}, lastSeenReal: Date.now(), minigame: { day: '', wand: 0, fishing: 0, auto: 0 }, firsts: {}, lastView: null, skins: {}, skinsOwned: {}, room: DEFAULT_ROOM, roomsOwned: [],
     dev: { enabled: false, background: false, time: 'auto', season: 'auto', weather: 'auto', speed: 1, growth: 1, decay: { food: 1, mood: 1, clean: 1 } },
   };
   s.pets.push(newPet(CONFIG.startPet.name, `default:${CONFIG.startPet.color}`, now));
@@ -211,11 +211,11 @@ export function advance(s: GameState, dt: number): GameEvent[] {
 function diaryFromEvent(s: GameState, e: GameEvent) {
   const first = () => homePets(s)[0]?.id;
   switch (e.type) {
-    case 'return': { const pc = s.postcards.find((c) => c.id === e.postcardId); if (!pc) break; for (const id of pc.petIds) { note(s, id, 'tripBack', pc.destId); if (pc.souvenir) note(s, id, 'souvenir', pc.souvenir); } break; }
+    case 'return': { const pc = s.postcards.find((c) => c.id === e.postcardId); if (!pc) break; for (const id of pc.petIds) { note(s, id, 'tripBack', pc.destId); if (pc.souvenir) note(s, id, 'souvenir', pc.souvenir); markFirst(s, id, 'trip', pc.destId); const p = s.pets.find((x) => x.id === id); if (p) addPetBond(s, p, 'trip'); } break; }
     case 'visitor': { const v = s.visitors.find((x) => x.id === e.visitorId); const p = first(); if (v && p) note(s, p, 'visitor', v.who); break; }
     case 'neighbor': for (const p of homePets(s).slice(0, 2)) note(s, p.id, 'neighbor', e.id); break;
     case 'outingBack': note(s, e.petId, 'outing', e.neighborId); break;
-    case 'stage': note(s, e.petId, 'grew', String(e.stage)); break;
+    case 'stage': note(s, e.petId, 'grew', String(e.stage)); if (e.stage >= 1) markFirst(s, e.petId, e.stage === 1 ? 'grewYouth' : 'grewAdult'); break;
     case 'ranAway': note(s, e.petId, 'lost'); break;
     case 'found': note(s, e.petId, 'found'); break;
     case 'autoFish': note(s, e.petId, 'autoFish', String(e.fish)); break;
@@ -303,7 +303,7 @@ export function feed(s: GameState, petId: string, foodId: string): Result {
     p!.mood = clamp(p!.mood - CONFIG.weak.rescueMoodPenalty); questEvent(s, 'feed');
     return { ok: true, msg: `${p!.name}被救回来了，但心情很差（-${CONFIG.weak.rescueMoodPenalty}）` };
   }
-  questEvent(s, 'feed'); note(s, p!.id, 'feed', foodId);
+  questEvent(s, 'feed'); note(s, p!.id, 'feed', foodId); markFirst(s, p!.id, 'meal'); addPetBond(s, p!, 'feed');
   return { ok: true, msg: `饱食 +${fmt(gain)}` + (yum ? `　心情 +${yum}` : '') };
 }
 
@@ -311,7 +311,7 @@ export function petPet(s: GameState, petId: string, amount = CONFIG.actions.petM
   const p = s.pets.find((x) => x.id === petId);
   const u = usable(p); if (!u.ok) return u;
   const gain = amount * (p!.trait === 'clingy' ? T.clingy.petMood : 1) * repeatMult(s, p!, 'pet');
-  p!.mood = clamp(p!.mood + gain); p!.lastCare = s.clock; questEvent(s, 'pet'); note(s, p!.id, 'pet');
+  p!.mood = clamp(p!.mood + gain); p!.lastCare = s.clock; questEvent(s, 'pet'); note(s, p!.id, 'pet'); markFirst(s, p!.id, 'pet'); addPetBond(s, p!, 'pet');
   return { ok: true, msg: `心情 +${fmt(gain)}` };
 }
 
@@ -320,7 +320,7 @@ export function bath(s: GameState, petId: string): Result {
   const u = usable(p); if (!u.ok) return u;
   if (isWeak(p!)) return { ok: false, msg: `${p!.name}太虚弱了，先喂点东西` };
   const gain = CONFIG.actions.bathClean * repeatMult(s, p!, 'bath');
-  p!.clean = clamp(p!.clean + gain); p!.lastCare = s.clock; questEvent(s, 'bath'); note(s, p!.id, 'bath');
+  p!.clean = clamp(p!.clean + gain); p!.lastCare = s.clock; questEvent(s, 'bath'); note(s, p!.id, 'bath'); addPetBond(s, p!, 'bath');
   return { ok: true, msg: `干净 +${fmt(gain)}` };
 }
 
@@ -331,7 +331,7 @@ export function play(s: GameState, petId: string): Result {
   const a = CONFIG.actions;
   const base = s.owned.wand ? a.playMoodWand : a.playMoodHand;
   const gain = base * repeatMult(s, p!, 'play');
-  p!.mood = clamp(p!.mood + gain); p!.lastCare = s.clock; questEvent(s, 'play'); note(s, p!.id, 'play');
+  p!.mood = clamp(p!.mood + gain); p!.lastCare = s.clock; questEvent(s, 'play'); note(s, p!.id, 'play'); addPetBond(s, p!, 'play');
   return { ok: true, msg: `心情 +${fmt(gain)}` };
 }
 
@@ -552,7 +552,9 @@ export function openDoorToNeighbors(s: GameState, who?: string): GameEvent[] {
 export function neighborMeet(s: GameState, petId: string): boolean {
   const n = s.hood.now, p = s.pets.find((x) => x.id === petId);
   if (!n || !p || p.dead || p.tripId || p.outing || n.met.includes(petId)) return false;
+  const wasFriend = isNeighborFriend(s, n.id);
   n.met.push(petId); p.mood = clamp(p.mood + CONFIG.neighbors.playMood); addBond(s, n.id, CONFIG.neighbors.bondPerPlay);
+  if (!wasFriend && isNeighborFriend(s, n.id)) markFirst(s, petId, 'friend', n.id); // 这一下刚好成了朋友：记进这只猫的纪念册
   return true;
 }
 /** 邻居在饭碗边蹭了一口（只是记一笔，不扣你的食物） */
@@ -1096,6 +1098,7 @@ function factLabel(f: DiaryFact): string {
 export function factText(s: GameState, f: DiaryFact, key: string): string {
   const p = s.pets.find((x) => x.id === f.p); const name = p?.name ?? '它';
   if (f.k === 'moment' && f.x && MOMENTS[f.x]) return MOMENTS[f.x].title.replace('{pets}', name) + '。';
+  if (f.k === 'first' && f.x && FIRSTS[f.x]) return `今天，${FIRSTS[f.x].title.replace('{pet}', name)}，记进纪念册了。`;
   const e = DIARY_LINES[f.k]; const seed = `${key}|${f.p}|${f.k}|${f.x ?? ''}`;
   const own = p ? e[p.trait] : undefined;
   const pool = (f.c ?? 1) > 1 && e.many ? e.many : own && pickBy(seed + 'T', 10) < 6 ? own : e.all;
@@ -1166,7 +1169,7 @@ export function welcomeBack(s: GameState, awayMs: number): Gift[] {
 export function collectGift(s: GameState, id: string): Result {
   const g = s.gifts.find((x) => x.id === id); if (!g) return { ok: false, msg: '已经不在了' };
   s.gifts = s.gifts.filter((x) => x.id !== id);
-  const def = TREASURES[g.kind]; const who = s.pets.find((p) => p.id === g.petId)?.name ?? '它';
+  const def = TREASURES[g.kind]; const giver = s.pets.find((p) => p.id === g.petId); const who = giver?.name ?? '它'; if (giver) addPetBond(s, giver, 'gift');
   const had = s.treasures[g.kind]; s.treasures[g.kind] = { n: (had?.n ?? 0) + 1, first: had?.first ?? s.clock, petId: had?.petId ?? g.petId };
   if (def.rare && DECOR[g.kind]) { s.decor.push({ id: newId('decor'), kind: g.kind, zone: null, x: 0, y: 0 }); return { ok: true, msg: `${who}叼回来的${def.name}！这件可以摆出来，到菜单的「布置房间」里找它` }; }
   return { ok: true, msg: `${who}叼回来的${def.name}，收进「猫的宝贝」了${had ? '' : '（新的！）'}` };
@@ -1198,7 +1201,7 @@ export function finishWand(s: GameState, petId: string, catches: number): Result
   const n = Math.max(0, Math.floor(catches)); const mood = Math.min(W.maxMood, n * W.mood);
   const fish = m.wand < W.rewardPlays ? Math.min(W.fishMax, n * W.fishEach) : 0; m.wand++;
   p.mood = clamp(p.mood + mood); p.lastCare = s.clock; s.fish += fish; questEvent(s, 'play');
-  if (n > 0) note(s, p.id, 'wandGame', String(n));
+  if (n > 0) note(s, p.id, 'wandGame', String(n)); addPetBond(s, p, 'wand');
   return { ok: true, msg: n ? `${p.name}扑中了 ${n} 次：心情 +${mood}` + (fish ? `，小鱼干 +${fish}` : '（今天的小鱼干奖励领完了）') : `${p.name}一次都没扑到，下次逗猫棒晃得再灵活一点` };
 }
 
@@ -1208,7 +1211,7 @@ export function finishFishing(s: GameState, petId: string, caught: number): Resu
   const p = s.pets.find((x) => x.id === petId)!; const F = CONFIG.minigame.fishing; const m = miniDay(s);
   const n = Math.max(0, Math.floor(caught)); const fish = m.fishing < F.rewardPlays ? Math.min(F.fishMax, n * F.fishEach) : 0; m.fishing++;
   const mood = Math.min(F.maxMood, n * F.mood); p.mood = clamp(p.mood + mood); p.lastCare = s.clock; s.fish += fish;
-  if (n > 0) note(s, p.id, 'fishGame', String(n));
+  if (n > 0) note(s, p.id, 'fishGame', String(n)); addPetBond(s, p, 'fishing');
   return { ok: true, msg: n ? `捞到 ${n} 条鱼：` + (fish ? `小鱼干 +${fish}` : '今天的小鱼干奖励领完了') + `，心情 +${mood}` : '一条也没捞到，鱼游过爪子下面时再点' };
 }
 
@@ -1225,4 +1228,34 @@ export function startAutoFish(s: GameState, petId: string): Result {
 function autoFishBack(s: GameState, p: Pet, events: GameEvent[]) {
   p.fishing = null; if (p.dead || p.lostSince !== null) return;
   const n = between(CONFIG.minigame.auto.fish); s.fish += n; events.push({ type: 'autoFish', petId: p.id, fish: n });
+}
+
+// ============================================================
+// 「第一次」纪念册、亲密度
+// ============================================================
+
+/** 记一个「第一次」（每只猫每件事只记一次）：拍一张照片（只存时间、季节、白天晚上、那时多大），日记里也写一句。返回是不是新记的 */
+export function markFirst(s: GameState, petId: string, kind: string, extra?: string): boolean {
+  const p = s.pets.find((x) => x.id === petId); if (!p || p.dead || !FIRSTS[kind]) return false;
+  const mine = (s.firsts[petId] ??= {}); if (mine[kind]) return false;
+  mine[kind] = { at: s.clock, season: season(s), time: dayTime(s), size: bodySize(p), extra };
+  note(s, petId, 'first', kind);
+  return true;
+}
+/** 一只猫的纪念册，按时间排好 */
+export function firstsOf(s: GameState, petId: string): ({ kind: string } & FirstShot)[] {
+  return Object.entries(s.firsts[petId] ?? {}).map(([kind, f]) => ({ kind, ...f })).sort((a, b) => a.at - b.at);
+}
+
+/** 亲密度涨一点（每只猫一天有上限，只涨不掉）。第一次到「亲近」那一级记进纪念册 */
+export function addPetBond(s: GameState, p: Pet, why: string) {
+  const B = CONFIG.bond; const d = diaryDay(s.clock); if (!p.bondDay || p.bondDay.day !== d) p.bondDay = { day: d, got: 0 };
+  const n = Math.min(B.gain[why] ?? 0, B.dayMax - p.bondDay.got); if (n <= 0) return;
+  const before = p.bond ?? 0; p.bond = Math.min(100, before + n); p.bondDay.got += n;
+  if (before < B.rubAt && p.bond >= B.rubAt) markFirst(s, p.id, 'bond');
+}
+/** 亲密度是哪一级：名字、下一级的门槛（满级是 null） */
+export function bondLevel(p: Pet) {
+  const L = CONFIG.bond.levels; const v = p.bond ?? 0; let i = 0; while (i < L.length - 1 && v >= L[i + 1][0]) i++;
+  return { value: v, level: i, name: L[i][1], next: i < L.length - 1 ? L[i + 1][0] : null };
 }

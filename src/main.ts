@@ -30,11 +30,12 @@ async function boot() {
   await scene.init(document.getElementById('stage')!);
   initAudio();
   ui = new UI(game, scene, document.getElementById('ui')!);
-  scene.relayout(); scene.scrollToZone(2, true);
-  ui.setZone(2);
+  // 从上次离开时看着的地方开始（第一次打开是客厅）
+  scene.relayout(); if (game.state.lastView && game.state.tutorial >= 99) scene.restoreView(game.state.lastView); else scene.scrollToZone(2, true);
+  ui.setZone(scene.currentZone());
   assets.onChange(async (key) => { if (key.startsWith('pet.') || key.startsWith('pet2.') || key.startsWith('avatar.')) await game.reloadDefaultSprites(); ui?.assetsChanged(); scene.rebuildArt(); });
   // 切到后台或关掉页面时存一次档
-  document.addEventListener('visibilitychange', () => { if (document.hidden) { game.state.lastSeenReal = Date.now(); game.save(); } else game.welcome(); });
+  document.addEventListener('visibilitychange', () => { if (document.hidden) { game.state.lastSeenReal = Date.now(); game.state.lastView = scene.currentView(); game.save(); } else game.welcome(); });
   setTimeout(() => game.welcome(), 1500); // 打开游戏：看看门口有没有客人
   window.addEventListener('pagehide', () => game.save());
   window.addEventListener('beforeunload', () => game.save());
@@ -55,7 +56,7 @@ async function boot() {
   if (isNative && game.state.settings.notify) void notifyPermission(true);
   setupAppEvents({
     onBack: () => ui?.handleBack() ?? false,
-    onPause: () => { front = false; game.state.lastSeenReal = Date.now(); game.save(); plan(0); pauseAudio(true); },
+    onPause: () => { front = false; game.state.lastSeenReal = Date.now(); game.state.lastView = scene.currentView(); game.save(); plan(0); pauseAudio(true); },
     onResume: () => { front = true; game.welcome(); plan(2 * 60_000); pauseAudio(false); },
   });
   window.addEventListener('keydown', (e) => { if (e.key === 'Escape') ui?.handleBack(); });

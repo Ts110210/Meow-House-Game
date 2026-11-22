@@ -35,6 +35,9 @@ export interface Pet {
   outing?: { neighborId: string; until: number } | null;
   /** 自己去鱼塘捞鱼：什么时候回来；null = 没去 */
   fishing?: { until: number } | null;
+  /** 和主人的亲密度（0–100，只涨不掉）；bondDay = 今天涨了多少（每天有上限） */
+  bond?: number;
+  bondDay?: { day: string; got: number };
   /** 狸花猫正在找它：什么时候有结果；null = 没在找 */
   searchUntil: number | null;
   tripId: string | null;
@@ -54,6 +57,8 @@ export interface Find { id: string; kind: string; from?: string; at: number; x: 
 export interface DiaryFact { p: string; k: string; x?: string; t: number; c?: number }
 /** 猫的日记：days = 每天（本地日期 YYYY-MM-DD）记下的事；lead = 过去每天当主角的猫；starred = 收藏的日期；seenAt = 上次看日记的时刻（之后有新的就亮红点） */
 export interface Diary { days: Record<string, DiaryFact[]>; lead: Record<string, string[]>; starred: string[]; seenAt: number }
+/** 纪念册的一张：什么时候、什么季节、白天还是晚上、那时候多大（照片里按这个画） */
+export interface FirstShot { at: number; season: string; time: string; size: number; extra?: string }
 /** 猫叼回来放在门口、还没捡的礼物 */
 export interface Gift { id: string; kind: string; petId: string; at: number }
 
@@ -194,6 +199,10 @@ export interface GameState {
   gifts: Gift[];
   /** 「猫的宝贝」图鉴：收到过几次、第一次是哪天、谁叼回来的 */
   treasures: Record<string, { n: number; first: number; petId: string }>;
+  /** 「第一次」纪念册：每只猫（按 id）每件事第一次发生时的样子（照片只存这些，看的时候再画） */
+  firsts: Record<string, Record<string, FirstShot>>;
+  /** 上次离开游戏时镜头停在哪（世界坐标的中心 x，是不是在屋顶那一层）：下次打开从这里开始，最亲近的猫在这里等你 */
+  lastView: { x: number; roof: boolean } | null;
   /** 小玩法今天玩了几局（有奖励的局数按天算）、让猫自己去捞了几次 */
   minigame: { day: string; wand: number; fishing: number; auto: number };
   /** 上次离开游戏（切到后台）的真实时间，用来算你走了多久（礼物、日记补写） */

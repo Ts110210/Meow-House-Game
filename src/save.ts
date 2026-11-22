@@ -5,7 +5,7 @@
 //   2. 在 MIGRATIONS 里加一条「从上一个版本升到这个版本」的函数
 //   3. 在 repair() 里给新字段补默认值
 // 旧存档会在打开时自动一步一步升上来，升级前的原样会另存一份。
-import { TREASURES, DIARY_LINES } from './config';
+import { TREASURES, DIARY_LINES, FIRSTS } from './config';
 import { QUESTS, DAY, MOMENTS, SEASON_IDS, NEIGHBORS, FIND_KINDS, SEASON_FINDS, CONFIG, DESTS, FOODS, SOUVENIRS, TRAIT_IDS, SEX_IDS, type Sex, VISITORS, ZONES, DECOR, SKINS, DEFAULT_SKIN, ROOM_THEMES, DEFAULT_ROOM, skinSize } from './config';
 import { kv } from './platform/storage';
 import type { GameState, Pet, Postcard, Trip } from './types';
@@ -82,6 +82,8 @@ export function repair(raw: Raw, now = Date.now()): GameState {
     searchUntil: !p.dead && typeof p.lostSince === 'number' && typeof p.searchUntil === 'number' && isFinite(p.searchUntil) ? p.searchUntil : null,
     tripId: typeof p.tripId === 'string' ? p.tripId : null,
     lastNibble: typeof p.lastNibble === 'number' ? p.lastNibble : null,
+    // 老存档里的猫还没有亲密度：已经一起住了一阵，从「熟悉」开始（这样它们照旧会迎接你）；新领养的在 newPet 里是 0
+    bond: Math.max(0, Math.min(100, num(p.bond, CONFIG.bond.greetAt))), bondDay: p.bondDay && typeof p.bondDay.day === 'string' ? { day: p.bondDay.day, got: Math.max(0, num(p.bondDay.got, 0)) } : undefined,
     fishing: p.fishing && typeof p.fishing.until === 'number' && !p.dead ? { until: p.fishing.until } : null,
     outing: p.outing && typeof p.outing.neighborId === 'string' && NEIGHBORS[p.outing.neighborId] && !p.dead ? { neighborId: p.outing.neighborId, until: num(p.outing.until, 0) } : null,
     repeats: obj(p.repeats), hungryNotified: !!p.hungryNotified, adoptedAt: num(p.adoptedAt, clock),
@@ -154,6 +156,8 @@ export function repair(raw: Raw, now = Date.now()): GameState {
     gifts: arr(raw.gifts).filter((g) => g && typeof g.id === 'string' && TREASURES[g.kind] && typeof g.petId === 'string').slice(0, 10).map((g) => ({ id: g.id, kind: g.kind, petId: g.petId, at: num(g.at, clock) })),
     treasures: Object.fromEntries(Object.entries(obj(raw.treasures)).filter(([k, v]) => TREASURES[k] && v && typeof v === 'object').map(([k, v]: [string, any]) => [k, { n: Math.max(1, Math.floor(num(v.n, 1))), first: num(v.first, clock), petId: typeof v.petId === 'string' ? v.petId : '' }])),
     lastSeenReal: num(raw.lastSeenReal, now),
+    firsts: repairFirsts(raw.firsts, clock),
+    lastView: raw.lastView && typeof raw.lastView.x === 'number' && isFinite(raw.lastView.x) ? { x: raw.lastView.x, roof: !!raw.lastView.roof } : null,
     minigame: { day: typeof raw.minigame?.day === 'string' ? raw.minigame.day : '', wand: Math.max(0, Math.floor(num(raw.minigame?.wand, 0))), fishing: Math.max(0, Math.floor(num(raw.minigame?.fishing, 0))), auto: Math.max(0, Math.floor(num(raw.minigame?.auto, 0))) },
     keepsakes: Object.fromEntries(Object.entries(obj(raw.keepsakes)).filter(([k, v]) => typeof v === 'number' && v > 0 && k.length < 60).map(([k, v]) => [k, Math.floor(v as number)])),
     cattree: [0, 1, 2].map((i) => { const id = arr(raw.cattree)[i]; return typeof id === 'string' && pets.some((p) => p.id === id && !p.dead) ? id : null; }),
@@ -247,4 +251,16 @@ function repairDiary(raw: any, clock: number) {
   for (const [k, v] of Object.entries(o.lead && typeof o.lead === 'object' ? o.lead : {})) if (day(k) && Array.isArray(v)) lead[k] = v.filter((x: any) => typeof x === 'string').slice(0, 10);
   const starred = (Array.isArray(o.starred) ? o.starred : []).filter((k: any) => typeof k === 'string' && day(k)).slice(0, 50);
   return { days, lead, starred, seenAt: typeof o.seenAt === 'number' ? o.seenAt : clock };
+}
+
+/** 纪念册：只留认得的事 */
+function repairFirsts(raw: any, clock: number) {
+  const out: Record<string, Record<string, { at: number; season: string; time: string; size: number; extra?: string }>> = {};
+  for (const [pid, v] of Object.entries(raw && typeof raw === 'object' ? raw : {})) {
+    if (typeof pid !== 'string' || !v || typeof v !== 'object') continue;
+    const one: Record<string, any> = {};
+    for (const [k, f] of Object.entries(v as any)) if (FIRSTS[k] && f && typeof f === 'object') one[k] = { at: num((f as any).at, clock), season: SEASON_IDS.includes((f as any).season) ? (f as any).season : 'spring', time: ['day', 'dusk', 'night'].includes((f as any).time) ? (f as any).time : 'day', size: num((f as any).size, 0.85, 0.2, 1.2), extra: typeof (f as any).extra === 'string' ? (f as any).extra.slice(0, 40) : undefined };
+    if (Object.keys(one).length) out[pid] = one;
+  }
+  return out;
 }

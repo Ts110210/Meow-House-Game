@@ -1,5 +1,5 @@
 // 界面：顶部和底部的按钮，以及所有从下方弹出的面板。
-import { TREASURES } from './config';
+import { TREASURES, FIRSTS } from './config';
 import { MOMENTS, QUESTS, SEXES, SEX_IDS, type Sex, NEIGHBORS, FIND_KINDS, SEASON_EVENTS, SEASON_FINDS, SKINS, SKIN_PRICE, ROOM_THEMES, ZONES, CONFIG, DAY, DESTS, TREAT, TIME_NAMES, SEASON_NAMES, FOODS, FRY, FUR_COLORS, DECOR, VISITORS, SEASON_IDS, TIME_IDS, SPECIAL_DECOR, TRAITS, TRAIT_IDS, type Trait, PATTERN_NAMES, DEFAULT_LOOK, encodeLook, decodeLook, type Look, type CoatPattern, GEAR, GOODS, HOUR, MIN, SOUVENIRS, SPRITE, TOOLS, type ActionName } from './config';
 import { renderPostcard } from './art/postcard';
 import { drawDefaultSheet } from './art/defaultPet';
@@ -482,6 +482,30 @@ export class UI {
     }
     return cv;
   }
+  /** 纪念册的一张照片（只存了时间、季节、那时候多大，用瞬间照片的画法现画） */
+  private firstCanvas(petId: string, kind: string): HTMLCanvasElement {
+    const s = this.game.state; const p = s.pets.find((x) => x.id === petId); const f = s.firsts[petId]?.[kind];
+    const zone = FIRSTS[kind]?.zone; const key = `first|${petId}|${kind}|${p?.spriteId}|${JSON.stringify(s.skins)}|${s.room}|${this.game.avatarRev}|${JSON.stringify(s.decor.filter((d) => d.zone === zone))}`;
+    let cv = this.momentCache.get(key);
+    if (!cv && f && p) {
+      const nb = kind === 'friend' && f.extra ? NEIGHBORS[f.extra] : undefined;
+      cv = renderMoment({ kind: 'first_' + kind, season: f.season, time: f.time }, [this.game.sprites.get(p.spriteId)], { guest: nb ? this.game.sprites.get(nb.look) : undefined, sizes: nb ? [f.size, nb.size] : [f.size], decor: s.decor.filter((d) => d.zone === zone), skin: (k) => sim.skinOf(s, k), room: sim.roomOf(s) });
+      if (this.momentCache.size > 80) this.momentCache.clear(); this.momentCache.set(key, cv);
+    }
+    return cv ?? (h('canvas', { width: 480, height: 640 }) as HTMLCanvasElement);
+  }
+  /** 一只猫的「第一次」纪念册：拍到的按时间排，没拍到的显示问号 */
+  openFirsts(petId: string) {
+    const p = this.game.pet(petId); if (!p) return;
+    this.open({ title: `${p.name}的纪念册`, render: () => {
+      const s = this.game.state; const got = sim.firstsOf(s, petId); const missing = Object.keys(FIRSTS).filter((k) => !s.firsts[petId]?.[k]);
+      const copy = (k: string) => { const src = this.firstCanvas(petId, k); const cv = h('canvas', { width: src.width, height: src.height }) as HTMLCanvasElement; cv.getContext('2d')!.drawImage(src, 0, 0); return cv; };
+      return [h('p', { class: 'soft' }, `已经记下 ${got.length} / ${Object.keys(FIRSTS).length} 个「第一次」。照片按它当时的样子画，换了正式素材也会跟着变。`),
+        h('div', { class: 'postgrid moments', style: 'margin-top:12px' },
+          got.map((f) => { const title = FIRSTS[f.kind].title.replace('{pet}', p.name); return h('button', { class: 'postcard', onclick: () => this.open({ title: `${FIRSTS[f.kind].icon} ${fmtDate(f.at)}`, render: () => [copy(f.kind), h('p', { class: 'center' }, title)] }) }, copy(f.kind), h('span', null, `${title}`), h('small', { class: 'soft' }, fmtDate(f.at))); }),
+          missing.map((k) => h('div', { class: 'postcard dim' }, h('div', { class: 'first-q' }, '？'), h('span', { class: 'soft' }, FIRSTS[k].title.replace('{pet}', p.name)), h('small', { class: 'soft' }, '还没发生'))))];
+    } });
+  }
   private momentCopy(m: Moment) { const src = this.momentCanvas(m); const cv = h('canvas', { width: src.width, height: src.height }) as HTMLCanvasElement; cv.getContext('2d')!.drawImage(src, 0, 0); return cv; }
   openMoments() {
     if (sim.momentsOver(this.game.state) > 0) { this.openMomentsFull(); return; }
@@ -687,6 +711,13 @@ export class UI {
       h('button', { class: 'act', onclick: () => doAct((st) => sim.bath(st, id), 'bath') }, '洗澡', mult('bath') ?? h('small', null, `干净 +${CONFIG.actions.bathClean}`)),
       h('button', { class: 'act', onclick: () => this.openMiniGame('wand', id) }, '陪它玩', h('small', null, sim.minigameLeft(s).wand ? `小玩法 · 今天还有 ${sim.minigameLeft(s).wand} 局奖励` : '小玩法 · 加心情')),
       h('button', { class: 'act', onclick: () => doAct((st) => sim.play(st, id), 'play') }, '玩耍', mult('play') ?? h('small', null, s.owned.wand ? `逗猫棒 · 心情 +${CONFIG.actions.playMoodWand}` : `心情 +${CONFIG.actions.playMoodHand}`))));
+    // 亲密度和纪念册
+    const bl = sim.bondLevel(p); const B = CONFIG.bond; const nf = sim.firstsOf(s, id).length;
+    const unlock = bl.value < B.greetAt ? `到 ${B.greetAt} 它会在你回来时跑过来迎接。` : bl.value < B.rubAt ? `你回来时它会跑过来迎接；到 ${B.rubAt} 还会蹭蹭你。` : '你回来时它会跑过来蹭蹭你。';
+    const waitNote = '家里最亲你的那只，会在你上次离开时看着的地方等你。';
+    out.push(h('div', { class: 'card', style: 'margin-top:12px' },
+      h('div', { class: 'item' }, h('span', { class: 'ico' }, '💗'), h('div', { class: 'txt' }, h('b', null, `亲密度 ${Math.floor(bl.value)} · ${bl.name}`, h('span', { class: 'hearts' }, '♥'.repeat(bl.level + 1) + '♡'.repeat(B.levels.length - 1 - bl.level))), h('span', { class: 'soft' }, `照顾它、陪它玩、带它出门都会涨，不会掉。${unlock}${waitNote}`))),
+      h('div', { class: 'item' }, h('span', { class: 'ico' }, '📔'), h('div', { class: 'txt' }, h('b', null, `纪念册 ${nf} / ${Object.keys(FIRSTS).length}`), h('span', { class: 'soft' }, '它的每一个「第一次」都会拍一张照片留下来')), h('button', { class: 'btn small', onclick: () => this.openFirsts(id) }, '翻开'))));
     // 性格和朋友
     const tr = TRAITS[p.trait]; const friends = sim.friendsOf(s, id);
     out.push(h('div', { class: 'card', style: 'margin-top:12px' },

@@ -1,6 +1,6 @@
 // 瞬间相册里的照片：游戏自己抓拍的时刻。照片不存图片，只存「谁、在哪、在做什么」，要看的时候用背景、家具和宠物的动作帧拼出来，
 // 所以换了正式素材之后，旧照片也会跟着变成新画风。每种瞬间里宠物站在哪、做什么动作，写在下面的 LAYOUT 里。
-import { CONFIG, DECOR, MOMENTS, ZONES, type ActionName, type DayTime, type Season } from '../config';
+import { CONFIG, DECOR, FIRSTS, MOMENTS, ZONES, type ActionName, type DayTime, type Season } from '../config';
 import { ASSETS } from '../assets.config';
 import { drawObject, drawTop, drawWindowView, drawZone } from './room';
 import { drawDecor } from './decor';
@@ -24,6 +24,16 @@ const LAYOUT: Record<string, { at?: [string, number, number, number]; objects: s
   heater: { at: ['heater', 100, 656, 112], objects: ['nightstand', 'bed', 'heater'], poses: [[194, 662, 'sleep', 0, true], [262, 692, 'sit', 1, true], [330, 664, 'sleep', 2, true]] },
   sulk: { objects: ['sofa'], poses: [[216, 650, 'sit', 3, true]], note: '哼' },
   neighbor: { objects: ['sofa'], guest: true, poses: [[176, 644, 'play', 1], [264, 646, 'play', 2, true]] },
+  // 「第一次」纪念册（照片的 kind 是 first_ 加 FIRSTS 的键），都只有这一只猫（交朋友那张加上邻居）
+  first_meal: { at: ['bowl', 135, 661, 44], objects: ['counter', 'bowl'], poses: [[214, 664, 'eat', 1, true]] },
+  first_pet: { objects: ['sofa'], poses: [[236, 650, 'happy', 1]] },
+  first_treeTop: { at: ['cattree', 320, 612, 380], objects: ['sofa', 'cattree'], poses: [[282, 273, 'sit', 0]] },
+  first_roof: { objects: [], poses: [[250, 440, 'sit', 0, true]] },
+  first_trip: { objects: [], poses: [[312, 652, 'happy', 0, true]] },
+  first_friend: { objects: ['sofa'], guest: true, poses: [[176, 644, 'play', 1], [264, 646, 'play', 2, true]] },
+  first_grewYouth: { objects: ['sofa'], poses: [[226, 650, 'sit', 0]] },
+  first_grewAdult: { objects: ['sofa'], poses: [[226, 650, 'stretch', 1]] },
+  first_bond: { objects: ['sofa'], poses: [[226, 650, 'groom', 0]] },
 };
 
 /** 屋顶的照片从上层图的哪里开始裁（平顶的右边，和游戏里看星星的位置一样） */
@@ -36,7 +46,7 @@ export interface MomentInfo { kind: string; season: string; time: string }
 /** sets = 照片里每只宠物的精灵图（按 petIds 的顺序）；guest = 邻居猫的精灵图；skin = 每件家具现在用哪款皮肤；room = 房间风格 */
 export function renderMoment(m: MomentInfo, sets: (SpriteSet | undefined)[], opts: { guest?: SpriteSet; /** 每只的大小（按最初设计算，和 sets 同顺序；邻居的在 guest 那个位置） */ sizes?: number[]; /** 这个区域里摆着的装饰（照片里也画出来） */ decor?: { kind: string; x: number; y: number }[]; skin?: (kind: string) => string; room?: string } = {}): HTMLCanvasElement {
   const cv = document.createElement('canvas'); cv.width = OUT_W; cv.height = OUT_H; const c = cv.getContext('2d')!;
-  const def = MOMENTS[m.kind], lay = LAYOUT[m.kind]; if (!def || !lay) return cv;
+  const def = m.kind.startsWith('first_') ? FIRSTS[m.kind.slice(6)] : MOMENTS[m.kind], lay = LAYOUT[m.kind]; if (!def || !lay) return cv;
   const zi = ZONES.findIndex((z) => z.id === def.zone); const time = m.time as DayTime, season = m.season as Season;
   const k = OUT_W / W; c.save(); c.scale(k, k); c.translate(0, -TOP);
   const env = { time, season, weather: m.kind === 'rainWatch' ? 'rain' as const : 'clear' as const };

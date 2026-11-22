@@ -656,6 +656,16 @@ export class Scene {
     });
   }
   /** 切到屋顶那一层：镜头往上抬，落在最右边（木梯子那里）。镜头不跟着猫走 */
+  /** 现在看着哪里（离开游戏时存下来，下次从这里开始） */
+  /** 现在在哪个区域（底部按钮的编号，屋顶 = 区域个数） */
+  currentZone() { return this.zone; }
+  currentView() { return { x: Math.round(this.camX + this.viewW / 2), roof: this.layer === 'roof' }; }
+  /** 回到上次看着的地方 */
+  restoreView(v: { x: number; roof: boolean }) {
+    if (v.roof) { this.goRoof(true); return; }
+    if (this.layer === 'roof') { this.layer = 'ground'; this.lift = 0; }
+    this.camX = Math.max(0, Math.min(this.maxCam(), v.x - this.viewW / 2)); this.camTarget = null; this.applyCam();
+  }
   goRoof(instant = false) {
     if (this.editMode || this.decorMode || this.bgMode) return;
     this.layer = 'roof'; this.follow = null; this.vel = 0;
@@ -855,7 +865,7 @@ export class Scene {
       && (winter || sim.friendship(s, a.id, o.id) >= CONFIG.friendship.close) && ![...this.actors.values()].some((q) => q !== a && q !== o && Math.abs(q.x - o.x) < 90 && Math.abs(q.y - o.y) < 20)) ?? null;
   }
   /** 主人回来了。离开得够久：在家的宠物跑到屏幕中间站起来迎接；离开太久：黏人的那只（没有就是心情最差的）背对着你闹脾气 */
-  greet(awayMs: number) {
+  greet(awayMs: number, first = false) {
     const s = this.game.state; if (awayMs < CONFIG.greet.after || this.editMode) return;
     const free = [...this.actors.values()].filter((a) => { const p = this.game.pet(a.id); return p && !a.roof && !a.climb && !sim.isWeak(p) && !this.busy(a.id) && p.food >= CONFIG.stats.lowThreshold; });
     let sulker: Actor | null = null;
@@ -865,10 +875,22 @@ export class Scene {
       if (sulker) { this.release(sulker); sulker.pending = null; sulker.inter = null; this.stop(sulker); sulker.sulkUntil = this.now + CONFIG.greet.sulkFor; sulker.until = this.now; }
     }
     if (sim.dayTime(s) === 'night') return; // 夜里都睡了，不起来迎接
-    const cx = this.isOutdoor(this.viewCenter()) && sim.weather(s) === 'rain' ? SPOT.living : this.viewCenter();
-    free.filter((a) => a !== sulker).forEach((a, i) => { this.release(a); a.inter = null; this.go(a, cx + (i - (free.length - 1) / 2) * 96, depthMax() - 10 - (i % 2) * 14); a.fast = true; a.pending = { action: 'beg', dur: 2800 }; });
+    // 在你上次离开时看着的地方迎接（打开时镜头就停在那里）。下雨天你看着露天的地方，就在客厅迎接
+    const B = CONFIG.bond; const cx = this.isOutdoor(this.viewCenter()) && sim.weather(s) === 'rain' ? SPOT.living : this.viewCenter();
+    const bond = (a: Actor) => this.game.pet(a.id)?.bond ?? 0;
+    // 亲密度够的才跑过来；最亲的那只（够 waitAt）刚打开游戏时已经在那里等着了
+    const come = free.filter((a) => a !== sulker && bond(a) >= B.greetAt).sort((a, b) => bond(b) - bond(a));
+    come.forEach((a, i) => {
+      const x = cx + (i - (come.length - 1) / 2) * 96, y = depthMax() - 10 - (i % 2) * 14;
+      this.release(a); a.inter = null;
+      if (i === 0 && first && bond(a) >= B.waitAt) { this.stop(a); a.x = a.tx = clampX(x); a.y = a.ty = y; this.setAction(a, 'sit', 600); } else { this.go(a, x, y); a.fast = true; }
+      // 很亲的会蹭蹭你，其他的站起来迎接
+      a.pending = { action: bond(a) >= B.rubAt ? 'groom' : 'beg', dur: 2800 };
+    });
   }
   private lastFrameReal = 0; private greeted = false;
+  /** 记一个「第一次」进纪念册（只有第一次会真的记） */
+  private first(petId: string, kind: string) { if (this.game.state.firsts[petId]?.[kind]) return; this.game.act((st) => { sim.markFirst(st, petId, kind); return { ok: true }; }); }
   private findSprites: Text[] = [];
 
   // ---------- 罐头、便当：摆在厨房地上，吃完留下空罐、空盒，过一会儿消失 ----------
@@ -1077,7 +1099,7 @@ export class Scene {
     if (a.climb) {
       if (this.now - a.climb.t0 < R.climbMs) return true;
       const c = a.climb; a.climb = null;
-      if (c.up) { const L = this.ladder(); a.roof = { u: L.u, tu: RF.spots[c.slot] ?? RF.spots[0], slot: c.slot, home: false, slept: false, stay: c.stay }; a.action = 'walk'; a.t0 = this.now; }
+      if (c.up) { this.first(a.id, 'roof'); const L = this.ladder(); a.roof = { u: L.u, tu: RF.spots[c.slot] ?? RF.spots[0], slot: c.slot, home: false, slept: false, stay: c.stay }; a.action = 'walk'; a.t0 = this.now; }
       else if (!a.pending) this.setAction(a, 'idle', 800);
       return true;
     }
@@ -1711,7 +1733,7 @@ export class Scene {
 
     // 主人回来了（刚打开，或者从后台切回来隔了一阵）：迎接一下
     const real = Date.now(); const gap = this.lastFrameReal ? real - this.lastFrameReal : 0; this.lastFrameReal = real;
-    if (!this.greeted && this.actors.size) { this.greeted = true; this.greet(this.game.awayMs); } else if (gap > 60_000) this.greet(gap);
+    if (!this.greeted && this.actors.size) { this.greeted = true; this.greet(this.game.awayMs, true); } else if (gap > 60_000) this.greet(gap);
 
     // 宠物
     const s = this.game.state;
@@ -1730,7 +1752,7 @@ export class Scene {
       else if (a.inter && !weak) { /* 正在打哈欠或伸懒腰：做完再说 */ }
       else if (a.hop) {
         // 正在跳上或跳下家具：跳完再做别的
-        if (this.now - a.hop.t0 >= HOP_MS) { a.perch = a.hop.up ? { kind: a.hop.kind, slot: a.hop.slot } : null; a.hop = null; }
+        if (this.now - a.hop.t0 >= HOP_MS) { a.perch = a.hop.up ? { kind: a.hop.kind, slot: a.hop.slot } : null; a.hop = null; if (a.perch?.kind === 'cattree' && a.perch.slot === 0) this.first(a.id, 'treeTop'); }
       } else if (a.perch && (weak || a.station !== a.perch.kind || a.slot !== a.perch.slot)) {
         // 要离开这件家具了（事情做完了、被叫去吃饭洗澡）：先跳下来
         a.hop = { t0: this.now, up: false, kind: a.perch.kind, slot: a.perch.slot }; a.t0 = this.now;

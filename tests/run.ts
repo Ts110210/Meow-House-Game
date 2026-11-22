@@ -385,6 +385,22 @@ console.log('小玩法');
   check('虚弱或者出门了不能玩', (() => { const q = blank(); q.pets[0].weakSince = q.clock; return !sim.finishWand(q, q.pets[0].id, 3).ok; })());
 }
 
+console.log('纪念册、亲密度、迎接');
+{
+  const s = blank(); const p = s.pets[0]; s.inv.kibble = 9;
+  check('新领养的猫亲密度从 0 开始；老存档里没有亲密度的从「熟悉」开始（照旧会迎接）', p.bond === 0 && (() => { const old = JSON.parse(JSON.stringify(s)); delete old.pets[0].bond; return repair(old).pets[0].bond === CONFIG.bond.greetAt; })());
+  sim.feed(s, p.id, 'kibble'); sim.feed(s, p.id, 'kibble');
+  check('第一次吃饭记进纪念册，只记一次，日记里也写着', Object.keys(s.firsts[p.id] ?? {}).join() === 'meal' && Object.values(s.diary.days).flat().filter((f) => f.k === 'first').length === 1 && sim.diaryPage(s, sim.diaryDay(s.clock)).featured[0].lines.some((l) => l.includes('纪念册')));
+  for (let i = 0; i < 30; i++) sim.petPet(s, p.id);
+  check(`亲密度每天最多涨 ${CONFIG.bond.dayMax}`, p.bond === CONFIG.bond.dayMax);
+  for (let d = 0; d < 4; d++) { sim.advance(s, DAY); p.food = 80; p.mood = 60; for (let i = 0; i < 10; i++) sim.petPet(s, p.id); }
+  check('亲密度到「亲近」那一级记一个「第一次主动来蹭你」；级别和名字', (p.bond ?? 0) >= CONFIG.bond.rubAt && !!s.firsts[p.id].bond && sim.bondLevel(p).name === '亲近');
+  check('纪念册按时间排，记下了那时候的大小', sim.firstsOf(s, p.id)[0].kind === 'meal' && sim.firstsOf(s, p.id).every((f) => f.size > 0));
+  check('读档时纪念册原样保留', JSON.stringify(repair(JSON.parse(JSON.stringify(s))).firsts) === JSON.stringify(s.firsts));
+  const v = blank(); v.lastView = { x: 1234, roof: false };
+  check('离开时看着的地方会存下来', repair(JSON.parse(JSON.stringify(v))).lastView?.x === 1234);
+}
+
 console.log('装饰的摆放规则');
 {
   const world = (extra: Partial<sim.PlaceWorld> = {}): sim.PlaceWorld => ({ zoneW: 432, floorY: 560, height: 720, wall: [{ x0: 28, y0: 156, x1: 216, y1: 312, label: '厨房的窗户' }], foot: [{ x0: 40, y0: 539, x1: 200, y1: 573, label: '橱柜' }], keepClear: [{ x0: 100, y0: 560, x1: 330, y1: 640, label: '门前的路' }], ...extra });
