@@ -174,6 +174,7 @@ export class UI {
     this.hudQuest = h('button', { class: 'pill quest', onclick: () => this.openQuests() }, '任务');
     this.hudDev = h('button', { class: 'pill dev', onclick: () => this.openDev() });
     const top = h('div', { class: 'hud-top' }, this.hudFish, this.hudCheck, this.hudQuest, h('div', { class: 'spacer' }), this.hudDev,
+      h('button', { class: 'pill', onclick: () => { this.scene.scrollToZone(0); this.openDoor(); } }, '出门'),
       h('button', { class: 'pill', onclick: () => this.openShop() }, '商店'),
       this.hudMenu = h('button', { class: 'pill', onclick: () => this.openMenu() }, '菜单'));
     this.strip = h('div', { class: 'petstrip' });
@@ -314,8 +315,8 @@ export class UI {
     if (kind === 'gift' && id) { const r = this.game.act((st) => sim.collectGift(st, id)); this.say(r); sfx(r.ok ? 'coin' : 'error'); return; }
     if (kind === 'find' && id) { const r = this.game.act((st) => sim.collectFind(st, id)); this.say(r); sfx(r.ok ? 'coin' : 'error'); return; }
     if (kind === 'door') this.openDoor();
-    else if (kind === 'album') this.openAlbum();
-    else if (kind === 'cabinet') this.openCabinet();
+    else if (kind === 'album') this.openAlbumHub('cards');
+    else if (kind === 'cabinet') this.openCollectHub('souvenirs');
     else if (kind === 'pond') this.openPond();
     else if (kind === 'npc') this.openRescue();
     else if (kind === 'cattree') this.openCatTree();
@@ -621,7 +622,7 @@ export class UI {
   // ---------- 宠物面板 ----------
 
   openPet(id: string) {
-    this.editingName = false;
+    this.editingName = false; this.petTab = 'care';
     // 点到它时叫一声：饿了、不开心、平时，叫法不一样
     const pet = this.game.pet(id); const low = CONFIG.stats.lowThreshold;
     if (pet && !pet.dead && !sim.isLost(pet) && !pet.tripId) meow(pet.food < low ? 'hungry' : pet.mood < low ? 'sad' : 'short');
@@ -666,15 +667,20 @@ export class UI {
       const st = sim.stageOf(p); const next = (st + 1) * CONFIG.growth.stageDuration - p.age;
       ageEl.textContent = `${sim.stageName(p)} · 已陪伴 ${fmtDur(p.age)}` + (st < 2 ? ` · 再过 ${fmtDur(next / Math.max(1, s.dev.growth))} 长大` : '');
     });
-    const out: Kid[] = [h('div', { class: 'pethead' }, this.petAnim(() => this.game.spriteOf(p) ?? null, action), h('div', { style: 'flex:1;min-width:0' }, nameEl, ageEl,
-      !p.spriteId.startsWith('custom:') ? h('div', { class: 'seg' }, Object.entries(FUR_COLORS).map(([k, v]) => h('button', { class: 'chip mini' + (p.spriteId === 'default:' + k ? ' on' : ''), onclick: async () => {
+    const out: Kid[] = [h('div', { class: 'pethead' }, this.petAnim(() => this.game.spriteOf(p) ?? null, action), h('div', { style: 'flex:1;min-width:0' }, nameEl, ageEl))];
+    // 毛色（换了以后很少再动，放在「更多」里）
+    const colorRow = !p.spriteId.startsWith('custom:') ? h('div', { class: 'seg' }, Object.entries(FUR_COLORS).map(([k, v]) => h('button', { class: 'chip mini' + (p.spriteId === 'default:' + k ? ' on' : ''), onclick: async () => {
         await this.game.ensureSprite('default:' + k); this.cardCache.clear(); this.stripSig = '';
         this.say(this.game.act((st) => sim.setColor(st, id, k)));
       } }, v.name)), h('button', { class: 'chip mini' + (p.spriteId.startsWith('look:') ? ' on' : ''), onclick: () => this.openMaker(decodeLook(p.spriteId) ?? this.lookOfCoat(p.spriteId.slice(8)), `给${p.name}换个样子`, async (look) => {
         const sid = encodeLook(look); await this.game.ensureSprite(sid); this.cardCache.clear(); this.stripSig = '';
         this.say(this.game.act((st) => sim.setColor(st, id, sid))); this.openPet(id);
-      }) }, '自己捏')) : null))];
-
+      }) }, '自己捏')) : null;
+    // 三页：照顾（默认）/ 关于它 / 更多
+    const tab = this.petTab;
+    out.push(h('div', { class: 'seg tabs' }, ([['care', '照顾'], ['about', '关于它'], ['more', '更多']] as const).map(([v, n]) => h('button', { class: 'chip' + (tab === v ? ' on' : ''), onclick: () => { this.petTab = v; this.refresh(true); } }, n))));
+    if (p.visit) out.push(h('div', { class: 'banner' }, `${p.name}从${p.rehomed?.home ?? '新家'}回来串门了，过一会儿就回去。`));
+    if (tab === 'care') {
     for (const k of ['food', 'mood', 'clean'] as const) {
       const fill = h('div', { class: 'fill', style: `background:${STAT_COLOR[k]}` }); const num = h('span', { class: 'num' });
       this.live.push(() => { fill.style.width = `${p[k]}%`; num.textContent = String(Math.round(p[k])); });
@@ -722,12 +728,17 @@ export class UI {
       h('button', { class: 'act', onclick: () => doAct((st) => sim.bath(st, id), 'bath') }, '洗澡', mult('bath') ?? h('small', null, `干净 +${CONFIG.actions.bathClean}`)),
       h('button', { class: 'act', onclick: () => this.openMiniGame('wand', id) }, '陪它玩', h('small', null, sim.minigameLeft(s).wand ? `小玩法 · 今天还有 ${sim.minigameLeft(s).wand} 局奖励` : '小玩法 · 加心情')),
       h('button', { class: 'act', onclick: () => doAct((st) => sim.play(st, id), 'play') }, '玩耍', mult('play') ?? h('small', null, s.owned.wand ? `逗猫棒 · 心情 +${CONFIG.actions.playMoodWand}` : `心情 +${CONFIG.actions.playMoodHand}`))));
+    if (sim.isProtected(s, p)) out.push(h('p', { class: 'soft' }, '新手保护：它还小，是家里的第一只，长大前饿得比较慢。'));
+    if (!s.owned.wand) out.push(this.hint(`现在是空手逗它。`, `商店里有逗猫棒，买了以后玩耍变成心情 +${CONFIG.actions.playMoodWand}。`));
+    return out;
+    }
+    if (tab === 'about') {
     // 亲密度和纪念册
     const bl = sim.bondLevel(p); const B = CONFIG.bond; const nf = sim.firstsOf(s, id).length;
     const unlock = bl.value < B.greetAt ? `到 ${B.greetAt} 它会在你回来时跑过来迎接。` : bl.value < B.rubAt ? `你回来时它会跑过来迎接；到 ${B.rubAt} 还会蹭蹭你。` : '你回来时它会跑过来蹭蹭你。';
     const waitNote = '家里最亲你的那只，会在你上次离开时看着的地方等你。';
     out.push(h('div', { class: 'card', style: 'margin-top:12px' },
-      h('div', { class: 'item' }, h('span', { class: 'ico' }, '💗'), h('div', { class: 'txt' }, h('b', null, `亲密度 ${Math.floor(bl.value)} · ${bl.name}`, h('span', { class: 'hearts' }, '♥'.repeat(bl.level + 1) + '♡'.repeat(B.levels.length - 1 - bl.level))), h('span', { class: 'soft' }, `照顾它、陪它玩、带它出门都会涨，不会掉。${unlock}${waitNote}`))),
+      h('div', { class: 'item' }, h('span', { class: 'ico' }, '💗'), h('div', { class: 'txt' }, h('b', null, `亲密度 ${Math.floor(bl.value)} · ${bl.name}`, h('span', { class: 'hearts' }, '♥'.repeat(bl.level + 1) + '♡'.repeat(B.levels.length - 1 - bl.level))), this.hint('照顾它、陪它玩、带它出门都会涨，不会掉。', `${unlock}${waitNote}`))),
       h('div', { class: 'item' }, h('span', { class: 'ico' }, '📔'), h('div', { class: 'txt' }, h('b', null, `纪念册 ${nf} / ${Object.keys(FIRSTS).length}`), h('span', { class: 'soft' }, '它的每一个「第一次」都会拍一张照片留下来')), h('button', { class: 'btn small', onclick: () => this.openFirsts(id) }, '翻开'))));
     // 性格和朋友
     const tr = TRAITS[p.trait]; const friends = sim.friendsOf(s, id);
@@ -738,9 +749,11 @@ export class UI {
         h('div', { class: 'txt' }, h('b', null, f.best ? `和${f.pet.name}是好朋友 ❤` : `和${f.pet.name}`),
           f.best ? h('span', { class: 'soft' }, `一起玩心情加倍，结伴出门更容易带回纪念品`) : h('span', { class: 'soft' }, `友情 ${Math.round(f.value)} / ${CONFIG.friendship.best}　一起出门、一起玩会增加`),
           h('div', { class: 'fbar' }, h('i', { style: `width:${(f.value / CONFIG.friendship.best) * 100}%` })))))));
-    if (sim.isProtected(s, p)) out.push(h('p', { class: 'soft' }, '新手保护：它还小，是家里的第一只，长大前饿得比较慢。'));
-    if (!s.owned.wand) out.push(h('p', { class: 'soft' }, `现在是空手逗它。商店里有逗猫棒，买了以后玩耍变成心情 +${CONFIG.actions.playMoodWand}。`));
-    if (p.visit) { out.unshift(h('div', { class: 'banner' }, `${p.name}从${p.rehomed?.home ?? '新家'}回来串门了，过一会儿就回去。`)); return out; }
+    return out;
+    }
+    // 更多：换毛色、派它出门、送养
+    if (colorRow) out.push(h('h3', null, '换个样子'), colorRow);
+    if (p.visit) return out; // 回来串门的老家人：不能派出门、不能再送养
     out.push(h('p', null, h('button', { class: 'btn block', onclick: () => { this.plan = { petIds: [id], bento: this.plan.bento, tool: null, goods: [] }; this.openDoor(); } }, '派它出门')));
     // 为它找个新家（只有成年；确认两次才生效）
     if (sim.stageOf(p) === 2) {
@@ -755,6 +768,14 @@ export class UI {
     return out;
   }
   private rehomeStep: { id: string; n: number } | null = null;
+  private petTab: 'care' | 'about' | 'more' = 'care';
+
+  /** 说明文字：默认只显示第一句，点「?」展开完整说明（第一次看有用，之后不占地方） */
+  private hint(short: string, more: string): HTMLElement {
+    const el = h('p', { class: 'soft hint' }, short, ' ') as HTMLElement; const full = h('span', { class: 'hint-more' }, more) as HTMLElement;
+    const btn = h('button', { class: 'hint-q', onclick: (e: Event) => { e.stopPropagation(); el.classList.toggle('open'); } }, '?');
+    el.append(btn, full); return el;
+  }
 
   // ---------- 门口：派宠物出门 ----------
 
@@ -994,7 +1015,7 @@ export class UI {
   openTreasures() {
     this.open({ title: '猫的宝贝', render: () => {
       const s = this.game.state; const all = Object.entries(TREASURES); const got = all.filter(([k]) => s.treasures[k]).length;
-      const out: Kid[] = [h('p', { class: 'soft' }, `你离开一段时间再回来，它们有时会在门口放一样东西。已经收到 ${got} / ${all.length} 种。标「能摆出来」的是稀有的，收到后在「布置房间」里能摆出来。`)];
+      const out: Kid[] = [this.hint(`已经收到 ${got} / ${all.length} 种。`, '你离开一段时间再回来，它们有时会在门口放一样东西。标「能摆出来」的是稀有的，收到后在「布置房间」里能摆出来。')];
       out.push(h('div', { class: 'card' }, all.map(([k, def]) => {
         const t = s.treasures[k]; const who = t ? s.pets.find((p) => p.id === t.petId)?.name : '';
         const when = t ? new Date(t.first) : null;
@@ -1058,7 +1079,7 @@ export class UI {
         h('p', null, h('button', { class: 'btn block', disabled: s.fish < FRY.price, onclick: () => this.say(this.game.act((st) => sim.buy(st, FRY.id))) }, `买一条鱼苗（🐟 ${FRY.price}）`)),
         // 捞鱼：自己陪它玩一局，或者让它自己去守着（不想玩的时候用，带回来的少一点）
         h('h3', null, '捞鱼'),
-        h('p', { class: 'soft' }, `「陪它捞」是个小玩法，今天还有 ${sim.minigameLeft(s).fishing} 局有小鱼干奖励；「让它去」不用玩，它自己守 ${Math.round(CONFIG.minigame.auto.duration / MIN)} 分钟，带回 ${CONFIG.minigame.auto.fish[0]}–${CONFIG.minigame.auto.fish[1]} 条，今天还能去 ${sim.minigameLeft(s).auto} 次。`),
+        this.hint(`陪它捞今天还有 ${sim.minigameLeft(s).fishing} 局奖励，让它去还能 ${sim.minigameLeft(s).auto} 次。`, `「陪它捞」是个小玩法；「让它去」不用玩，它自己守 ${Math.round(CONFIG.minigame.auto.duration / MIN)} 分钟，带回 ${CONFIG.minigame.auto.fish[0]}–${CONFIG.minigame.auto.fish[1]} 条。`),
         h('div', { class: 'card' }, sim.homePets(s).map((p) => h('div', { class: 'item' }, this.avatarCanvas(p),
           h('div', { class: 'txt' }, h('b', null, p.name), h('span', { class: 'soft' }, p.fishing ? ['在鱼塘边守着，还要 ', this.countdown(() => p.fishing?.until ?? 0, '马上回来')] : `心情 ${Math.round(p.mood)}`)),
           h('button', { class: 'btn small primary', onclick: () => this.openMiniGame('fishing', p.id) }, '陪它捞'),
@@ -1100,16 +1121,66 @@ export class UI {
   // ---------- 菜单、家庭成员、领养 ----------
 
   openMenu() {
-    this.resetArmed = false;
     this.open({ title: '菜单', render: () => {
+      const s = this.game.state; const btn = (label: string, fn: () => void, cls = '') => h('button', { class: 'btn' + (cls ? ' ' + cls : ''), onclick: fn }, label);
+      return [
+        h('div', { class: 'menu-sec' }, '回忆'),
+        h('div', { class: 'grid3' },
+          btn('猫的日记', () => this.openDiary(), sim.diaryUnread(s) ? 'primary has-dot' : ''),
+          btn('相册', () => this.openAlbumHub()),
+          btn('收藏', () => this.openCollectHub(), sim.milestoneStatus(s).some((m) => m.ready) ? 'primary' : '')),
+        h('div', { class: 'menu-sec' }, '家'),
+        h('div', { class: 'grid3' },
+          btn('家庭成员', () => this.openFamily()), btn('出门', () => { this.scene.scrollToZone(0); this.openDoor(); }), btn('布置房间', () => this.startDecor()),
+          btn('鱼塘', () => this.openPond()), btn('邻居', () => this.openNeighbors()), btn('季节活动', () => this.openSeasonEvent())),
+        h('p', { style: 'margin-top:18px' }, btn('⚙ 设置', () => this.openSettings(), 'block')),
+        h('div', { class: 'ver', onclick: () => {
+          if (++this.verTaps >= 5) { this.verTaps = 0; s.dev.enabled = !s.dev.enabled; this.game.changed(); this.toast(s.dev.enabled ? '开发者模式已打开' : '开发者模式已关闭'); }
+        } }, `喵屋 Meow House ${CONFIG.version}`)];
+    } });
+  }
+
+  /** 拿到某个面板的内容（不真的打开它），给「相册」「收藏」这种分页面板用：原来的面板都不用改 */
+  private contentOf(openFn: () => void): () => Kid[] {
+    const real = this.open; let got: (() => Kid[]) | null = null;
+    (this as any).open = (o: { render: () => Kid[] }) => { got = o.render; };
+    try { openFn(); } finally { (this as any).open = real; }
+    return got ?? (() => []);
+  }
+  /** 一个带分页的面板：上面一排分页按钮，下面是那一页原来的内容 */
+  private openTabbed(title: string, tabs: [string, string, () => void][], first: string) {
+    let cur = tabs.some((t) => t[0] === first) ? first : tabs[0][0];
+    let body = this.contentOf(tabs.find((t) => t[0] === cur)![2]);
+    this.open({ title, render: () => [
+      h('div', { class: 'seg tabs' }, tabs.map(([id, label, fn]) => h('button', { class: 'chip' + (cur === id ? ' on' : ''), onclick: () => { cur = id; body = this.contentOf(fn); this.refresh(true); } }, label))),
+      ...body()] });
+  }
+  /** 相册：明信片、瞬间、每只猫的纪念册 */
+  openAlbumHub(tab = 'cards') {
+    const n = this.game.state.moments.length;
+    this.openTabbed('相册', [['cards', '明信片', () => this.openAlbum()], ['moments', n ? `瞬间（${n}）` : '瞬间', () => this.openMoments()], ['firsts', '纪念册', () => this.openFirstsList()]], tab);
+  }
+  /** 收藏：纪念品（收藏柜）、图鉴、猫的宝贝 */
+  openCollectHub(tab = 'souvenirs') {
+    this.openTabbed('收藏', [['souvenirs', '纪念品', () => this.openCabinet()], ['codex', '图鉴', () => this.openCodex()], ['treasures', '猫的宝贝', () => this.openTreasures()]], tab);
+  }
+  /** 纪念册：先选一只猫（家里的和住在别处的） */
+  openFirstsList() {
+    this.open({ title: '纪念册', render: () => {
+      const s = this.game.state; const cats = [...sim.alivePets(s), ...sim.formerPets(s)]; const total = Object.keys(FIRSTS).length;
+      return [h('p', { class: 'soft' }, '每只猫的「第一次」都会拍一张照片留下来。'),
+        h('div', { class: 'card' }, cats.map((p) => h('div', { class: 'item' }, h('span', { class: 'ico' }, h('span', { class: 'chip', style: 'padding:0;box-shadow:none;background:none' }, this.avatarCanvas(p, 56))),
+          h('div', { class: 'txt' }, h('b', null, p.name), h('span', { class: 'soft' }, `${sim.firstsOf(s, p.id).length} / ${total}` + (p.rehomed ? ` · 住在${p.rehomed.home}` : ''))),
+          h('button', { class: 'btn small', onclick: () => this.openFirsts(p.id) }, '翻开'))))];
+    } });
+  }
+
+  /** 设置：声音、界面大小、提醒、季节、光影、背屏预览、开发者面板、清空存档 */
+  openSettings() {
+    this.resetArmed = false;
+    this.open({ title: '设置', render: () => {
       const s = this.game.state;
-      return [h('div', { class: 'grid2' },
-        h('button', { class: 'btn' + (sim.diaryUnread(s) ? ' primary has-dot' : ''), onclick: () => this.openDiary() }, '猫的日记'), h('button', { class: 'btn', onclick: () => this.openTreasures() }, '猫的宝贝'),
-        h('button', { class: 'btn', onclick: () => this.openFamily() }, '家庭成员'), h('button', { class: 'btn', onclick: () => this.openAlbum() }, '纪念相册'),
-        h('button', { class: 'btn', onclick: () => this.openCabinet() }, '收藏柜'), h('button', { class: 'btn' + (sim.milestoneStatus(s).some((m) => m.ready) ? ' primary' : ''), onclick: () => this.openCodex() }, '图鉴'), h('button', { class: 'btn', onclick: () => this.openBack() }, '背屏预览'),
-        h('button', { class: 'btn', onclick: () => this.startDecor() }, '布置房间'), h('button', { class: 'btn', onclick: () => this.openNeighbors() }, '邻居'),
-        h('button', { class: 'btn', onclick: () => this.openSeasonEvent() }, '季节活动'), h('button', { class: 'btn', onclick: () => this.openMoments() }, `瞬间${s.moments.length ? `（${s.moments.length}）` : ''}`),
-        h('button', { class: 'btn', onclick: () => this.openDoor() }, '派宠物出门'), h('button', { class: 'btn', onclick: () => this.openPond() }, '鱼塘')),
+      return [
         h('h3', null, '声音'),
         h('label', { class: 'volume' }, '音乐', h('input', { type: 'range', min: '0', max: '100', step: '5', value: String(Math.round(audioSettings.music * 100)), oninput: (e: Event) => setVolume('music', Number((e.target as HTMLInputElement).value) / 100) })),
         h('label', { class: 'volume' }, '音效和猫叫', h('input', { type: 'range', min: '0', max: '100', step: '5', value: String(Math.round(audioSettings.sound * 100)), oninput: (e: Event) => setVolume('sound', Number((e.target as HTMLInputElement).value) / 100), onchange: () => meow('short') })),
@@ -1129,15 +1200,13 @@ export class UI {
         h('p', null, h('button', { class: 'btn block', onclick: () => { s.settings.showSeason = !s.settings.showSeason; this.game.changed(); } }, `在主界面显示季节：${s.settings.showSeason ? '开' : '关'}`)),
         h('h3', null, '光影效果'),
         h('div', { class: 'seg' }, ([['ultra', '超高'], ['high', '高'], ['simple', '简单'], ['off', '关']] as const).map(([v, label]) => h('button', { class: 'chip' + (s.settings.light === v ? ' on' : ''), onclick: () => { s.settings.light = v; this.game.changed(); } }, label))),
-        h('p', { class: 'soft' }, s.settings.light === 'ultra' ? '最拟真：每个房间按离窗户、离灯的远近有亮有暗，白天窗户、夜里每盏灯都会让附近的家具和猫往背离光的方向投影子，几盏灯一起照就有几道影子。最费电，手机卡的话调低一档。' : s.settings.light === 'high' ? '光色、影子和窗户光都跟着手机的时间变，阳台、院子、屋顶上有跟着太阳转的影子。手机卡的话调到「简单」。' : s.settings.light === 'simple' ? '光色跟着手机的时间变，有脚下的影子和不动的窗户光，没有跟着太阳转的影子。' : '只分白天、傍晚、夜晚三种颜色，最省电。'),
+        this.hint('越高越好看，也越费电。', s.settings.light === 'ultra' ? '最拟真：每个房间按离窗户、离灯的远近有亮有暗，白天窗户、夜里每盏灯都会让附近的家具和猫往背离光的方向投影子，几盏灯一起照就有几道影子。最费电，手机卡的话调低一档。' : s.settings.light === 'high' ? '光色、影子和窗户光都跟着手机的时间变，阳台、院子、屋顶上有跟着太阳转的影子。手机卡的话调到「简单」。' : s.settings.light === 'simple' ? '光色跟着手机的时间变，有脚下的影子和不动的窗户光，没有跟着太阳转的影子。' : '只分白天、傍晚、夜晚三种颜色，最省电。'),
+        h('h3', null, '背屏'), h('p', null, h('button', { class: 'btn block', onclick: () => this.openBack() }, '背屏预览')),
         s.dev.enabled ? h('p', null, h('button', { class: 'btn block', onclick: () => this.openDev() }, '开发者面板')) : null,
         h('p', { style: 'margin-top:20px' }, h('button', { class: 'btn block danger', onclick: async () => {
           if (!this.resetArmed) { this.resetArmed = true; this.refresh(true); return; }
           await this.game.reset(); this.cardCache.clear(); this.close(); this.toast('存档已经清空，重新开始');
-        } }, this.resetArmed ? '再点一次，确认清空全部存档' : '清空存档，重新开始')),
-        h('div', { class: 'ver', onclick: () => {
-          if (++this.verTaps >= 5) { this.verTaps = 0; s.dev.enabled = !s.dev.enabled; this.game.changed(); this.toast(s.dev.enabled ? '开发者模式已打开' : '开发者模式已关闭'); }
-        } }, `喵屋 Meow House ${CONFIG.version}`)];
+        } }, this.resetArmed ? '再点一次，确认清空全部存档' : '清空存档，重新开始'))];
     } });
   }
 

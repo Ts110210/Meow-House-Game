@@ -207,3 +207,13 @@ textarea.export { width: 100%; font: 12px/1.5 ui-monospace, Menlo, Consolas, mon
 /* 亲密度、纪念册 */
 .hearts { margin-left: 8px; color: #E0533D; letter-spacing: 1px; font-weight: 400; }
 .first-q { aspect-ratio: 3 / 4; display: flex; align-items: center; justify-content: center; font-size: 40px; color: rgba(90,70,52,.3); background: rgba(90,70,52,.06); border-radius: 8px; }
+
+/* 面板里的分页按钮 */
+.seg.tabs { margin: 10px 0 6px; }
+/* 说明文字收起来：点「?」展开 */
+.hint .hint-more { display: none; }
+.hint.open .hint-more { display: inline; }
+.hint.open .hint-q { display: none; }
+.hint-q { display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; padding: 0; border-radius: 50%; border: 1px solid rgba(90,70,52,.35); background: transparent; color: inherit; font-size: 12px; line-height: 1; vertical-align: 1px; cursor: pointer; }
+/* 菜单分块 */
+.menu-sec { margin: 14px 0 6px; font-size: 13px; color: rgba(90,70,52,.7); letter-spacing: 1px; }
