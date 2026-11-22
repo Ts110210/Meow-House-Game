@@ -1222,6 +1222,8 @@ export class Scene {
     } else if (rain && outside) {
       // 下雨了：在外面的赶紧跑回屋里
       a.fast = true; this.go(a, zx(2) + zw(2) * (0.2 + Math.random() * 0.6), depthMin() + Math.random() * (depthMax() - depthMin()));
+    } else if (p.fishing && !rain && lounge('pond', 'fish', 8000)) {
+      // 主人让它自己去鱼塘捞鱼：一直守在鱼塘边伸爪子，到点了自己回来（结算在 sim）
     } else if (p.food < low) {
       // 饿了：去饭碗旁边蹲着等
       const spot = goNear('bowl', -150 - a.lane * 30);

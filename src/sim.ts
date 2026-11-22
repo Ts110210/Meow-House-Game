@@ -73,7 +73,7 @@ export function newState(now: number): GameState {
   const s: GameState = {
     v: 7, createdAt: now, seasonStart: now, settings: { notify: true, showSeason: false, seasonMode: 'cycle', light: 'simple' }, clock: now, lastReal: now, fish: CONFIG.startFish, slots: 1,
     pets: [], trips: [], postcards: [], souvenirs: {}, inv: { ...CONFIG.startItems }, owned: {},
-    pond: Array(CONFIG.pond.slots).fill(null), lastCheckin: '', pendingReturns: [], friends: {}, variants: {}, milestones: [], decor: [], quests: newQuests(false), tutorial: 0, visitors: [], visitorQuota: 0, visitorDay: '', lastVisitorAt: 0, errand: null, display: { souvenirs: [], postcards: [] }, cattree: [null, null, null], hood: { now: null, bonds: {}, day: '', quota: 0, last: 0, stories: [] }, seasonal: { key: '', got: {}, done: false, last: 0, day: '', quota: 0 }, seasonalClaimed: [], moments: [], favor: {}, favorClaimed: [], finds: [], keepsakes: {}, diary: { days: {}, lead: {}, starred: [], seenAt: now }, gifts: [], treasures: {}, lastSeenReal: Date.now(), skins: {}, skinsOwned: {}, room: DEFAULT_ROOM, roomsOwned: [],
+    pond: Array(CONFIG.pond.slots).fill(null), lastCheckin: '', pendingReturns: [], friends: {}, variants: {}, milestones: [], decor: [], quests: newQuests(false), tutorial: 0, visitors: [], visitorQuota: 0, visitorDay: '', lastVisitorAt: 0, errand: null, display: { souvenirs: [], postcards: [] }, cattree: [null, null, null], hood: { now: null, bonds: {}, day: '', quota: 0, last: 0, stories: [] }, seasonal: { key: '', got: {}, done: false, last: 0, day: '', quota: 0 }, seasonalClaimed: [], moments: [], favor: {}, favorClaimed: [], finds: [], keepsakes: {}, diary: { days: {}, lead: {}, starred: [], seenAt: now }, gifts: [], treasures: {}, lastSeenReal: Date.now(), minigame: { day: '', wand: 0, fishing: 0, auto: 0 }, skins: {}, skinsOwned: {}, room: DEFAULT_ROOM, roomsOwned: [],
     dev: { enabled: false, background: false, time: 'auto', season: 'auto', weather: 'auto', speed: 1, growth: 1, decay: { food: 1, mood: 1, clean: 1 } },
   };
   s.pets.push(newPet(CONFIG.startPet.name, `default:${CONFIG.startPet.color}`, now));
@@ -194,6 +194,7 @@ export function advance(s: GameState, dt: number): GameEvent[] {
     if (s.errand && s.clock >= s.errand.expiresAt) s.errand = null;
     if (s.hood.now && s.clock >= s.hood.now.leaveAt) neighborLeaves(s, events);
     for (const p of s.pets) if (p.outing && s.clock >= p.outing.until) outingBack(s, p, events);
+    for (const p of s.pets) if (p.fishing && s.clock >= p.fishing.until) autoFishBack(s, p, events);
     if (s.finds.length) s.finds = s.finds.filter((f) => s.clock - f.at < CONFIG.neighbors.findExpire);
     spawnSeasonFind(s);
     for (const trip of s.trips) if (!trip.letterSent && s.clock >= trip.letterAt) sendLetter(s, trip, events);
@@ -217,6 +218,7 @@ function diaryFromEvent(s: GameState, e: GameEvent) {
     case 'stage': note(s, e.petId, 'grew', String(e.stage)); break;
     case 'ranAway': note(s, e.petId, 'lost'); break;
     case 'found': note(s, e.petId, 'found'); break;
+    case 'autoFish': note(s, e.petId, 'autoFish', String(e.fish)); break;
   }
 }
 
@@ -745,6 +747,7 @@ export function checkDispatch(s: GameState, plan: DispatchPlan): Result {
     const p = s.pets.find((x) => x.id === id);
     const u = usable(p); if (!u.ok) return u;
     if (isWeak(p!)) return { ok: false, msg: `${p!.name}太虚弱了，出不了门` };
+    if (p!.fishing) return { ok: false, msg: `${p!.name}在鱼塘边捞鱼，等它回来` };
     if (p!.mood < t.moodRefuseBelow) return { ok: false, msg: `${p!.name}心情太差，不愿意出门` };
   }
   if (!FOODS.some((f) => f.id === plan.bento)) return { ok: false, msg: '先选一份便当' };
@@ -1085,6 +1088,7 @@ function factLabel(f: DiaryFact): string {
     case 'visitor': return VISITORS[x as VisitorWho]?.name ?? '客人';
     case 'grew': return CONFIG.growth.stageNames[Number(x)] ?? '大猫';
     case 'gift': return TREASURES[x]?.name ?? '一样小东西';
+    case 'wandGame': case 'fishGame': case 'autoFish': return x;
     default: return '';
   }
 }
@@ -1166,4 +1170,59 @@ export function collectGift(s: GameState, id: string): Result {
   const had = s.treasures[g.kind]; s.treasures[g.kind] = { n: (had?.n ?? 0) + 1, first: had?.first ?? s.clock, petId: had?.petId ?? g.petId };
   if (def.rare && DECOR[g.kind]) { s.decor.push({ id: newId('decor'), kind: g.kind, zone: null, x: 0, y: 0 }); return { ok: true, msg: `${who}叼回来的${def.name}！这件可以摆出来，到菜单的「布置房间」里找它` }; }
   return { ok: true, msg: `${who}叼回来的${def.name}，收进「猫的宝贝」了${had ? '' : '（新的！）'}` };
+}
+
+// ============================================================
+// 小玩法：陪它玩（逗猫棒）、陪它捞鱼、让它自己去捞
+// 玩法本身在 minigames.ts（画面），这里只管结算。原来的「玩耍」按钮不受影响
+// ============================================================
+
+/** 今天的局数（换了一天从 0 算） */
+function miniDay(s: GameState) { const d = dayKey(s.clock); if (s.minigame.day !== d) s.minigame = { day: d, wand: 0, fishing: 0, auto: 0 }; return s.minigame; }
+/** 今天还有几局有小鱼干奖励 */
+export function minigameLeft(s: GameState) {
+  const m = miniDay(s); const M = CONFIG.minigame;
+  return { wand: Math.max(0, M.wand.rewardPlays - m.wand), fishing: Math.max(0, M.fishing.rewardPlays - m.fishing), auto: Math.max(0, M.auto.perDay - m.auto) };
+}
+/** 能不能陪它玩（在家、不虚弱） */
+export function canMiniPlay(s: GameState, petId: string): Result {
+  const p = s.pets.find((x) => x.id === petId); const u = usable(p); if (!u.ok) return u;
+  if (isWeak(p!)) return { ok: false, msg: `${p!.name}太虚弱了，先喂点东西` };
+  return { ok: true };
+}
+
+/** 陪它玩完一局逗猫棒：扑中几次 → 心情、（每天前几局）小鱼干 */
+export function finishWand(s: GameState, petId: string, catches: number): Result {
+  const c = canMiniPlay(s, petId); if (!c.ok) return c;
+  const p = s.pets.find((x) => x.id === petId)!; const W = CONFIG.minigame.wand; const m = miniDay(s);
+  const n = Math.max(0, Math.floor(catches)); const mood = Math.min(W.maxMood, n * W.mood);
+  const fish = m.wand < W.rewardPlays ? Math.min(W.fishMax, n * W.fishEach) : 0; m.wand++;
+  p.mood = clamp(p.mood + mood); p.lastCare = s.clock; s.fish += fish; questEvent(s, 'play');
+  if (n > 0) note(s, p.id, 'wandGame', String(n));
+  return { ok: true, msg: n ? `${p.name}扑中了 ${n} 次：心情 +${mood}` + (fish ? `，小鱼干 +${fish}` : '（今天的小鱼干奖励领完了）') : `${p.name}一次都没扑到，下次逗猫棒晃得再灵活一点` };
+}
+
+/** 陪它捞完一局鱼：捞到几条 → （每天前几局）小鱼干、心情 */
+export function finishFishing(s: GameState, petId: string, caught: number): Result {
+  const c = canMiniPlay(s, petId); if (!c.ok) return c;
+  const p = s.pets.find((x) => x.id === petId)!; const F = CONFIG.minigame.fishing; const m = miniDay(s);
+  const n = Math.max(0, Math.floor(caught)); const fish = m.fishing < F.rewardPlays ? Math.min(F.fishMax, n * F.fishEach) : 0; m.fishing++;
+  const mood = Math.min(F.maxMood, n * F.mood); p.mood = clamp(p.mood + mood); p.lastCare = s.clock; s.fish += fish;
+  if (n > 0) note(s, p.id, 'fishGame', String(n));
+  return { ok: true, msg: n ? `捞到 ${n} 条鱼：` + (fish ? `小鱼干 +${fish}` : '今天的小鱼干奖励领完了') + `，心情 +${mood}` : '一条也没捞到，鱼游过爪子下面时再点' };
+}
+
+/** 让它自己去鱼塘捞：待一阵自己回来，带回一点小鱼干（比陪它玩少）。不想玩的时候用 */
+export function startAutoFish(s: GameState, petId: string): Result {
+  const c = canMiniPlay(s, petId); if (!c.ok) return c;
+  const p = s.pets.find((x) => x.id === petId)!; const A = CONFIG.minigame.auto; const m = miniDay(s);
+  if (p.fishing) return { ok: false, msg: `${p.name}已经在鱼塘边了` };
+  if (m.auto >= A.perDay) return { ok: false, msg: `今天已经让它们去捞过 ${A.perDay} 次了，明天再来` };
+  if (p.mood < A.moodMin) return { ok: false, msg: `${p.name}心情不好，不想动` };
+  m.auto++; p.fishing = { until: s.clock + A.duration };
+  return { ok: true, msg: `${p.name}去鱼塘边守着了，大概 ${Math.round(A.duration / MIN)} 分钟后回来` };
+}
+function autoFishBack(s: GameState, p: Pet, events: GameEvent[]) {
+  p.fishing = null; if (p.dead || p.lostSince !== null) return;
+  const n = between(CONFIG.minigame.auto.fish); s.fish += n; events.push({ type: 'autoFish', petId: p.id, fish: n });
 }

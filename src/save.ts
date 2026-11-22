@@ -82,6 +82,7 @@ export function repair(raw: Raw, now = Date.now()): GameState {
     searchUntil: !p.dead && typeof p.lostSince === 'number' && typeof p.searchUntil === 'number' && isFinite(p.searchUntil) ? p.searchUntil : null,
     tripId: typeof p.tripId === 'string' ? p.tripId : null,
     lastNibble: typeof p.lastNibble === 'number' ? p.lastNibble : null,
+    fishing: p.fishing && typeof p.fishing.until === 'number' && !p.dead ? { until: p.fishing.until } : null,
     outing: p.outing && typeof p.outing.neighborId === 'string' && NEIGHBORS[p.outing.neighborId] && !p.dead ? { neighborId: p.outing.neighborId, until: num(p.outing.until, 0) } : null,
     repeats: obj(p.repeats), hungryNotified: !!p.hungryNotified, adoptedAt: num(p.adoptedAt, clock),
   }));
@@ -153,6 +154,7 @@ export function repair(raw: Raw, now = Date.now()): GameState {
     gifts: arr(raw.gifts).filter((g) => g && typeof g.id === 'string' && TREASURES[g.kind] && typeof g.petId === 'string').slice(0, 10).map((g) => ({ id: g.id, kind: g.kind, petId: g.petId, at: num(g.at, clock) })),
     treasures: Object.fromEntries(Object.entries(obj(raw.treasures)).filter(([k, v]) => TREASURES[k] && v && typeof v === 'object').map(([k, v]: [string, any]) => [k, { n: Math.max(1, Math.floor(num(v.n, 1))), first: num(v.first, clock), petId: typeof v.petId === 'string' ? v.petId : '' }])),
     lastSeenReal: num(raw.lastSeenReal, now),
+    minigame: { day: typeof raw.minigame?.day === 'string' ? raw.minigame.day : '', wand: Math.max(0, Math.floor(num(raw.minigame?.wand, 0))), fishing: Math.max(0, Math.floor(num(raw.minigame?.fishing, 0))), auto: Math.max(0, Math.floor(num(raw.minigame?.auto, 0))) },
     keepsakes: Object.fromEntries(Object.entries(obj(raw.keepsakes)).filter(([k, v]) => typeof v === 'number' && v > 0 && k.length < 60).map(([k, v]) => [k, Math.floor(v as number)])),
     cattree: [0, 1, 2].map((i) => { const id = arr(raw.cattree)[i]; return typeof id === 'string' && pets.some((p) => p.id === id && !p.dead) ? id : null; }),
     pendingReturns: arr(raw.pendingReturns).filter((id) => postcards.some((c) => c.id === id)),

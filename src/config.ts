@@ -39,7 +39,7 @@ export const CONFIG = {
   diary: {
     keepDays: 30, maxStarred: 50, featured: 3, linesEach: 3, rotateDays: 6, awayMin: 2 * 60 * 60 * 1000, awayFacts: 3,
     /** 挑主角和挑写哪几句时，每种事有多重要（越大越先写）；没当主角超过 rotateDays 天的猫再加 rotateBonus */
-    weight: { tripBack: 9, grew: 9, found: 9, lost: 9, gift: 7, souvenir: 7, moment: 6, neighbor: 6, outing: 6, tripGo: 6, visitor: 5, awayMiss: 4, awayRain: 3, awayMorning: 3, awayNoon: 3, awayEvening: 3, awayNight: 3, feed: 2, pet: 2, bath: 2, play: 2 } as Record<string, number>,
+    weight: { wandGame: 5, fishGame: 5, autoFish: 5, tripBack: 9, grew: 9, found: 9, lost: 9, gift: 7, souvenir: 7, moment: 6, neighbor: 6, outing: 6, tripGo: 6, visitor: 5, awayMiss: 4, awayRain: 3, awayMorning: 3, awayNoon: 3, awayEvening: 3, awayNight: 3, feed: 2, pet: 2, bath: 2, play: 2 } as Record<string, number>,
     rotateBonus: 8,
   },
   /** 猫叼回来的礼物：你离开多久以上才会有；每只在家的猫叼回来的几率（心情好再加 moodBonus）；一次最多几件；
@@ -340,6 +340,18 @@ export const CONFIG = {
     slots: 3,
     growTime: 6 * HOUR,
     fishPerFry: 18,
+  },
+
+  // ---------- 小玩法（可玩可不玩：原来的「玩耍」按钮照旧一点就加心情） ----------
+  minigame: {
+    /** 陪它玩（逗猫棒）：玩多久；每扑中一次心情加多少（一局最多 maxMood）；每天前 rewardPlays 局每扑中一次给 fishEach 小鱼干（一局最多 fishMax）；
+     *  逗猫棒离猫多近算扑中（格子的比例）；逗猫棒要一直动它才有兴趣（速度低于 lively 超过 boredAfter 毫秒它就坐下不玩了）；隔多久扑一次 */
+    wand: { time: 20_000, mood: 3, maxMood: 24, fishEach: 1, fishMax: 8, rewardPlays: 3, reach: 0.32, lively: 220, boredAfter: 1500, pounceEvery: [900, 1800] as [number, number] },
+    /** 陪它捞鱼：玩多久；水里同时有几条鱼；每天前 rewardPlays 局每捞到一条给 fishEach 小鱼干（一局最多 fishMax）、心情加 mood；
+     *  点下去之后爪子多久落下；爪子多大（池塘宽度的比例）；拍完一下要等多久才能再拍（乱点没用）；一局心情最多加多少 */
+    fishing: { time: 20_000, fish: 4, fishEach: 1, fishMax: 8, mood: 2, maxMood: 12, rewardPlays: 3, strikeDelay: 220, paw: 0.075, cooldown: 650 },
+    /** 让它自己去捞：在鱼塘边待多久；回来带几条小鱼干（比自己玩少）；每天最多几次；心情太差不愿意去 */
+    auto: { duration: 60 * MIN, fish: [4, 8] as [number, number], perDay: 2, moodMin: 30 },
   },
 
   // ---------- 吃饭的演出 ----------
@@ -855,6 +867,10 @@ export const DIARY_LINES: Record<string, { all: string[]; many?: string[] } & Pa
   awayNight: { all: ['夜里{n}在客厅里走来走去。', '夜里{n}团成一团睡得很香。'] },
   awayRain: { all: ['外面下雨，{n}一直盯着窗户上的水珠。'] },
   awayMiss: { all: ['{n}在你上次待的地方坐了一会儿。'], clingy: ['{n}在门口等了你好久。', '{n}一直在等你回来。'] },
+  // 小玩法
+  wandGame: { all: ['{n}追着逗猫棒扑了 {x} 次，玩得气喘吁吁。', '你陪{n}玩逗猫棒，它扑中了 {x} 次。'], clingy: ['你陪{n}玩了逗猫棒，它玩完还一直跟着你。'] },
+  fishGame: { all: ['你陪{n}在鱼塘边捞鱼，捞到了 {x} 条。', '{n}在鱼塘边伸爪子，捞上来 {x} 条小鱼。'], glutton: ['{n}捞到 {x} 条鱼，眼睛一直盯着不放。'] },
+  autoFish: { all: ['{n}自己去鱼塘待了一会儿，带回来 {x} 条小鱼。'], adventurer: ['{n}在鱼塘边守了好久，叼回来 {x} 条小鱼。'] },
 };
 
 export const SEASON_IDS: Season[] = ['spring', 'summer', 'autumn', 'winter'];

@@ -367,6 +367,24 @@ console.log('猫的日记、猫叼回来的礼物');
   check('门口的礼物放太久没捡会不见', g.gifts.length === 0);
 }
 
+console.log('小玩法');
+{
+  const s = blank(); const p = s.pets[0]; p.mood = 40; const fish0 = s.fish; const M = CONFIG.minigame;
+  const r = sim.finishWand(s, p.id, 5);
+  check('陪它玩：扑中几次加几次心情，每天前几局给小鱼干', r.ok && p.mood === 40 + 5 * M.wand.mood && s.fish === fish0 + 5 * M.wand.fishEach && Object.values(s.diary.days).flat().some((f) => f.k === 'wandGame' && f.x === '5'));
+  sim.finishWand(s, p.id, 99); const f1 = s.fish; sim.finishWand(s, p.id, 3); sim.finishWand(s, p.id, 3);
+  check('一局的心情和小鱼干有上限；奖励局用完了只加心情', f1 - fish0 === 5 * M.wand.fishEach + M.wand.fishMax && s.fish === f1 + 3 * M.wand.fishEach && (sim.finishWand(s, p.id, 3), s.fish === f1 + 3 * M.wand.fishEach) && sim.minigameLeft(s).wand === 0);
+  sim.advance(s, DAY);
+  check('第二天奖励局数重新算', sim.minigameLeft(s).wand === M.wand.rewardPlays);
+  const before = s.fish; sim.finishFishing(s, p.id, 3);
+  check('陪它捞鱼：捞到几条给几份小鱼干', s.fish === before + 3 * M.fishing.fishEach);
+  p.mood = 80; const a = sim.startAutoFish(s, p.id);
+  check('让它自己去捞：不能同时出门，到点自己回来带小鱼干，日记里记着', a.ok && !!p.fishing && !sim.checkDispatch(s, { petIds: [p.id], bento: 'kibble', tool: null, goods: [] }).ok && (() => { const f = s.fish; const ev = sim.advance(s, M.auto.duration + MIN); return !p.fishing && ev.some((e) => e.type === 'autoFish') && s.fish - f >= M.auto.fish[0] && Object.values(s.diary.days).flat().some((x) => x.k === 'autoFish'); })());
+  sim.startAutoFish(s, p.id); sim.advance(s, M.auto.duration + MIN);
+  check(`让它去一天最多 ${M.auto.perDay} 次；心情太差不去`, !sim.startAutoFish(s, p.id).ok && (sim.advance(s, DAY), p.mood = 10, !sim.startAutoFish(s, p.id).ok));
+  check('虚弱或者出门了不能玩', (() => { const q = blank(); q.pets[0].weakSince = q.clock; return !sim.finishWand(q, q.pets[0].id, 3).ok; })());
+}
+
 console.log('装饰的摆放规则');
 {
   const world = (extra: Partial<sim.PlaceWorld> = {}): sim.PlaceWorld => ({ zoneW: 432, floorY: 560, height: 720, wall: [{ x0: 28, y0: 156, x1: 216, y1: 312, label: '厨房的窗户' }], foot: [{ x0: 40, y0: 539, x1: 200, y1: 573, label: '橱柜' }], keepClear: [{ x0: 100, y0: 560, x1: 330, y1: 640, label: '门前的路' }], ...extra });

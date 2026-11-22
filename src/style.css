@@ -199,3 +199,7 @@ textarea.export { width: 100%; font: 12px/1.5 ui-monospace, Menlo, Consolas, mon
 .diary-pet + .diary-pet { margin-top: 10px; padding-top: 10px; border-top: 1px dashed rgba(90,70,52,.25); }
 .diary-pet b { display: block; margin-bottom: 2px; }
 .diary-pet p { margin: 0; }
+
+/* 小玩法 */
+.mini-bar { font-weight: 600; text-align: center; margin-bottom: 6px; }
+.mini-cv { display: block; width: 100%; aspect-ratio: 360 / 300; border-radius: 14px; touch-action: none; }

@@ -33,6 +33,8 @@ export interface Pet {
   lastNibble?: number | null;
   /** 去邻居家回访了：去的是谁、什么时候回来；null = 没去 */
   outing?: { neighborId: string; until: number } | null;
+  /** 自己去鱼塘捞鱼：什么时候回来；null = 没去 */
+  fishing?: { until: number } | null;
   /** 狸花猫正在找它：什么时候有结果；null = 没在找 */
   searchUntil: number | null;
   tripId: string | null;
@@ -192,6 +194,8 @@ export interface GameState {
   gifts: Gift[];
   /** 「猫的宝贝」图鉴：收到过几次、第一次是哪天、谁叼回来的 */
   treasures: Record<string, { n: number; first: number; petId: string }>;
+  /** 小玩法今天玩了几局（有奖励的局数按天算）、让猫自己去捞了几次 */
+  minigame: { day: string; wand: number; fishing: number; auto: number };
   /** 上次离开游戏（切到后台）的真实时间，用来算你走了多久（礼物、日记补写） */
   lastSeenReal: number;
   /** 猫爬架的三层（顶层、中层、底层）各指定给哪只宠物；null = 谁都可以上去 */
@@ -216,7 +220,8 @@ export type GameEvent =
   | { type: 'neighbor'; id: string }
   | { type: 'neighborLeft'; id: string; find?: string }
   | { type: 'outingBack'; petId: string; neighborId: string; text: string }
-  | { type: 'gift'; petId: string; kind: string };
+  | { type: 'gift'; petId: string; kind: string }
+  | { type: 'autoFish'; petId: string; fish: number };
 
 export type Result = { ok: true; msg?: string } | { ok: false; msg: string };
 
