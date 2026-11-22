@@ -21,6 +21,8 @@ export interface Light {
   indoor: string; outdoor: string;
   /** 太阳的强弱（0–1）：0 = 没有室外影子和窗户光（夜里、下雨） */
   sun: number;
+  /** 天有多亮（0–1，不管下不下雨；屋里压暗多少按它算，下雨天白天屋里也不会像夜里一样暗） */
+  day: number;
   /** 太阳从哪边照过来：-1 = 在左边（早上，影子往右拉），0 = 头顶，1 = 在右边（傍晚，影子往左拉） */
   side: number;
   /** 太阳有多高（0 = 贴着地平线，1 = 正午） */
@@ -48,8 +50,10 @@ export function lightAt(hour: number, weather: Weather): Light {
   // 太阳的位置：日出在左边、正午在头顶、日落在右边
   const day = Math.max(0, Math.min(1, (h - L.sunrise) / (L.sunset - L.sunrise)));
   const side = day * 2 - 1, high = Math.sin(Math.PI * day);
-  if (weather === 'rain') { indoor = mulColor(indoor, L.rain); outdoor = mulColor(outdoor, L.rain); sun = 0; }
-  return { hour: h, phase: phaseName(h), indoor, outdoor, sun, side, high, win: mixColor(a.win, b.win, t), glow: num(a.glow, b.glow) };
+  const bright = sun; let glow = num(a.glow, b.glow);
+  // 下雨：室外偏冷偏灰；屋里只轻轻偏灰，灯白天也开着
+  if (weather === 'rain') { indoor = mulColor(indoor, L.rainIndoor); outdoor = mulColor(outdoor, L.rain); sun = 0; glow = Math.max(glow, L.rainLamps); }
+  return { hour: h, phase: phaseName(h), indoor, outdoor, sun, day: bright, side, high, win: mixColor(a.win, b.win, t), glow };
 }
 
 /** 室外影子的形状：按物品高度的比例，影子顶端往旁边斜出去多少（正数 = 往右）、压扁成多高。
@@ -102,7 +106,7 @@ export const falloff = (d: number, r: number) => { const t = 1 - d / r; return t
 export function lightMap(l: Light, grid: { x0: number; y0: number; cell: number; cols: number; rows: number }, zoneOf: (x: number, y: number) => number, outdoor: (zone: number) => boolean, sources: LightSource[], occluders: Occluder[] = []): Uint8ClampedArray<ArrayBuffer> {
   const U = L.ultra; const out = new Uint8ClampedArray(new ArrayBuffer(grid.cols * grid.rows * 4));
   const ind = rgb(l.indoor).map((v) => v / 255), outd = rgb(l.outdoor).map((v) => v / 255);
-  const dim = U.dimNight + (U.dimDay - U.dimNight) * Math.min(1, l.sun);
+  const dim = U.dimNight + (U.dimDay - U.dimNight) * Math.min(1, l.day);
   const src = sources.map((s) => ({ ...s, c: rgb(s.color).map((v) => v / 255) }));
   for (let j = 0; j < grid.rows; j++) {
     const y = grid.y0 + (j + 0.5) * grid.cell;

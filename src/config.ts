@@ -411,10 +411,15 @@ export const CONFIG = {
     phases: [[5, '清晨'], [7, '上午'], [11, '中午'], [14, '下午'], [17, '黄昏'], [19, '夜晚']] as [number, string][],
     /** 太阳几点出来、几点落下：早上在左边（影子往右拉长），中午在头顶（影子短），傍晚在右边（影子往左拉长） */
     sunrise: 5.5, sunset: 19.2,
-    /** 下雨（冬天是大雪）：没有太阳影子和窗户光，整个画面再乘上这个偏冷偏灰的颜色 */
-    rain: '#C6CCD6',
+    /** 下雨（冬天是大雪）：没有太阳影子和窗户光，室外再乘上这个偏冷偏灰的颜色；屋里只轻轻乘 rainIndoor（屋里有灯，不能跟着外面一起暗下去） */
+    rain: '#C6CCD6', rainIndoor: '#E6E8EC',
+    /** 下雨天白天，买了的灯和屋里的固定光源也开着（0–1，和夜里的 1 比） */
+    rainLamps: 0.7,
+    /** 屋里的固定光源（不用买、看不见灯具，像天花板上的灯）：每个室内区域正中一盏，从天花板往下 y 的位置。
+     *  base = 白天也一直开着的一点点补光；on = 天暗了（傍晚、夜里、下雨）再加多少。只照亮、不投影 */
+    roomLight: { y: 150, color: '#FFE6C4', radius: 420, base: 0.22, on: 0.3 },
     /** 室外影子：浓淡（乘以 sun）；压扁成多高（中午 short、早晚 long，按物品高度的比例）；早晚最多往旁边斜出去多少（按物品高度的比例） */
-    shadow: { alpha: 0.28, short: 0.16, long: 0.34, lean: 1.5 },
+    shadow: { alpha: 0.28, short: 0.14, long: 0.3, lean: 1.3 },
     /** 接触阴影（屋里屋外都有，脚底下一小块柔和的暗影）：浓淡、宽度（按物品宽度的比例）、厚度（按宽度的比例）；猫的宽度按格子的比例 */
     contact: { alpha: 0.22, width: 0.86, depth: 0.16, pet: 0.42 },
     /** 不画接触阴影和室外影子的东西：挂着的、贴墙的、平铺在地上的 */
@@ -427,7 +432,7 @@ export const CONFIG = {
      *  lamp = 灯光的颜色、强度、照多远（radius 可以按物品单独写在 lampRadius）；
      *  shadow = 灯和窗户投的影子：浓淡、最多往旁边斜多少（按物品高度）、压扁成多高（灯在头顶 short，斜照 long）、太弱的光不投影、比照亮的范围远多少 */
     ultra: {
-      cell: 16, dimDay: 0.72, dimNight: 0.6, leak: 0.1,
+      cell: 16, dimDay: 0.84, dimNight: 0.62, leak: 0.1,
       /** 家具挡光：被挡住的地方还剩多少光；哪些家具挡光（框往里缩 inset，镂空的猫爬架、栅栏、椅子不挡） */
       block: 0.3, inset: 0.1,
       occluders: ['bed', 'cabinet', 'sofa', 'counter', 'tub', 'nightstand', 'box', 'basket', 'feeder', 'shelf'] as string[],
@@ -446,7 +451,7 @@ export const CONFIG = {
       lamp: { color: '#FFC27A', power: 0.95, radius: 330 },
       lampColor: { heater: '#FF9C55', jar: '#DFFFA6', lantern: '#FFAA6A' } as Record<string, string>,
       lampRadius: { bedlamp: 240, heater: 250, nightlight: 170, jar: 150, lantern: 220, sidelamp: 280 } as Record<string, number>,
-      shadow: { alpha: 0.36, maxLean: 2.2, short: 0.14, long: 0.42, min: 0.06, reach: 1.4 },
+      shadow: { alpha: 0.36, maxLean: 2.2, short: 0.12, long: 0.34, min: 0.06, reach: 1.4 },
       /** 灯的光晕（叠加变亮那一层）在超高里乘这个：亮暗主要交给光照图 */
       glowScale: 0.6,
     },

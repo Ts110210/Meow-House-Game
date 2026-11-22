@@ -299,6 +299,7 @@ console.log('光影：跟着真实时间');
     return r1 > b1 && r2 - b2 > r1 - b1 && b3 > r3;
   })());
   check('平滑过渡：每隔 6 分钟颜色变化都很小', (() => { let worst = 0; for (let h = 0; h < 24; h += 0.1) { const a = at(h).outdoor, b = at(h + 0.1).outdoor; for (const i of [1, 3, 5]) worst = Math.max(worst, Math.abs(parseInt(a.slice(i, i + 2), 16) - parseInt(b.slice(i, i + 2), 16))); } return worst <= 12; })());
+  check('下雨天白天：灯和屋里的固定光源也开着，屋里按白天的亮度算、只轻轻偏灰', at(12.5, 'rain').glow >= 0.7 && at(12.5, 'rain').day === 1 && at(12.5).glow === 0 && parseInt(at(12.5, 'rain').indoor.slice(1, 3), 16) > parseInt(at(12.5, 'rain').outdoor.slice(1, 3), 16));
   const m = light.sunShadow(at(7.5)), n = light.sunShadow(at(12.3)), e = light.sunShadow(at(17.5));
   check('影子：早上往右拉长、中午短、傍晚往左拉长', m.dx > 0.5 && e.dx < -0.5 && Math.abs(n.dx) < 0.1 && n.dy < m.dy && n.dy < e.dy);
   check('下雨：没有太阳（影子和窗户光都关掉），画面偏冷偏灰', at(12.5, 'rain').sun === 0 && at(12.5, 'rain').indoor !== '#FFFFFF' && (() => { const c = at(12.5, 'rain').indoor; return parseInt(c.slice(5, 7), 16) >= parseInt(c.slice(1, 3), 16); })());

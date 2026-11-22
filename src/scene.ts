@@ -1415,6 +1415,9 @@ export class Scene {
       const left = sp.x - sp.width / 2, top = sp.y - sp.height; const x = left + (glass[0] + glass[2]) / 2 * sp.width, y = top + (glass[1] + glass[3]) / 2 * sp.height;
       this.lightSrc.push({ x, y, zone: this.zoneOfPoint(x, y), power: U.window.power * l.sun, radius: U.window.radius, color: l.win });
     }
+    // 屋里的固定光源：每个室内区域正中一盏（看不见灯具），白天一直有一点补光，天暗了更亮
+    const RL = CONFIG.light.roomLight, roomOn = RL.base + RL.on * l.glow;
+    ZONES.forEach((z, i) => { if (OUTDOOR.includes(z.id)) return; const x = (zx(i) + zx(i + 1)) / 2; this.lightSrc.push({ x, y: RL.y, zone: i, power: roomOn, radius: RL.radius, color: RL.color, cast: false }); });
     if (l.glow > 0.01) for (const p of this.lampSpots()) this.lightSrc.push({ x: p.x, y: p.y, zone: this.zoneOfPoint(p.x, p.y), power: U.lamp.power * l.glow, radius: U.lampRadius[p.kind] ?? U.lamp.radius, color: U.lampColor[p.kind] ?? U.lamp.color });
     // 家具本身当光源：鱼塘白天反光，喂食机夜里亮着指示灯（只照亮、不让别的东西投影）
     for (const [kind, e] of Object.entries(U.extra)) {
@@ -1489,7 +1492,9 @@ export class Scene {
       // 影子 = 自己的轮廓压扁、斜切：顶端往旁边挪 dx、高度压成 dy（都按自己的高度算）
       const silhouette = (src: Sprite, x: number, y: number, dx: number, dy: number, alpha: number) => {
         const sh = ultraLayer ? getObj(y - 0.5) : get(); sh.texture = src.texture; sh.anchor.set(src.anchor.x, src.anchor.y); sh.tint = 0x000000; sh.alpha = alpha;
-        const sy = Math.abs(src.scale.y); sh.scale.set(src.scale.x, sy * Math.hypot(dx, dy)); sh.skew.set(Math.atan2(-dx, dy), 0); sh.position.set(x, y);
+        // 光都从后面（窗户、墙边的灯、天上）照过来，影子往前（画面下方、朝着看的人）倒在地上：
+        // 轮廓上下翻过来、压扁成 dy、往旁边斜 dx（都按自己的高度算）
+        const sy = Math.abs(src.scale.y); sh.scale.set(src.scale.x, -sy * Math.hypot(dx, dy)); sh.skew.set(Math.atan2(dx, dy), 0); sh.position.set(x, y);
       };
       const cast = (src: Sprite, x: number, y: number, w: number, outdoor: boolean) => {
         const real = src.texture && src.texture !== Texture.EMPTY;
