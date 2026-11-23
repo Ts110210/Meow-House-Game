@@ -63,6 +63,22 @@ const HOP_MS = 460;
 const SELF_PLAY_COOLDOWN = 45_000;
 const D = CONFIG.durations;
 const between = ([a, b]: [number, number]) => a + Math.random() * (b - a);
+/** 一张图底下有多少是透明的（占整张高度的比例）。影子要从看得见的底边开始；每张图只量一次 */
+const padCache = new WeakMap<object, number>();
+function bottomPad(cv: HTMLCanvasElement): number {
+  const hit = padCache.get(cv); if (hit !== undefined) return hit;
+  let pad = 0;
+  try {
+    const w = cv.width, h = cv.height; const c = cv.getContext?.('2d', { willReadFrequently: true } as any) as CanvasRenderingContext2D | null;
+    if (c && w && h) {
+      // 从最底下一行往上找，第一行有不透明像素的地方就是底边（最多量到一半，免得整张透明时出怪事）
+      const step = Math.max(1, Math.floor(w / 256));
+      for (let y = h - 1; y > h / 2; y--) { const row = c.getImageData(0, y, w, 1).data; let any = false; for (let x = 0; x < w; x += step) if (row[x * 4 + 3] > 24) { any = true; break; } if (any) break; pad++; }
+      pad /= h;
+    }
+  } catch { pad = 0; }
+  padCache.set(cv, pad); return pad;
+}
 
 const H = CONFIG.room.height;
 const N = ZONES.length;
@@ -1533,35 +1549,50 @@ export class Scene {
       const lamps = level === 'ultra' ? this.lightSrc : [];
       /** src = 投影子的那张图；x, y = 脚底；w = 接触阴影多宽；outdoor = 有没有太阳影子 */
       // 影子 = 自己的轮廓压扁、斜切：顶端往旁边挪 dx、高度压成 dy（都按自己的高度算）
-      const silhouette = (src: Sprite, x: number, y: number, dx: number, dy: number, alpha: number) => {
+      // pad = 图片底下透明的那几行有多高（世界坐标）：影子要从看得见的底边开始，不然会和东西隔开一条缝，看起来浮在空中
+      const silhouette = (src: Sprite, x: number, y: number, dx: number, dy: number, alpha: number, pad = 0) => {
         const sh = ultraLayer ? getObj(y - 0.5) : get(); sh.texture = src.texture; sh.anchor.set(src.anchor.x, src.anchor.y); sh.tint = 0x000000; sh.alpha = alpha;
         // 光都从后面（窗户、墙边的灯、天上）照过来，影子往前（画面下方、朝着看的人）倒在地上：
         // 轮廓上下翻过来、压扁成 dy、往旁边斜 dx（都按自己的高度算）
-        const sy = Math.abs(src.scale.y); sh.scale.set(src.scale.x, -sy * Math.hypot(dx, dy)); sh.skew.set(Math.atan2(dx, dy), 0); sh.position.set(x, y);
+        const k = Math.hypot(dx, dy), sk = Math.atan2(dx, dy);
+        const sy = Math.abs(src.scale.y); sh.scale.set(src.scale.x, -sy * k); sh.skew.set(sk, 0);
+        // 翻过来以后，透明的那几行在最上面：整张往回挪，让看得见的底边正好贴着东西的底边
+        sh.position.set(x - Math.sin(sk) * k * pad, y - pad - Math.cos(sk) * k * pad);
       };
-      const cast = (src: Sprite, x: number, y: number, w: number, outdoor: boolean) => {
+      const cast = (src: Sprite, x: number, y: number, w: number, outdoor: boolean, pad = 0) => {
         const real = src.texture && src.texture !== Texture.EMPTY;
-        if (sun && outdoor && real) silhouette(src, x, y, sun.dx, sun.dy, S.alpha * l.sun);
+        if (sun && outdoor && real) silhouette(src, x, y, sun.dx, sun.dy, S.alpha * l.sun, pad);
         // 超高：同一个区域里的每个光源（窗户、灯）各投一道影子，背离光源；露天的地方互相都算同一片
         if (real && lamps.length) {
           const z = this.zoneOfPoint(x, y - 2);
           for (const s of lamps) {
             if (s.cast === false) continue;
             if (s.zone !== z && !(this.openZone(s.zone) && this.openZone(z))) continue;
-            const t = lampShadow(s, x, y); if (t.alpha > 0) silhouette(src, x, y, t.dx, t.dy, t.alpha);
+            const t = lampShadow(s, x, y - pad); if (t.alpha > 0) silhouette(src, x, y, t.dx, t.dy, t.alpha, pad);
           }
         }
-        const c = get(); c.texture = ctex; c.anchor.set(0.5, 0.5); c.width = w * C.width; c.height = w * C.width * C.depth; c.position.set(x, y); c.alpha = C.alpha;
+        const c = get(); c.texture = ctex; c.anchor.set(0.5, 0.5); c.width = w * C.width; c.height = w * C.width * C.depth; c.position.set(x, y - pad); c.alpha = C.alpha;
       };
+      const padOf = (sp: Sprite) => { const art = (sp as any).art as HTMLCanvasElement | undefined; return art ? bottomPad(art) * Math.abs(sp.height) : 0; };
       const none = CONFIG.light.noShadow;
       for (const [kind, sp] of this.objSprites) {
         const def = ASSETS.objects[kind]; if (!def || def.wall || def.flat || none.includes(kind) || !sp.visible || sp.alpha === 0) continue;
-        cast(sp, sp.x, sp.y, sp.width, this.isOutdoor(sp.x));
+        cast(sp, sp.x, sp.y, sp.width, this.isOutdoor(sp.x), padOf(sp));
       }
-      for (const d of this.game.state.decor) { const sp = this.decorSprites.get(d.id); if (sp && sp.visible && DECOR[d.kind]?.layer === 'stand') cast(sp, sp.x, sp.y, sp.width, this.isOutdoor(sp.x)); }
+      for (const d of this.game.state.decor) { const sp = this.decorSprites.get(d.id); if (sp && sp.visible && DECOR[d.kind]?.layer === 'stand') cast(sp, sp.x, sp.y, sp.width, this.isOutdoor(sp.x), padOf(sp)); }
       const petW = (sp: Sprite) => 256 * Math.abs(sp.scale.y) * C.pet;
       for (const a of this.actors.values()) {
-        if (!a.root.visible || a.perch || a.hop || a.climb) continue; // 在家具上、跳着、爬梯子：地上没有影子
+        if (!a.root.visible || a.hop || a.climb) continue; // 跳着、爬梯子：没有影子
+        if (a.perch) {
+          // 待在椅子、窗台、沙发、床、猫爬架上：脚底下在家具面上留一小块软影子（放在家具那一层，排在猫后面一点点、家具前面）。
+          // 钻进去的家具（浴缸、纸箱等）里面看不到脚，不画
+          const def = ASSETS.objects[a.perch.kind as ObjectKind];
+          if (def && def.frontFrom == null) {
+            const c = getObj(a.root.zIndex - 0.01); c.texture = ctex; c.tint = 0xffffff; c.skew.set(0, 0); c.anchor.set(0.5, 0.5);
+            const w = petW(a.sprite) * C.perch; c.width = w * C.width; c.height = w * C.width * C.depth; c.position.set(a.root.x, a.root.y); c.alpha = C.alpha * 1.7;
+          }
+          continue;
+        }
         cast(a.sprite, a.root.x, a.root.y, petW(a.sprite), !!a.roof || this.isOutdoor(a.root.x));
       }
       const g = this.guest; if (g && g.root.visible && !g.climb) cast(g.sprite, g.root.x, g.root.y, petW(g.sprite), g.root.y < 0 || this.isOutdoor(g.root.x));

@@ -469,8 +469,9 @@ export const CONFIG = {
     roomLight: { y: 150, color: '#FFE6C4', radius: 420, base: 0.22, on: 0.3 },
     /** 室外影子：浓淡（乘以 sun）；压扁成多高（中午 short、早晚 long，按物品高度的比例）；早晚最多往旁边斜出去多少（按物品高度的比例） */
     shadow: { alpha: 0.28, short: 0.14, long: 0.3, lean: 1.3 },
-    /** 接触阴影（屋里屋外都有，脚底下一小块柔和的暗影）：浓淡、宽度（按物品宽度的比例）、厚度（按宽度的比例）；猫的宽度按格子的比例 */
-    contact: { alpha: 0.22, width: 0.86, depth: 0.16, pet: 0.42 },
+    /** 接触阴影（屋里屋外都有，脚底下一小块柔和的暗影）：浓淡、宽度（按物品宽度的比例）、厚度（按宽度的比例）；猫的宽度按格子的比例；
+     *  perch = 猫待在椅子、窗台等家具上时，脚底下那一块是平常的几倍宽（坐着的猫把中间盖住了，要比身子宽一点才看得到） */
+    contact: { alpha: 0.22, width: 0.86, depth: 0.16, pet: 0.42, perch: 1.7 },
     /** 不画接触阴影和室外影子的东西：挂着的、贴墙的、平铺在地上的 */
     noShadow: ['pendantDoor', 'pendantShelf', 'bedlamp', 'album', 'door', 'ladder', 'pond', 'deckEdge'] as string[],
     /** 窗户光：最亮处的浓淡（乘以 sun）；落在地板上的那块多深（中午 near、早晚 far）；早晚最多往旁边斜出去多少（按玻璃宽度的比例） */
