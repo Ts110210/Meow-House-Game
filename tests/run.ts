@@ -368,6 +368,23 @@ console.log('猫的日记、猫叼回来的礼物');
   check('门口的礼物放太久没捡会不见', g.gifts.length === 0);
 }
 
+console.log('「想要」的小气泡');
+{
+  const W = CONFIG.want; const s = blank(); const p = s.pets[0]; p.food = 90; p.clean = 90; p.mood = 90; p.lastCare = s.clock;
+  check('什么都不缺：不冒', sim.wantOf(s, p) === null);
+  p.food = W.food - 1; check('饿了：想吃的（最先）', sim.wantOf(s, p) === 'food');
+  p.food = 90; p.clean = W.clean - 1; check('脏了：想洗澡', sim.wantOf(s, p) === 'bath');
+  p.clean = 90; p.mood = W.mood - 1; check('无聊、家里没玩具：想你陪它玩', sim.wantOf(s, p) === 'play');
+  s.owned.ball = true; s.owned.scratcher = true; const k = sim.wantOf(s, p);
+  check('家里有玩具：想玩其中一样，同一天问几次都一样', (k === 'ball' || k === 'scratcher') && sim.wantOf(s, p) === k);
+  p.mood = 90; p.lastCare = s.clock - W.lonelyAfter - MIN; check('很久没人理：想被摸', sim.wantOf(s, p) === 'pet');
+  p.mood = 30; const m0 = p.mood; const b0 = p.bond ?? 0; const r = sim.playToy(s, p.id, 'ball');
+  check('点了想玩球：它去玩，加心情、算陪玩', r.ok && p.mood > m0 && (p.bond ?? 0) > b0);
+  check('家里没有的东西不能玩', !sim.playToy(s, p.id, 'autoball').ok);
+  const b1 = p.bond ?? 0; sim.fulfillWant(s, p.id); check('满足了它想要的：亲密度额外加一点', (p.bond ?? 0) > b1);
+  p.tripId = 'x'; check('出门了不冒', sim.wantOf(s, p) === null);
+}
+
 console.log('猫多带货多');
 {
   const T = CONFIG.travel;

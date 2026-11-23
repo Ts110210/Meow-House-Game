@@ -838,6 +838,43 @@ function sendLetter(s: GameState, trip: Trip, events: GameEvent[]) {
   events.push({ type: 'letter', postcardId: card.id });
 }
 
+// ---------- 「想要」的小气泡 ----------
+
+/** 猫想要什么：饿了 → 吃的；脏了 → 洗澡；无聊 → 玩（家里有球、自动球、猫抓板就想玩那个，没有就想你陪它玩）；很久没人理 → 想被摸。
+ *  只看数值，不管画面；画面里什么时候冒、冒多久在 scene.updateWants */
+export type WantKind = 'food' | 'bath' | 'pet' | 'play' | 'ball' | 'scratcher' | 'autoball';
+export function wantOf(s: GameState, p: Pet): WantKind | null {
+  if (!usable(p).ok || p.fishing) return null;
+  const W = CONFIG.want;
+  if (p.food < W.food) return 'food';
+  if (isWeak(p)) return null; // 虚弱的只要吃的
+  if (p.clean < W.clean) return 'bath';
+  if (p.mood < W.mood) {
+    const toys = (['ball', 'autoball', 'scratcher'] as const).filter((t) => s.owned[t]);
+    if (!toys.length) return 'play';
+    // 同一只猫、同一天想玩的是同一样（不会一会儿想玩球一会儿想抓板）
+    let h = 0; for (const c of p.id + dayKey(s.clock)) h = (h * 31 + c.charCodeAt(0)) >>> 0;
+    return toys[h % toys.length];
+  }
+  if (s.clock - p.lastCare > W.lonelyAfter) return 'pet';
+  return null;
+}
+/** 主人点了「想玩球 / 自动球 / 猫抓板」：它去玩那样东西，算一次陪玩（心情、任务、日记、亲密度） */
+export function playToy(s: GameState, petId: string, toy: 'ball' | 'scratcher' | 'autoball'): Result {
+  const p = s.pets.find((x) => x.id === petId);
+  const u = usable(p); if (!u.ok) return u;
+  if (!s.owned[toy]) return { ok: false, msg: '家里还没有这样东西' };
+  if (isWeak(p!)) return { ok: false, msg: `${p!.name}太虚弱了，先喂点东西` };
+  const gain = CONFIG.want.toyMood * repeatMult(s, p!, 'play');
+  p!.mood = clamp(p!.mood + gain); p!.lastCare = s.clock; questEvent(s, 'play'); note(s, p!.id, 'play'); addPetBond(s, p!, 'play');
+  return { ok: true, msg: `心情 +${fmt(gain)}` };
+}
+/** 主人满足了它冒出来的那个「想要」：亲密度额外加一点 */
+export function fulfillWant(s: GameState, petId: string): Result {
+  const p = s.pets.find((x) => x.id === petId); if (!p || !usable(p).ok) return { ok: false, msg: '' };
+  addPetBond(s, p, 'want'); return { ok: true };
+}
+
 /** 这一趟最多带几件货：猫越多带得越多 */
 export function goodsCapacity(nPets: number): number {
   const t = CONFIG.travel; return t.goodsCapacity + t.goodsPerExtraPet * Math.max(0, nPets - 1);

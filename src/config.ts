@@ -356,8 +356,11 @@ export const CONFIG = {
   // ---------- 亲密度（和主人亲不亲） ----------
   /** 0–100，只涨不掉（很久没来会闹脾气，见 greet，但不扣亲密度）。每次照顾涨多少；每只猫一天最多涨 dayMax；
    *  levels = 几级的门槛和名字；greetAt = 到这一级会在你回来时跑过来迎接；waitAt = 最亲近的那只到这一级会在你上次离开的地方等你；rubAt = 迎接完会蹭你 */
+  /** 猫头上冒「想要」的小气泡：低于这几条线就冒（吃的、干净、心情），多久没人理会想被摸；同一只冒过、或者被满足了，隔 cooldown 才会再冒；
+   *  checkEvery = 多久看一次；size = 气泡画多大（世界坐标）；toyMood = 点了「想玩球 / 猫抓板」它去玩，加多少心情；满足它想要的，亲密度额外加 bond.gain.want */
+  want: { food: 35, clean: 35, mood: 40, lonelyAfter: 4 * HOUR, cooldown: 6 * MIN, checkEvery: 1500, size: 58, toyMood: 15 },
   bond: {
-    gain: { feed: 1, pet: 1.5, bath: 0.5, play: 1, wand: 2, fishing: 2, gift: 1, trip: 3 } as Record<string, number>,
+    gain: { feed: 1, pet: 1.5, bath: 0.5, play: 1, wand: 2, fishing: 2, gift: 1, trip: 3, want: 1.5 } as Record<string, number>,
     dayMax: 12,
     levels: [[0, '陌生'], [20, '熟悉'], [50, '亲近'], [80, '形影不离']] as [number, string][],
     greetAt: 20, rubAt: 50, waitAt: 20,

@@ -24,7 +24,7 @@ import { isNative, notifyPermission, notifyStatus, testNotification } from './pl
 import { kv } from './platform/storage';
 import { hoursToText, simulateAll, type SimResult } from './simulate';
 import { buildSet, previewSet, drawFrame, fileToDataUrl, frameIndex, hasRow, imageToAvatar, loadImage, normalizeSheet, type SpriteSet } from './sprites';
-import type { Moment, Pet, Postcard, Result } from './types';
+import type { GameState, Moment, Pet, Postcard, Result } from './types';
 
 type Kid = Node | string | number | null | undefined | false;
 function h(tag: string, attrs: Record<string, any> | null = null, ...kids: (Kid | Kid[])[]): HTMLElement {
@@ -310,6 +310,44 @@ export class UI {
   }
 
   // ---------- 场景里点到东西 ----------
+
+  /** 喂、洗、摸、陪玩：宠物面板和猫头上的「想要」气泡共用。满足了它冒着的那个「想要」，亲密度额外加一点 */
+  careAct(id: string, fn: (st: GameState) => Result, anim: ActionName, food?: string) {
+    const p = this.game.state.pets.find((x) => x.id === id); if (!p) return;
+    // 正在吃、洗、玩的时候不接新的指令，等它做完
+    const busy = this.scene.busy(id);
+    if (busy && anim !== 'happy') { this.toast(`${p.name}正在${busy === 'eat' ? '吃东西' : busy === 'bath' ? '洗澡' : '玩'}，等它一下`); sfx('error'); return; }
+    const r = this.game.act(fn);
+    if (!r.ok) { this.say(r); sfx('error'); if (!r.ok && r.full) this.scene.refuseFood(id); return; }
+    sfx(anim === 'eat' ? 'eat' : anim === 'bath' ? 'bath' : anim === 'play' ? 'play' : 'purr'); if (anim !== 'bath') meow(anim === 'eat' ? 'happy' : 'short');
+    this.fulfillWant(id, anim === 'eat' ? ['food'] : anim === 'bath' ? ['bath'] : anim === 'happy' ? ['pet'] : anim === 'play' ? ['play', 'ball', 'scratcher', 'autoball'] : []);
+    if (anim === 'happy') {
+      // 摸摸：面板不关，直接在面板里看它开心
+      this.preview = { petId: id, action: anim, until: performance.now() + 2600 }; this.scene.perform(id, anim, false); this.say(r);
+    } else {
+      // 喂食、洗澡、玩耍：收起面板，镜头跟着它走到饭碗、浴缸、玩具那里
+      this.close(); this.scene.perform(id, anim, true, food); if (r.msg) this.scene.floatText(id, r.msg);
+    }
+  }
+  /** 它头上冒着的「想要」正好是这几种之一：算满足了（亲密度 +一点，气泡收起来） */
+  private fulfillWant(id: string, kinds: sim.WantKind[]) {
+    const w = this.scene.wantShown(id); if (!w || !kinds.includes(w)) return;
+    this.game.act((st) => sim.fulfillWant(st, id)); this.scene.clearWant(id);
+  }
+  /** 点了猫头上的「想要」气泡：饿了打开宠物面板让你挑吃的；洗澡、摸摸、陪玩直接做；想玩球、猫抓板就让它去玩那样东西 */
+  onWant(id: string, kind: sim.WantKind) {
+    const p = this.game.state.pets.find((x) => x.id === id); if (!p) return;
+    if (kind === 'food') { this.petTab = 'care'; this.openPet(id); this.toast(`${p.name}饿了，挑一种吃的给它`); return; }
+    if (kind === 'bath') return this.careAct(id, (st) => sim.bath(st, id), 'bath');
+    if (kind === 'pet') return this.careAct(id, (st) => sim.petPet(st, id), 'happy');
+    if (kind === 'play') return this.careAct(id, (st) => sim.play(st, id), 'play');
+    const busy = this.scene.busy(id);
+    if (busy) { this.toast(`${p.name}正在${busy === 'eat' ? '吃东西' : busy === 'bath' ? '洗澡' : '玩'}，等它一下`); sfx('error'); return; }
+    const r = this.game.act((st) => sim.playToy(st, id, kind));
+    if (!r.ok) { this.say(r); sfx('error'); return; }
+    if (!this.scene.goToy(id, kind)) { this.scene.perform(id, 'play'); } // 那样东西正被别的猫占着：就地陪它玩一下
+    sfx('play'); meow('short'); this.fulfillWant(id, [kind]); if (r.msg) this.scene.floatText(id, r.msg);
+  }
 
   onObject(kind: ObjectKind, id?: string) {
     if (kind === 'visitor' && id) { this.openVisitor(id); return; }
@@ -704,21 +742,7 @@ export class UI {
     }
 
     const mult = (k: 'feed' | 'pet' | 'bath' | 'play') => { const m = sim.peekMult(s, p, k); return m < 1 ? h('small', null, `连续做，效果 ×${m}`) : null; };
-    const doAct = (fn: (st: typeof s) => Result, anim: ActionName, food?: string) => {
-      // 正在吃、洗、玩的时候不接新的指令，等它做完
-      const busy = this.scene.busy(id);
-      if (busy && anim !== 'happy') { this.toast(`${p.name}正在${busy === 'eat' ? '吃东西' : busy === 'bath' ? '洗澡' : '玩'}，等它一下`); sfx('error'); return; }
-      const r = this.game.act(fn);
-      if (!r.ok) { this.say(r); sfx('error'); if (!r.ok && r.full) this.scene.refuseFood(id); return; }
-      sfx(anim === 'eat' ? 'eat' : anim === 'bath' ? 'bath' : anim === 'play' ? 'play' : 'purr'); if (anim !== 'bath') meow(anim === 'eat' ? 'happy' : 'short');
-      if (anim === 'happy') {
-        // 摸摸：面板不关，直接在面板里看它开心
-        this.preview = { petId: id, action: anim, until: performance.now() + 2600 }; this.scene.perform(id, anim, false); this.say(r);
-      } else {
-        // 喂食、洗澡、玩耍：收起面板，镜头跟着它走到饭碗、浴缸、玩具那里
-        this.close(); this.scene.perform(id, anim, true, food); if (r.msg) this.scene.floatText(id, r.msg);
-      }
-    };
+    const doAct = (fn: (st: typeof s) => Result, anim: ActionName, food?: string) => this.careAct(id, fn, anim, food);
     out.push(h('h3', null, '喂食'));
     out.push(h('div', { class: 'grid3' }, FOODS.map((f) => h('button', { class: 'act', 'data-tut': `feed-${f.id}`, disabled: sim.count(s, f.id) < 1, onclick: () => doAct((st) => sim.feed(st, id, f.id), 'eat', f.id) },
       h('span', { class: 'big' }, f.icon), `${f.name} ×${sim.count(s, f.id)}`, h('small', null, `饱食 +${f.restore}`)))));

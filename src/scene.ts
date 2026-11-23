@@ -6,6 +6,7 @@ import { TREASURES } from './config';
 import { Application, Circle, Container, Graphics, Rectangle, Sprite, Text, Texture, type FederatedPointerEvent } from 'pixi.js';
 import { ASSETS, type ObjectDef } from './assets.config';
 import type { AssetStore } from './assets';
+import { drawWant } from './art/want';
 import { drawObject, drawTop, drawWindowView, drawZone, groundColor, objectAspect, roomPalette, skyFor, type Env } from './art/room';
 import { renderPostcard } from './art/postcard';
 import { CONFIG, DECOR, PALETTE, SOUVENIRS, SPRITE, VISITORS, ZONES, type ActionName , NEIGHBORS, FIND_KINDS, SEASON_FINDS } from './config';
@@ -154,7 +155,7 @@ interface Actor {
   roof?: { u: number; tu: number; slot: number; home: boolean; slept: boolean; stay: number } | null;
 }
 
-export interface SceneHooks { /** 抓拍到了一个瞬间 */ onMoment?(id: string): void; onPet(id: string): void; onObject(kind: ObjectKind, id?: string): void; onZone(index: number): void; onEdit?(kind: string | null): void; onBgEdit?(done: boolean): void; /** 布置房间时：选中了哪件装饰（null = 没选中），或者摆放被拒绝的原因 */ onDecor?(id: string | null, msg?: string): void }
+export interface SceneHooks { /** 抓拍到了一个瞬间 */ onMoment?(id: string): void; onPet(id: string): void; onObject(kind: ObjectKind, id?: string): void; onZone(index: number): void; onEdit?(kind: string | null): void; onBgEdit?(done: boolean): void; /** 布置房间时：选中了哪件装饰（null = 没选中），或者摆放被拒绝的原因 */ onDecor?(id: string | null, msg?: string): void; /** 点了猫头上「想要」的小气泡 */ onWant?(petId: string, kind: sim.WantKind): void }
 interface EditBox { sp: Sprite; frame: Graphics; handle: Graphics; label: Text }
 
 export class Scene {
@@ -259,6 +260,7 @@ export class Scene {
 
   /** 素材变了之后重建所有贴图 */
   rebuildArt() {
+    this.clearWants(); // 气泡的图可能换了：收起来，下次按新图冒
     this.bgLayer.removeChildren().forEach((c) => c.destroy());
     this.clearObjects();
     this.textures.forEach((t) => t.destroy(true)); this.textures = []; this.objSprites.clear(); this.objArt.clear(); this.objSig = '';
@@ -916,6 +918,11 @@ export class Scene {
   // ---------- 罐头、便当：摆在厨房地上，吃完留下空罐、空盒，过一会儿消失 ----------
   private dishes = new Map<string, { id: string; kind: 'can' | 'feast'; owner: string; x: number; y: number; dir: 1 | -1; sp: Sprite; started: boolean; endAt: number; emptyUntil: number }>();
   private dishSeq = 0;
+  /** 猫头上「想要」的小气泡：每只猫最多一个；冒过、被满足了，隔一阵（want.cooldown）才会再冒。只是画面，不进存档 */
+  private wants = new Map<string, { kind: sim.WantKind; sp: Sprite }>();
+  private wantNext = new Map<string, number>();
+  private wantCheckAt = 0;
+  private wantTex = new Map<string, Texture>();
   /** 饭碗里还剩多少猫粮（0 空 – 1 满）：喂猫粮时满上，猫在碗边吃的时候一点点变少。只是画面，不进存档 */
   private bowlLevel = 0;
   /** 碗里那堆粮：几档裁好的图（从空到满）、画在碗上面那一层 */
@@ -1258,6 +1265,63 @@ export class Scene {
     a.pending = { action, dur, ...(a.station === 'dish' ? { dish: a.dishId } : {}) };
     if (follow && action !== 'happy') this.follow = { id: petId, until: this.now + dur + 4000 };
     wake();
+  }
+
+  // ---------- 「想要」的小气泡 ----------
+  private wantTexture(kind: sim.WantKind): Texture {
+    let t = this.wantTex.get(kind);
+    if (!t) { t = Texture.from(this.assets.get(`want.${kind}`) ?? drawWant(kind)); this.wantTex.set(kind, t); } // 自己管销毁（clearWants），不放进 this.textures
+    return t;
+  }
+  private dropWant(id: string, cooldown: boolean) {
+    const w = this.wants.get(id); if (!w) return;
+    this.wants.delete(id); if (!w.sp.destroyed) w.sp.destroy();
+    if (cooldown) this.wantNext.set(id, this.now + CONFIG.want.cooldown);
+  }
+  private clearWants() {
+    for (const id of [...this.wants.keys()]) this.dropWant(id, false);
+    this.wantTex.forEach((t) => t.destroy(true)); this.wantTex.clear();
+  }
+  /** 主人满足了它（点了气泡、或者从面板里喂了、洗了）：气泡收起来，隔一阵再冒 */
+  clearWant(petId: string) { this.dropWant(petId, true); }
+  /** 现在冒着的是什么（没有就是 null） */
+  wantShown(petId: string): sim.WantKind | null { return this.wants.get(petId)?.kind ?? null; }
+  /** 每隔一会儿看一次谁想要什么；睡着、在屋顶、正在吃洗玩、小玩法开着的时候不冒（冒着的先藏起来）。每帧跟着头顶飘 */
+  private updateWants() {
+    const s = this.game.state; const W = CONFIG.want;
+    if (this.now >= this.wantCheckAt && !this.editMode) {
+      this.wantCheckAt = this.now + W.checkEvery;
+      for (const p of sim.scenePets(s)) {
+        const a = this.actors.get(p.id); if (!a) continue;
+        const kind = p.visit ? null : sim.wantOf(s, p); const cur = this.wants.get(p.id);
+        if (cur && cur.kind !== kind) { this.dropWant(p.id, kind === null); continue; } // 自己好了（吃饱了、玩过了）：收起来
+        if (!cur && kind && this.now >= (this.wantNext.get(p.id) ?? 0)) {
+          const sp = new Sprite(this.wantTexture(kind)); sp.anchor.set(0.5, 1); sp.width = sp.height = W.size;
+          sp.eventMode = 'static'; sp.cursor = 'pointer'; const id = p.id; sp.on('pointertap', this.tap(() => this.hooks.onWant?.(id, kind)));
+          a.root.addChild(sp); this.wants.set(p.id, { kind, sp });
+        }
+      }
+      for (const id of [...this.wants.keys()]) if (!this.actors.has(id)) this.dropWant(id, false);
+    }
+    for (const [id, w] of this.wants) {
+      const a = this.actors.get(id); if (!a || w.sp.destroyed) continue;
+      const busy = a.action === 'sleep' || !!a.roof || !!a.climb || !!a.hop || !!a.mini || !!this.busy(id) || (a.pending && a.pending.action !== 'idle' && a.pending.action !== 'walk' && a.pending.action !== 'sit');
+      w.sp.visible = !busy && a.root.visible;
+      // 头顶上一点，轻轻上下飘
+      w.sp.position.set(0, -Math.abs(a.sprite.height) * 0.74 + 8 + Math.sin(this.now / 380) * 4);
+    }
+  }
+  /** 点了「想玩球 / 自动球 / 猫抓板」：它放下手上的事，跑去玩那样东西（先醒过来） */
+  goToy(petId: string, toy: 'ball' | 'scratcher' | 'autoball') {
+    const a = this.actors.get(petId); if (!a || a.roof || a.climb) return false;
+    const asleep = a.action === 'sleep' && !a.hop;
+    this.release(a); a.pending = null; a.want = null; this.stop(a); a.wandUntil = 0; a.inter = null;
+    if (!this.reserve(a, toy)) return false;
+    a.selfPlayAt = this.now; a.fast = true;
+    a.pending = toy === 'scratcher' ? { action: 'scratch', dur: between(D.scratcher) } : { action: 'play', dur: between(D.ball), ball: true };
+    this.follow = { id: petId, until: this.now + 12_000 };
+    if (asleep) a.inter = { action: 'stretch', t0: this.now, until: this.now + CONFIG.durations.wakeUp };
+    return true;
   }
 
   /** 喂一只吃饱了的猫：它不去饭碗，扭头舔舔嘴，头上冒一句「吃不下了」（在屋顶上、正忙着的就只冒字） */
@@ -1962,7 +2026,8 @@ export class Scene {
       // 头顶的小提示
       const low = CONFIG.stats.lowThreshold;
       const text = weak ? '虚弱' : a.sulkUntil > this.now ? '哼' : p.food < low ? '饿' : p.clean < low ? '脏' : p.mood < low ? '闷' : '';
-      a.tag.visible = !!text;
+      // 头上冒着「想要」气泡时，饿、脏、闷的小牌子先收起来（气泡说的是同一件事，还能点）；虚弱、哼照样显示
+      a.tag.visible = !!text && !(this.wants.get(p.id)?.sp.visible && !weak && !(a.sulkUntil > this.now));
       if (text && a.tagText.text !== text) {
         a.tagText.text = text;
         const g = a.tag.children[0] as Graphics; const w = text.length * 22 + 20;
@@ -2007,7 +2072,7 @@ export class Scene {
       }
     });
 
-    this.updateGuest(dt); this.watchMoments(); this.updateDishes(); this.updateBowl(dt);
+    this.updateGuest(dt); this.watchMoments(); this.updateDishes(); this.updateBowl(dt); this.updateWants();
     if (!this.decorChecked && this.objSprites.size && this.now > 1500 && !this.editMode) { this.decorChecked = true; this.tidyDecor(); }
     for (const [kind, front] of this.fronts) front.visible = inUse.has(kind);
     this.rollAutoBall(dt);

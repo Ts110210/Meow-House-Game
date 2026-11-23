@@ -140,6 +140,17 @@ export const ASSETS = {
     catgrass: { src: 'objects/catgrass.png', zone: 'garden', x: 165, y: 580, height: 64, label: '猫草盆', needsOwned: 'catgrass' },
   } as Record<string, ObjectDef>,
 
+  // ---------- 猫头上「想要」的小气泡（整个气泡连图标一张图，正方形，透明背景，尖角朝下指着猫） ----------
+  wants: {
+    food: { src: 'ui/want-food.png', label: '想要：饿了（饭碗）' },
+    bath: { src: 'ui/want-bath.png', label: '想要：想洗澡（浴缸）' },
+    pet: { src: 'ui/want-pet.png', label: '想要：想被摸（一只手）' },
+    play: { src: 'ui/want-play.png', label: '想要：想有人陪它玩（逗猫棒）' },
+    ball: { src: 'ui/want-ball.png', label: '想要：想玩球' },
+    autoball: { src: 'ui/want-autoball.png', label: '想要：想玩自动逗猫球' },
+    scratcher: { src: 'ui/want-scratcher.png', label: '想要：想抓猫抓板' },
+  } as Record<string, { src: string; label: string }>,
+
   // ---------- 吃饭时摆在地上的东西 ----------
   props: {
     can: { src: 'props/can.png', height: 36, mouth: [0.5, 0.18], label: '鱼罐头' },

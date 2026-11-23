@@ -24,6 +24,7 @@ export class AssetStore {
       out.push({ key: `object.${k}`, group: '家具和物品', name: d.label, src: d.src, hint: `透明背景 PNG，显示高度 ${d.height}`, kind: 'object' });
     }
     for (const [k, src] of Object.entries(ASSETS.decor)) out.push({ key: `decor.${k}`, group: '装饰', name: DECOR[k]?.name ?? k, src, hint: `透明背景 PNG，底边贴地，显示高度 ${DECOR[k]?.height ?? 80}`, kind: 'object' });
+    for (const [k, d] of Object.entries(ASSETS.wants)) out.push({ key: `want.${k}`, group: '猫头上「想要」的小气泡', name: d.label, src: d.src, hint: '透明背景 PNG，正方形，整个气泡连里面的图标一起画，尖角朝下（指着猫的头）', kind: 'object' });
     for (const [k, d] of Object.entries(ASSETS.props)) out.push({ key: `prop.${k}`, group: '吃饭时摆在地上的', name: d.label, src: d.src, hint: d.height ? `透明背景 PNG，底边贴地，显示高度 ${d.height}` : '透明背景 PNG，和饭碗的图一样大、对齐，只画碗里那堆粮（满的样子）', kind: 'object' });
     for (const [k, src] of Object.entries(ASSETS.pets)) out.push({ key: `pet.${k}`, group: '默认宠物精灵图', name: FUR_COLORS[k]?.name ?? k, src, hint: '4 列，每格 256×256，每行一个动作', kind: 'pet' });
     for (const [k, src] of Object.entries(ASSETS.pets)) out.push({ key: `pet2.${k}`, group: '默认宠物精灵图（第二张：爬梯子等）', name: FUR_COLORS[k]?.name ?? k, src: src.replace(/\.png$/, '-2.png'), hint: '4 列，每格 256×256；第 1 行爬梯子，后面的行留给以后的新动作', kind: 'pet' });

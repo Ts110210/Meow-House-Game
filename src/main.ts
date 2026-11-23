@@ -21,6 +21,7 @@ async function boot() {
   const scene = new Scene(game, assets, {
     onPet: (id) => ui?.openPet(id),
     onObject: (kind, id) => ui?.onObject(kind, id),
+    onWant: (id, kind) => ui?.onWant(id, kind),
     onZone: (i) => ui?.setZone(i),
     onEdit: (kind) => ui?.editChanged(kind),
     onDecor: (id, msg) => ui?.decorChanged(id, msg),
