@@ -1237,8 +1237,11 @@ export class Scene {
   /** food = 吃的是什么（kibble 猫粮在饭碗吃；can 鱼罐头、feast 豪华便当在厨房里找个空地，地上摆出罐头或便当） */
   perform(petId: string, action: ActionName, follow = true, food?: string) {
     const a = this.actors.get(petId); if (!a) return;
+    // 睡着的被叫醒（摸、喂、洗、陪玩）：先伸个懒腰醒过来，再去做（不会一下子从睡着变成跳起来）
+    const asleep = a.action === 'sleep' && !a.hop;
+    const wake = () => { if (asleep) a.inter = { action: 'stretch', t0: this.now, until: this.now + CONFIG.durations.wakeUp }; };
     // 在屋顶上被摸：就在上面开心一下，接着看星星。喂饭、洗澡等：先走回梯子爬下来再去（见 roofStep）
-    if (a.roof && !a.roof.home && action === 'happy') { if (a.sulkUntil > this.now) a.sulkUntil = 0; a.inter = null; this.setAction(a, 'happy', D.pet); return; }
+    if (a.roof && !a.roof.home && action === 'happy') { if (a.sulkUntil > this.now) a.sulkUntil = 0; a.inter = null; this.setAction(a, 'happy', D.pet); wake(); return; }
     if (a.roof || a.climb) follow = false;
     // 待在沙发、床、猫爬架上被摸：不用跳下来
     if (!(action === 'happy' && a.perch && a.perch.kind !== 'tub')) this.release(a);
@@ -1254,6 +1257,7 @@ export class Scene {
     a.fast = true;
     a.pending = { action, dur, ...(a.station === 'dish' ? { dish: a.dishId } : {}) };
     if (follow && action !== 'happy') this.follow = { id: petId, until: this.now + dur + 4000 };
+    wake();
   }
 
   /** 喂一只吃饱了的猫：它不去饭碗，扭头舔舔嘴，头上冒一句「吃不下了」（在屋顶上、正忙着的就只冒字） */
