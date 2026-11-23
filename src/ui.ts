@@ -823,13 +823,15 @@ export class UI {
       tools.map((x) => h('button', { class: 'chip' + (plan.tool === x.id ? ' on' : ''), onclick: () => { plan.tool = x.id; this.refresh(true); } }, `${x.icon} ${x.name}`))));
     if (!tools.length) out.push(h('p', { class: 'soft' }, '还没有行李道具，商店里可以买。'));
 
-    out.push(h('h3', null, `④ 货物：路上随机卖掉，换成小鱼干（最多 ${t.goodsCapacity} 件）`));
+    const cap = sim.goodsCapacity(Math.max(1, plan.petIds.length));
+    if (plan.goods.length > cap) plan.goods.length = cap; // 少带了一只猫：多出来的货放回去
+    out.push(h('h3', null, `④ 货物：路上随机卖掉，换成小鱼干（${Math.max(1, plan.petIds.length)} 只猫最多带 ${cap} 件，每多一只多 ${t.goodsPerExtraPet} 件）`));
     const goodsRows = GOODS.filter((g) => sim.count(s, g.id) > 0 || plan.goods.includes(g.id)).map((g) => {
       const n = plan.goods.filter((x) => x === g.id).length;
       return h('div', { class: 'item' }, h('span', { class: 'ico' }, g.icon), h('div', { class: 'txt' }, h('b', null, g.name), h('span', { class: 'soft' }, `有 ${sim.count(s, g.id)} 件 · 卖 ${g.sellMin}–${g.sellMax}`)),
         h('button', { class: 'btn small', disabled: n < 1, onclick: () => { const i = plan.goods.indexOf(g.id); if (i >= 0) plan.goods.splice(i, 1); this.refresh(true); } }, '−'),
         h('b', { style: 'width:22px;text-align:center' }, n),
-        h('button', { class: 'btn small', disabled: plan.goods.length >= t.goodsCapacity || n >= sim.count(s, g.id), onclick: () => { plan.goods.push(g.id); this.refresh(true); } }, '+'));
+        h('button', { class: 'btn small', disabled: plan.goods.length >= cap || n >= sim.count(s, g.id), onclick: () => { plan.goods.push(g.id); this.refresh(true); } }, '+'));
     });
     out.push(goodsRows.length ? h('div', { class: 'card' }, goodsRows) : h('p', { class: 'soft' }, '还没有货物，商店里可以买。'));
 

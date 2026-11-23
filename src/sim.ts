@@ -786,7 +786,8 @@ export function checkDispatch(s: GameState, plan: DispatchPlan): Result {
   if (plan.errand && s.errand && kittenOnly(s, plan.petIds) && (DESTS.find((d) => d.id === s.errand!.destId)?.tier ?? 9) > CONFIG.growth.kittenMaxTier) return { ok: false, msg: '幼年的猫自己只能去近处，带一只成年猫一起去吧' };
   if (count(s, plan.bento) < 1) return { ok: false, msg: '便当不够了，去商店买一些' };
   if (plan.tool && count(s, plan.tool) < 1) return { ok: false, msg: '没有这件行李' };
-  if (plan.goods.length > t.goodsCapacity) return { ok: false, msg: `行李箱最多放 ${t.goodsCapacity} 件货物` };
+  const cap = goodsCapacity(plan.petIds.length);
+  if (plan.goods.length > cap) return { ok: false, msg: `${plan.petIds.length} 只猫的行李箱最多放 ${cap} 件货物` };
   const need: Record<string, number> = {};
   for (const g of plan.goods) need[g] = (need[g] ?? 0) + 1;
   for (const g in need) if (count(s, g) < need[g]) return { ok: false, msg: '货物不够了' };
@@ -835,6 +836,11 @@ function sendLetter(s: GameState, trip: Trip, events: GameEvent[]) {
     season: season_, time, diary: writeDiary({ destId: trip.destId, season: season_, time, tool: trip.tool, names: petNames(s, trip.petIds), letter: true }), income: 0, sold: [], unsold: [] };
   s.postcards.push(card); s.pendingReturns.push(card.id); recordVariant(s, card); questEvent(s, 'postcard');
   events.push({ type: 'letter', postcardId: card.id });
+}
+
+/** 这一趟最多带几件货：猫越多带得越多 */
+export function goodsCapacity(nPets: number): number {
+  const t = CONFIG.travel; return t.goodsCapacity + t.goodsPerExtraPet * Math.max(0, nPets - 1);
 }
 
 function resolveTrip(s: GameState, trip: Trip, events: GameEvent[]) {

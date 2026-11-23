@@ -368,6 +368,15 @@ console.log('猫的日记、猫叼回来的礼物');
   check('门口的礼物放太久没捡会不见', g.gifts.length === 0);
 }
 
+console.log('猫多带货多');
+{
+  const T = CONFIG.travel;
+  check('一只猫 3 件，每多一只多 2 件', sim.goodsCapacity(1) === T.goodsCapacity && sim.goodsCapacity(3) === T.goodsCapacity + 2 * T.goodsPerExtraPet);
+  const s = blank(); s.inv.cookie = 10; const p = s.pets[0]; p.food = 90; p.mood = 90; p.clean = 90; p.age = 'adult' as any;
+  const plan = { petIds: [p.id], bento: 'kibble', tool: null, goods: Array(T.goodsCapacity + 1).fill('cookie') };
+  check('一只猫带不了 4 件', !sim.checkDispatch(s, plan as any).ok);
+}
+
 console.log('客人看时间和天气');
 {
   const s = blank(T0 - 5 * DAY); s.dev.enabled = true; s.dev.weather = 'clear'; s.clock = T0; s.lastVisitorAt = 0; s.hood.last = 0;

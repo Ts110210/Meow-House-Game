@@ -320,8 +320,9 @@ export const CONFIG = {
   travel: {
     /** 结伴出门一趟最多几只 */
     maxCompanions: 2,
-    /** 行李箱最多放几件货物 */
+    /** 行李箱最多放几件货物：一只猫 goodsCapacity 件，每多一只同行再多 goodsPerExtraPet 件（猫多的家庭靠出门多带货多赚） */
     goodsCapacity: 3,
+    goodsPerExtraPet: 2,
     /** 回家时干净值降多少 */
     cleanDropOnReturn: 20,
     /** 心情低于这个值不愿意出门 */
