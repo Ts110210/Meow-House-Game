@@ -312,6 +312,8 @@ export function feed(s: GameState, petId: string, foodId: string): Result {
   const u = usable(p); if (!u.ok) return u;
   const food = FOODS.find((f) => f.id === foodId);
   if (!food || count(s, foodId) <= 0) return { ok: false, msg: '没有这种食物了' };
+  // 吃饱了：闻一下就走开，粮不扣（画面里的反应在 scene.refuseFood）
+  if (p!.weakSince === null && p!.food >= CONFIG.stats.fullAt) return { ok: false, msg: `${p!.name}吃饱了，闻了一下就走开了`, full: true };
   addItem(s, foodId, -1);
   const gain = food.restore * repeatMult(s, p!, 'feed');
   p!.food = clamp(p!.food + gain); p!.lastCare = s.clock;

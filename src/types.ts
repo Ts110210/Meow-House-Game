@@ -244,6 +244,7 @@ export type GameEvent =
   | { type: 'visitLeft'; petId: string }
   | { type: 'letterFrom'; petId: string };
 
-export type Result = { ok: true; msg?: string } | { ok: false; msg: string };
+/** full = 喂的时候它已经吃饱了（画面里让它扭头走开） */
+export type Result = { ok: true; msg?: string } | { ok: false; msg: string; full?: boolean };
 
 export type Weather = 'clear' | 'rain';

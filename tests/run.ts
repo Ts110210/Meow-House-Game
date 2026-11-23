@@ -332,7 +332,7 @@ console.log('光影：跟着真实时间');
 console.log('猫的日记、猫叼回来的礼物');
 {
   const s = blank(); const p = s.pets[0]; p.name = '豆豆'; s.inv.kibble = 5;
-  sim.feed(s, p.id, 'kibble'); sim.feed(s, p.id, 'kibble'); sim.petPet(s, p.id);
+  p.food = 40; sim.feed(s, p.id, 'kibble'); p.food = 40; sim.feed(s, p.id, 'kibble'); sim.petPet(s, p.id);
   const today = sim.diaryDay(s.clock); const facts = s.diary.days[today];
   check('照顾它会记进日记；同一天吃两顿只记一条、算 2 次', facts.filter((f) => f.k === 'feed').length === 1 && facts.find((f) => f.k === 'feed')!.c === 2 && facts.some((f) => f.k === 'pet'));
   const pg = sim.diaryPage(s, today);
@@ -365,6 +365,14 @@ console.log('猫的日记、猫叼回来的礼物');
   check('稀有礼物捡起来进图鉴，还是一件能摆出来的装饰', r.ok && !!g.treasures[got[0].kind] && TREASURES[got[0].kind].rare === true && g.decor.some((d) => d.kind === got[0].kind && d.zone === null));
   g.gifts.push({ id: 'x', kind: 'feather', petId: g.pets[0].id, at: g.clock }); sim.advance(g, CONFIG.gifts.expire + MIN);
   check('门口的礼物放太久没捡会不见', g.gifts.length === 0);
+}
+
+console.log('吃饱了不吃');
+{
+  const s = blank(); const p = s.pets[0]; s.inv.kibble = 3; p.food = CONFIG.stats.fullAt;
+  const r = sim.feed(s, p.id, 'kibble');
+  check('吃饱了再喂：不吃，粮不扣', !r.ok && r.full === true && s.inv.kibble === 3);
+  p.food = CONFIG.stats.fullAt - 1; check('没吃饱照样吃', sim.feed(s, p.id, 'kibble').ok && s.inv.kibble === 2);
 }
 
 console.log('小玩法');

@@ -1256,6 +1256,15 @@ export class Scene {
     if (follow && action !== 'happy') this.follow = { id: petId, until: this.now + dur + 4000 };
   }
 
+  /** 喂一只吃饱了的猫：它不去饭碗，扭头舔舔嘴，头上冒一句「吃不下了」（在屋顶上、正忙着的就只冒字） */
+  refuseFood(petId: string) {
+    const a = this.actors.get(petId); if (!a) return;
+    this.floatText(petId, '吃不下了');
+    if (a.roof || a.climb || a.hop || a.mini || this.busy(petId)) return;
+    if (a.action === 'sleep') return; // 睡着的不吵醒
+    a.dir = a.dir === 1 ? -1 : 1; a.inter = { action: 'lick', t0: this.now, until: this.now + 1400 };
+  }
+
   /** 小玩法开着时，房间里的这只猫也跟着：逗猫棒 = 原地陪你玩（从家具、屋顶上下来）；陪它捞 = 跑去鱼塘边捞。
    *  面板关了传 null：手上这件事收个尾，接着做自己的事 */
   holdForMini(petId: string, kind: 'wand' | 'fishing' | null) {

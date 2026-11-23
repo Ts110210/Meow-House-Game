@@ -709,7 +709,7 @@ export class UI {
       const busy = this.scene.busy(id);
       if (busy && anim !== 'happy') { this.toast(`${p.name}正在${busy === 'eat' ? '吃东西' : busy === 'bath' ? '洗澡' : '玩'}，等它一下`); sfx('error'); return; }
       const r = this.game.act(fn);
-      if (!r.ok) { this.say(r); sfx('error'); return; }
+      if (!r.ok) { this.say(r); sfx('error'); if (!r.ok && r.full) this.scene.refuseFood(id); return; }
       sfx(anim === 'eat' ? 'eat' : anim === 'bath' ? 'bath' : anim === 'play' ? 'play' : 'purr'); if (anim !== 'bath') meow(anim === 'eat' ? 'happy' : 'short');
       if (anim === 'happy') {
         // 摸摸：面板不关，直接在面板里看它开心

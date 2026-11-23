@@ -62,6 +62,8 @@ export const CONFIG = {
     starterFoodDecay: 0.5,
     /** 低于这个值算「饿」或「脏」 */
     lowThreshold: 30,
+    /** 饱食到这里就吃不下了：再喂它闻一下就走开，粮不扣 */
+    fullAt: 95,
     /** 饿的时候，心情下降额外加快的比例（0.75 = 快 75%） */
     moodDecayExtraWhenHungry: 0.75,
     /** 脏的时候，心情下降额外加快的比例 */
