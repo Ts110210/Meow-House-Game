@@ -379,7 +379,8 @@ console.log('小玩法');
   sim.advance(s, DAY);
   check('第二天奖励局数重新算', sim.minigameLeft(s).wand === M.wand.rewardPlays);
   // 捞鱼：要先放鱼苗，一局捞一批（先捞长大的），没捞到不算
-  const F = M.fishing, A = M.auto; s.pond = [null, null, null];
+  // 天气跟着日期随机：捞鱼这几项把天气定成晴天、吃饱，不然碰上下雨天会偶发失败（下雨的情况下面单独测）
+  const F = M.fishing, A = M.auto; s.pond = [null, null, null]; s.dev.enabled = true; s.dev.weather = 'clear'; p.food = 90;
   check('鱼塘里没有鱼：陪它捞、让它去都不行', !sim.canFish(s, p.id).ok && !sim.startAutoFish(s, p.id, 1).ok && sim.minigameLeft(s).fishing === 0);
   s.pond = [s.clock - CONFIG.pond.growTime - MIN, s.clock, null];
   const before = s.fish; const first = sim.pondBatches(s)[0];
@@ -392,7 +393,7 @@ console.log('小玩法');
   check('没长大的那批给得少，一局有上限', s.fish === b2 + F.fishMax && s.pond[1] === null);
   check('不再按天限次数：鱼塘空了就不能捞', !sim.canFish(s, p.id).ok);
   // 让它自己去：选几批、记住选的、到了才计时、捞完那几批没了
-  s.pond = [s.clock - CONFIG.pond.growTime - MIN, s.clock - CONFIG.pond.growTime - MIN, s.clock]; p.mood = 80;
+  s.pond = [s.clock - CONFIG.pond.growTime - MIN, s.clock - CONFIG.pond.growTime - MIN, s.clock]; p.mood = 80; p.food = 90;
   check('能选 1–3 批，分别要 2、4、5 分钟', sim.autoFishChoices(s).map((c) => c.ms / MIN).join() === A.minutes.join());
   const a = sim.startAutoFish(s, p.id, 2);
   check('选 2 批：记住了；还在路上不计时；不能同时出门；守着的那两批不能收获、别的猫也捞不了', a.ok && s.minigame.pick === 2 && p.fishing!.until === null && p.fishing!.slots.length === 2
