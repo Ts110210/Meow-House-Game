@@ -97,7 +97,9 @@ export class UI {
         this.toast(e.type === 'visitBack' ? `${n}从${home}回来串门了` : e.type === 'visitLeft' ? `${n}回${home}去了` : e.type === 'letterFrom' ? `收到${n}从${home}寄来的信，按了一个小爪印` : `狸花猫带回消息：${n}被${home}收留了，过得挺好`);
         if (e.type === 'visitBack') meow('happy');
       }
-      if (e.type === 'autoFish') { const p = this.game.state.pets.find((x) => x.id === e.petId); this.toast(`${p?.name ?? '它'}从鱼塘回来了，带回 ${e.fish} 条小鱼：小鱼干 +${e.fish}`); sfx('coin'); }
+      if (e.type === 'autoFish') { const p = this.game.state.pets.find((x) => x.id === e.petId); const who = p?.name ?? '它';
+        this.toast(e.rain ? (e.fish ? `下雨了，${who}提前从鱼塘回来，捞完了 ${e.batches} 批：小鱼干 +${e.fish}，没捞完的还在塘里` : `下雨了，${who}没捞完就跑回来了，鱼还在塘里`)
+          : `${who}从鱼塘回来了，捞完了 ${e.batches ?? 1} 批：小鱼干 +${e.fish}`); if (e.fish) sfx('coin'); }
       if (e.type === 'gift') { const p = this.game.state.pets.find((x) => x.id === e.petId); this.toast(`${p?.name ?? '它'}在门口放了一样东西，好像是给你的`); meow('happy'); }
       if (e.type === 'errandDone') { const d = DESTS.find((x) => x.id === e.destId); this.toast(`信送到${d?.name ?? ''}了，谢礼：小鱼干 +${e.reward}`); sfx('coin'); }
       if (e.type === 'hungry' || e.type === 'weak') meow('hungry');
@@ -1053,6 +1055,12 @@ export class UI {
 
   private mini: { kind: 'wand' | 'fishing'; petId: string; game: MiniGame | null; result: string | null } | null = null;
   /** 陪它玩（逗猫棒）或陪它捞鱼。一局结束后显示结果，可以再来一局 */
+  /** 捞鱼开局前写清楚：捞的是哪一批、捞到一条给多少 */
+  private fishNote(ripe: boolean) {
+    const F = CONFIG.minigame.fishing;
+    return ripe ? `这局捞鱼塘里长大的一批：每捞到一条小鱼干 +${F.ripeEach}（最多 ${F.ripeMax}）。捞到了这批就没了，一条没捞到鱼还在塘里。`
+      : `这局捞还没长大的一批（鱼小，难捞一点）：每捞到一条小鱼干 +${F.fishEach}（最多 ${F.fishMax}）。捞到了这批就没了，一条没捞到鱼还在塘里。`;
+  }
   /** 逗猫棒小玩法开局前写清楚的奖励（跟着今天还剩几局有小鱼干） */
   private wandNote() {
     const W = CONFIG.minigame.wand; const left = sim.minigameLeft(this.game.state).wand;
@@ -1060,11 +1068,14 @@ export class UI {
   }
   openMiniGame(kind: 'wand' | 'fishing', petId: string) {
     const p = this.game.pet(petId); const set = p ? this.game.sprites.get(p.spriteId) : null;
-    const ok = this.game.state && (kind === 'wand' ? sim.canWandGame(this.game.state, petId) : sim.canMiniPlay(this.game.state, petId)); if (!p || !set || !ok.ok) { this.say(ok.ok ? { ok: false, msg: '找不到它' } : ok); sfx('error'); return; }
+    const ok = this.game.state && (kind === 'wand' ? sim.canWandGame(this.game.state, petId) : sim.canFish(this.game.state, petId)); if (!p || !set || !ok.ok) { this.say(ok.ok ? { ok: false, msg: '找不到它' } : ok); sfx('error'); return; }
     const start = () => {
       this.mini?.game?.stop();
-      const done = (n: number) => { const r = this.game.act((st) => kind === 'wand' ? sim.finishWand(st, petId, n) : sim.finishFishing(st, petId, n)); sfx(r.ok && n ? 'coin' : 'click'); if (this.mini) { this.mini.result = r.msg ?? ''; this.mini.game = null; } this.refresh(true); };
-      this.mini = { kind, petId, game: kind === 'wand' ? wandGame(set, p.name, done, this.wandNote()) : fishingGame(set, p.name, done), result: null };
+      // 捞鱼：这一局捞的是鱼塘里的第一批（先长大的），开局时就定下来
+      const batch = kind === 'fishing' ? sim.pondBatches(this.game.state)[0] : undefined;
+      if (kind === 'fishing' && !batch) { this.mini = { kind, petId, game: null, result: '鱼塘里没有能捞的鱼了，先放鱼苗' }; return; }
+      const done = (n: number) => { const r = this.game.act((st) => kind === 'wand' ? sim.finishWand(st, petId, n) : sim.finishFishing(st, petId, n, batch?.slot)); sfx(r.ok && n ? 'coin' : 'click'); if (this.mini) { this.mini.result = r.msg ?? ''; this.mini.game = null; } this.refresh(true); };
+      this.mini = { kind, petId, game: kind === 'wand' ? wandGame(set, p.name, done, this.wandNote()) : fishingGame(set, p.name, done, batch!.ripe, this.fishNote(batch!.ripe)), result: null };
     };
     start();
     // 房间里的这只猫也跟着：逗猫棒就在原地陪你玩，捞鱼就跑去鱼塘边，面板关了才去做别的
@@ -1073,27 +1084,46 @@ export class UI {
       const m = this.mini; if (!m) return [];
       if (m.game) return [m.game.el];
       const left = sim.minigameLeft(this.game.state)[kind];
-      return [h('div', { class: 'card', style: 'padding:14px' }, h('b', null, m.result ?? ''), h('p', { class: 'soft' }, left ? `今天还有 ${left} 局有小鱼干奖励。` : '今天的小鱼干奖励领完了，再玩只加心情。')),
-        h('div', { class: 'grid2' }, h('button', { class: 'btn primary', onclick: () => { start(); this.refresh(true); } }, '再来一局'), h('button', { class: 'btn', onclick: () => this.close() }, '不玩了'))];
+      const more = kind === 'wand' ? (left ? `今天还有 ${left} 局有小鱼干奖励。` : '今天的小鱼干奖励领完了，再玩只加心情。')
+        : left ? `鱼塘里还有 ${left} 批鱼可以捞。` : '鱼塘里没有能捞的鱼了，去放鱼苗吧。';
+      const again = kind === 'wand' || left > 0;
+      return [h('div', { class: 'card', style: 'padding:14px' }, h('b', null, m.result ?? ''), h('p', { class: 'soft' }, more)),
+        h('div', { class: 'grid2' }, h('button', { class: 'btn primary', disabled: !again, onclick: () => { start(); this.refresh(true); } }, '再来一局'), h('button', { class: 'btn', onclick: () => this.close() }, '不玩了'))];
     } });
   }
 
+  /** 鱼塘面板里「让它去捞几批」现在选的是哪个（null = 用上次选的） */
+  private autoPick: number | null = null;
   openPond() {
     this.open({ title: '鱼塘', render: () => {
-      const s = this.game.state;
-      return [h('p', { class: 'soft' }, `鱼苗 ${fmtDur(CONFIG.pond.growTime)}长大，每条收获 ${CONFIG.pond.fishPerFry} 小鱼干。现在有 ${sim.count(s, FRY.id)} 条鱼苗。`),
+      const s = this.game.state; const A = CONFIG.minigame.auto;
+      const batches = sim.pondBatches(s).length; const choices = sim.autoFishChoices(s);
+      const pick = Math.max(1, Math.min(choices.length || 1, this.autoPick ?? s.minigame.pick ?? 1));
+      return [h('p', { class: 'soft' }, `鱼苗 ${fmtDur(CONFIG.pond.growTime)}长大，每条收获 ${CONFIG.pond.fishPerFry} 小鱼干。手上有 ${sim.count(s, FRY.id)} 条鱼苗。`),
         h('div', { class: 'card' }, s.pond.map((p, i) => h('div', { class: 'item' }, h('span', { class: 'ico' }, p == null ? '◌' : '🐟'),
           h('div', { class: 'txt' }, h('b', null, `位置 ${i + 1}`), p == null ? h('span', { class: 'soft' }, '空着') : sim.pondReady(s, i) ? h('span', { class: 'soft' }, '长大了，可以收获') : h('span', { class: 'soft' }, '还要 ', this.countdown(() => p + CONFIG.pond.growTime, '长大了'))),
           p == null ? h('button', { class: 'btn small', disabled: sim.count(s, FRY.id) < 1, onclick: () => this.say(this.game.act((st) => sim.plantFry(st, i))) }, '放鱼苗')
+            : sim.pondTakenBy(s, i) ? h('span', { class: 'soft' }, `${sim.pondTakenBy(s, i)!.name}在捞`)
             : h('button', { class: 'btn small primary', disabled: !sim.pondReady(s, i), 'data-ready': i, onclick: () => { const r = this.game.act((st) => sim.harvest(st, i)); this.say(r); sfx(r.ok ? 'coin' : 'error'); } }, '收获')))),
         h('p', null, h('button', { class: 'btn block', disabled: s.fish < FRY.price, onclick: () => this.say(this.game.act((st) => sim.buy(st, FRY.id))) }, `买一条鱼苗（🐟 ${FRY.price}）`)),
-        // 捞鱼：自己陪它玩一局，或者让它自己去守着（不想玩的时候用，带回来的少一点）
+        // 捞鱼：捞的是上面放的鱼。自己陪它玩一局（捞一批），或者选几批让它自己去
         h('h3', null, '捞鱼'),
-        this.hint(`陪它捞今天还有 ${sim.minigameLeft(s).fishing} 局奖励，让它去还能 ${sim.minigameLeft(s).auto} 次。`, `「陪它捞」是个小玩法；「让它去」不用玩，它自己守 ${Math.round(CONFIG.minigame.auto.duration / MIN)} 分钟，带回 ${CONFIG.minigame.auto.fish[0]}–${CONFIG.minigame.auto.fish[1]} 条。`),
-        h('div', { class: 'card' }, sim.homePets(s).map((p) => h('div', { class: 'item' }, this.avatarCanvas(p),
-          h('div', { class: 'txt' }, h('b', null, p.name), h('span', { class: 'soft' }, p.fishing ? ['在鱼塘边守着，还要 ', this.countdown(() => p.fishing?.until ?? 0, '马上回来')] : `心情 ${Math.round(p.mood)}`)),
-          h('button', { class: 'btn small primary', onclick: () => this.openMiniGame('fishing', p.id) }, '陪它捞'),
-          h('button', { class: 'btn small', disabled: !!p.fishing || !sim.minigameLeft(s).auto, onclick: () => { const r = this.game.act((st) => sim.startAutoFish(st, p.id)); this.say(r); sfx(r.ok ? 'click' : 'error'); } }, '让它去'))))];
+        this.hint(batches ? `鱼塘里有 ${batches} 批鱼可以捞（先捞长大的）。` : s.pond.some((x) => x != null) ? '鱼塘里的鱼正有猫在捞，等它回来。' : '鱼塘里还没有能捞的鱼，先放鱼苗。',
+          `「陪它捞」是个小玩法，一局捞一批，捞到了那批就没了，一条没捞到鱼还在塘里；长大的那批给得多。「让它去」不用玩：选捞几批，它先走到鱼塘边，到了才开始算时间（${A.minutes.map((m, i) => `${i + 1} 批 ${m} 分钟`).join('、')}），捞完带小鱼干回来。下雨天去不了。`),
+        choices.length ? h('p', { class: 'soft', style: 'margin:6px 0 4px' }, '「让它去」捞几批：') : null,
+        choices.length ? h('div', { class: 'grid3' }, choices.map((c) => h('button', { class: 'btn small' + (c.n === pick ? ' primary' : ''), onclick: () => { this.autoPick = c.n; this.refresh(true); } }, `${c.n} 批 · ${Math.round(c.ms / MIN)} 分钟`))) : null,
+        h('div', { class: 'card' }, sim.homePets(s).map((p) => {
+          const can = sim.canFish(s, p.id);
+          const status = p.fishing ? (p.fishing.until == null ? `正往鱼塘走，要捞 ${p.fishing.slots.length || 1} 批` : ['在鱼塘边捞着，还要 ', this.countdown(() => p.fishing?.until ?? 0, '马上回来')]) : `心情 ${Math.round(p.mood)}`;
+          return h('div', { class: 'item' }, this.avatarCanvas(p),
+            h('div', { class: 'txt' }, h('b', null, p.name), h('span', { class: 'soft' }, status)),
+            h('button', { class: 'btn small primary', disabled: !can.ok, onclick: () => this.openMiniGame('fishing', p.id) }, '陪它捞'),
+            h('button', { class: 'btn small', disabled: !can.ok || !choices.length, onclick: () => {
+              const r = this.game.act((st) => sim.startAutoFish(st, p.id, pick)); this.say(r); sfx(r.ok ? 'click' : 'error');
+              // 放下手上的事，先往鱼塘走（到了才开始计时）
+              if (r.ok) { this.scene.perform(p.id, 'fish'); this.autoPick = null; }
+            } }, `让它去`));
+        }))];
     } });
     // 鱼长大的那一刻，把「收获」按钮点亮
     const tick = () => { if (this.sheet?.title === '鱼塘') { const s = this.game.state; const stale = [...(this.body?.querySelectorAll('[data-ready]') ?? [])].some((b) => (b as HTMLButtonElement).disabled && sim.pondReady(s, Number((b as HTMLElement).dataset.ready))); if (stale) this.refresh(true); setTimeout(tick, 700); } };

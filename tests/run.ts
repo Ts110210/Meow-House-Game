@@ -378,12 +378,43 @@ console.log('小玩法');
   check('一局的心情和小鱼干有上限；奖励局用完了只加心情', f1 - fish0 === 5 * M.wand.fishEach + M.wand.fishMax && s.fish === f1 + 3 * M.wand.fishEach && (sim.finishWand(s, p.id, 3), s.fish === f1 + 3 * M.wand.fishEach) && sim.minigameLeft(s).wand === 0);
   sim.advance(s, DAY);
   check('第二天奖励局数重新算', sim.minigameLeft(s).wand === M.wand.rewardPlays);
-  const before = s.fish; sim.finishFishing(s, p.id, 3);
-  check('陪它捞鱼：捞到几条给几份小鱼干', s.fish === before + 3 * M.fishing.fishEach);
-  p.mood = 80; const a = sim.startAutoFish(s, p.id);
-  check('让它自己去捞：不能同时出门，到点自己回来带小鱼干，日记里记着', a.ok && !!p.fishing && !sim.checkDispatch(s, { petIds: [p.id], bento: 'kibble', tool: null, goods: [] }).ok && (() => { const f = s.fish; const ev = sim.advance(s, M.auto.duration + MIN); return !p.fishing && ev.some((e) => e.type === 'autoFish') && s.fish - f >= M.auto.fish[0] && Object.values(s.diary.days).flat().some((x) => x.k === 'autoFish'); })());
-  sim.startAutoFish(s, p.id); sim.advance(s, M.auto.duration + MIN);
-  check(`让它去一天最多 ${M.auto.perDay} 次；心情太差不去`, !sim.startAutoFish(s, p.id).ok && (sim.advance(s, DAY), p.mood = 10, !sim.startAutoFish(s, p.id).ok));
+  // 捞鱼：要先放鱼苗，一局捞一批（先捞长大的），没捞到不算
+  const F = M.fishing, A = M.auto; s.pond = [null, null, null];
+  check('鱼塘里没有鱼：陪它捞、让它去都不行', !sim.canFish(s, p.id).ok && !sim.startAutoFish(s, p.id, 1).ok && sim.minigameLeft(s).fishing === 0);
+  s.pond = [s.clock - CONFIG.pond.growTime - MIN, s.clock, null];
+  const before = s.fish; const first = sim.pondBatches(s)[0];
+  check('先捞长大的那一批', first.slot === 0 && first.ripe && sim.pondBatches(s).length === 2);
+  const r0 = sim.finishFishing(s, p.id, 0, first.slot);
+  check('一条没捞到：鱼还在塘里，不给小鱼干', r0.ok && s.pond[0] !== null && s.fish === before);
+  sim.finishFishing(s, p.id, 3, first.slot);
+  check('捞到了：长大的那批每条给得多，这一批从鱼塘里没了', s.fish === before + 3 * F.ripeEach && s.pond[0] === null && sim.pondBatches(s).length === 1);
+  const b2 = s.fish; sim.finishFishing(s, p.id, 99, 1);
+  check('没长大的那批给得少，一局有上限', s.fish === b2 + F.fishMax && s.pond[1] === null);
+  check('不再按天限次数：鱼塘空了就不能捞', !sim.canFish(s, p.id).ok);
+  // 让它自己去：选几批、记住选的、到了才计时、捞完那几批没了
+  s.pond = [s.clock - CONFIG.pond.growTime - MIN, s.clock - CONFIG.pond.growTime - MIN, s.clock]; p.mood = 80;
+  check('能选 1–3 批，分别要 2、4、5 分钟', sim.autoFishChoices(s).map((c) => c.ms / MIN).join() === A.minutes.join());
+  const a = sim.startAutoFish(s, p.id, 2);
+  check('选 2 批：记住了；还在路上不计时；不能同时出门；守着的那两批不能收获、别的猫也捞不了', a.ok && s.minigame.pick === 2 && p.fishing!.until === null && p.fishing!.slots.length === 2
+    && !sim.checkDispatch(s, { petIds: [p.id], bento: 'kibble', tool: null, goods: [] }).ok && !sim.harvest(s, p.fishing!.slots[0]).ok && sim.pondBatches(s).length === 1);
+  sim.autoFishArrived(s, p.id); const until = p.fishing!.until!;
+  check('走到鱼塘边才开始计时', until === s.clock + A.minutes[1] * MIN);
+  const f0 = s.fish; const ev = sim.advance(s, A.minutes[1] * MIN + MIN);
+  check('到点回来：两批换成小鱼干、从鱼塘里没了，第三批还在；日记里记着', !p.fishing && s.fish - f0 >= 2 * A.ripe[0] && s.pond.filter((x) => x !== null).length === 1
+    && ev.some((e) => e.type === 'autoFish') && Object.values(s.diary.days).flat().some((x) => x.k === 'autoFish'));
+  check('第二天还记得上次选的', (sim.advance(s, DAY), s.minigame.pick === 2));
+  s.dev.enabled = true; s.dev.weather = 'clear'; p.mood = 80; p.food = 90; s.pond = [s.clock, null, null]; const st1 = sim.startAutoFish(s, p.id, 1); sim.advance(s, A.maxWalk + A.minutes[0] * MIN + MIN);
+  check('游戏没开着走不到：最多等一会儿就当它到了，照样回来', st1.ok && !p.fishing && s.pond[0] === null);
+  { const r = blank(); const q = r.pets[0]; r.dev.enabled = true; r.dev.weather = 'clear'; q.mood = 80; const ripe = r.clock - CONFIG.pond.growTime - MIN; r.pond = [ripe, ripe, ripe];
+    sim.startAutoFish(r, q.id, 3); sim.autoFishArrived(r, q.id); sim.advance(r, A.minutes[2] * MIN * 0.5 - MIN); r.dev.weather = 'rain'; const ev2 = sim.advance(r, MIN);
+    check('下雨了提前回来：按守了多久算捞完几批，没捞完的还在塘里', !q.fishing && r.pond.filter((x) => x !== null).length === 2 && ev2.some((e) => e.type === 'autoFish' && e.rain && e.batches === 1)); }
+  p.mood = 10; s.pond = [s.clock, null, null];
+  check('心情太差不去', !sim.startAutoFish(s, p.id, 1).ok);
+  const wet = blank(); wet.dev.enabled = true; wet.dev.weather = 'rain'; wet.pond = [wet.clock, null, null];
+  check('下雨天去不了鱼塘', !sim.canFish(wet, wet.pets[0].id).ok);
+  const old = JSON.parse(JSON.stringify(s)); old.pets[0].fishing = { until: old.clock + MIN }; delete old.minigame.pick;
+  const rep = repair(old);
+  check('老存档里的「让它去」读得出来，选几批默认 1', !!rep.pets[0].fishing && rep.pets[0].fishing!.until === old.clock + MIN && Array.isArray(rep.pets[0].fishing!.slots) && rep.minigame.pick === 1);
   check('虚弱或者出门了不能玩', (() => { const q = blank(); q.owned.wand = true; q.pets[0].weakSince = q.clock; return !sim.finishWand(q, q.pets[0].id, 3).ok; })());
 }
 

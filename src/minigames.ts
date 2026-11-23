@@ -120,8 +120,10 @@ export function wandGame(set: SpriteSet, name: string, onDone: (catches: number)
 }
 
 /** 陪它捞鱼：鱼在池塘里游，看准了点一下，猫的爪子拍下去，拍中就捞上来 */
-export function fishingGame(set: SpriteSet, name: string, onDone: (caught: number) => void): MiniGame {
-  const F = CONFIG.minigame.fishing; const f = frame(`鱼游过来的时候点一下，${name}的爪子会拍下去。爪子落下要一点点时间，往鱼前面点。`);
+/** 陪它捞鱼：水里游的就是鱼塘里的那一批（ripe = 长大了，鱼影大；没长大的小一圈，难捞一点） */
+export function fishingGame(set: SpriteSet, name: string, onDone: (caught: number) => void, ripe = true, note = ''): MiniGame {
+  const F = CONFIG.minigame.fishing; const k = ripe ? 1 : 0.62;
+  const f = frame(`鱼游过来的时候点一下，${name}的爪子会拍下去。爪子落下要一点点时间，往鱼前面点。${note ? '\n' + note : ''}`);
   const { c, W: w, H: h, cv } = f; const pond = { x: w / 2, y: h * 0.52, rx: w * 0.44, ry: h * 0.34 };
   type Fish = { x: number; y: number; a: number; v: number; turn: number; gone: number };
   const spawn = (): Fish => { const a = Math.random() * Math.PI * 2; return { x: pond.x + Math.cos(a) * pond.rx * 0.5, y: pond.y + Math.sin(a) * pond.ry * 0.5, a: Math.random() * Math.PI * 2, v: 40 + Math.random() * 40, turn: 0, gone: 0 }; };
@@ -157,7 +159,7 @@ export function fishingGame(set: SpriteSet, name: string, onDone: (caught: numbe
     for (const fi of fish) {
       if (fi.gone > 0) continue;
       c.save(); c.translate(fi.x, fi.y); c.rotate(fi.a); c.fillStyle = 'rgba(40,70,80,.45)';
-      c.beginPath(); c.ellipse(0, 0, 14, 6, 0, 0, Math.PI * 2); c.fill(); c.beginPath(); c.moveTo(-12, 0); c.lineTo(-22, -6); c.lineTo(-22, 6); c.closePath(); c.fill(); c.restore();
+      c.scale(k, k); c.beginPath(); c.ellipse(0, 0, 14, 6, 0, 0, Math.PI * 2); c.fill(); c.beginPath(); c.moveTo(-12, 0); c.lineTo(-22, -6); c.lineTo(-22, 6); c.closePath(); c.fill(); c.restore();
     }
     for (const st of strikes) {
       const k = Math.min(1, st.t / F.strikeDelay);

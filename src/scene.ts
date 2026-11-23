@@ -1806,6 +1806,10 @@ export class Scene {
       const weak = sim.isWeak(p);
       const sc = PET_BASE * ASSETS.petScale * sim.bodySize(p);
       if (a.inter && this.now >= a.inter.until) a.inter = null;
+      // 主人让它自己去捞：走到鱼塘边、开始伸爪子了才开始计时
+      if (p.fishing && p.fishing.until == null && a.station === 'pond' && a.action === 'fish' && !a.pending) this.game.act((st) => sim.autoFishArrived(st, p.id));
+      // 捞完回来了（或者下雨提前回来）：在鱼塘边的那一下马上收尾，不再对着空塘伸爪子
+      if (!p.fishing && !a.mini && a.action === 'fish' && a.station === 'pond' && a.until > this.now + 400) a.until = this.now + 400;
       // 小玩法开着：手上这件事（逗猫棒、捞鱼）一直延长，不去想下一件事
       if (a.mini && !a.pending && a.action === (a.mini === 'wand' ? 'play' : 'fish')) { a.until = Math.max(a.until, this.now + 1000); if (a.mini === 'wand') a.wandUntil = a.until; }
       if (this.roofStep(a, dt, weak)) { /* 在爬梯子或在屋顶上 */ }

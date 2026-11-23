@@ -373,11 +373,14 @@ export const CONFIG = {
      *  晃得太快（高于 tooFast 超过 dizzyAfter 毫秒）它看花了眼、停下来不追；隔多久扑一次；蹲下（头上冒「！」）到扑出去有多久。
      *  要先买逗猫棒才能玩（没买时只有原来的「玩耍」按钮） */
     wand: { time: 20_000, mood: 3, maxMood: 24, fishEach: 1, fishMax: 8, rewardPlays: 3, reach: 0.32, lively: 220, boredAfter: 1500, tooFast: 1600, dizzyAfter: 700, pounceEvery: [900, 1800] as [number, number], crouchMs: 650 },
-    /** 陪它捞鱼：玩多久；水里同时有几条鱼；每天前 rewardPlays 局每捞到一条给 fishEach 小鱼干（一局最多 fishMax）、心情加 mood；
-     *  点下去之后爪子多久落下；爪子多大（池塘宽度的比例）；拍完一下要等多久才能再拍（乱点没用）；一局心情最多加多少 */
-    fishing: { time: 20_000, fish: 4, fishEach: 1, fishMax: 8, mood: 2, maxMood: 12, rewardPlays: 3, strikeDelay: 220, paw: 0.075, cooldown: 650 },
-    /** 让它自己去捞：在鱼塘边待多久；回来带几条小鱼干（比自己玩少）；每天最多几次；心情太差不愿意去 */
-    auto: { duration: 60 * MIN, fish: [4, 8] as [number, number], perDay: 2, moodMin: 30 },
+    /** 陪它捞鱼：要先往鱼塘里放鱼苗，一局捞的是鱼塘里的一批（先捞长大的）；没捞到就不算，那批鱼还在塘里。不再按天限次数，鱼苗有几批就能捞几局。
+     *  玩多久；水里同时游几条；捞到一条给多少小鱼干（长大的 ripeEach、一局最多 ripeMax；没长大的 fishEach、最多 fishMax）、心情加 mood（一局最多 maxMood）；
+     *  点下去之后爪子多久落下；爪子多大（池塘宽度的比例）；拍完一下要等多久才能再拍（乱点没用） */
+    fishing: { time: 20_000, fish: 4, ripeEach: 3, ripeMax: 24, fishEach: 1, fishMax: 8, mood: 2, maxMood: 12, strikeDelay: 220, paw: 0.075, cooldown: 650 },
+    /** 让它自己去捞：主人选让它捞几批（1–3，记住上次选的），捞 1 批 minutes[0] 分钟、2 批 minutes[1]、3 批 minutes[2]。
+     *  它先走到鱼塘边（放下手上的事），到了才开始计时；没开着游戏走不到的话，最多等 maxWalk 就当它到了。
+     *  每批带回多少小鱼干（长大的 ripe、没长大的 young，都比自己陪它捞少一点、和直接收获差不多）；心情太差不愿意去；下雨了提前回来，没捞完的那几批还在塘里 */
+    auto: { minutes: [2, 4, 5], maxWalk: 3 * MIN, ripe: [15, 18] as [number, number], young: [4, 7] as [number, number], moodMin: 30 },
   },
 
   // ---------- 吃饭的演出 ----------

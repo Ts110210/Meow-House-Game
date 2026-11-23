@@ -34,7 +34,8 @@ export interface Pet {
   /** 去邻居家回访了：去的是谁、什么时候回来；null = 没去 */
   outing?: { neighborId: string; until: number } | null;
   /** 自己去鱼塘捞鱼：什么时候回来；null = 没去 */
-  fishing?: { until: number } | null;
+  /** 主人让它自己去鱼塘捞：slots = 捞鱼塘里的哪几批；dur = 捞多久；asked = 什么时候叫它去的；until = 走到鱼塘边以后才定（到点回来），还在路上是 null */
+  fishing?: { until: number | null; slots: number[]; dur: number; asked: number } | null;
   /** 送养了（或者走失后被好心人收养）：什么时候、住在哪、是不是搬去远方了（只寄信、不回来串门）。送养的猫不占家里的位置 */
   rehomed?: { at: number; home: string; far: boolean; lost?: boolean } | null;
   /** 送养的猫回来串门：什么时候走；null = 没在串门 */
@@ -210,7 +211,8 @@ export interface GameState {
   /** 上一次送养、上一次老家人回来串门的时刻 */
   rehomeLog: { last: number; visit: number };
   /** 小玩法今天玩了几局（有奖励的局数按天算）、让猫自己去捞了几次 */
-  minigame: { day: string; wand: number; fishing: number; auto: number };
+  /** pick = 「让它去捞」上次选的是几批（换了一天也记着） */
+  minigame: { day: string; wand: number; fishing: number; auto: number; pick: number };
   /** 上次离开游戏（切到后台）的真实时间，用来算你走了多久（礼物、日记补写） */
   lastSeenReal: number;
   /** 猫爬架的三层（顶层、中层、底层）各指定给哪只宠物；null = 谁都可以上去 */
@@ -236,7 +238,7 @@ export type GameEvent =
   | { type: 'neighborLeft'; id: string; find?: string }
   | { type: 'outingBack'; petId: string; neighborId: string; text: string }
   | { type: 'gift'; petId: string; kind: string }
-  | { type: 'autoFish'; petId: string; fish: number }
+  | { type: 'autoFish'; petId: string; fish: number; rain?: boolean; batches?: number }
   | { type: 'adoptedAway'; petId: string; home: string }
   | { type: 'visitBack'; petId: string }
   | { type: 'visitLeft'; petId: string }

@@ -86,7 +86,9 @@ export function repair(raw: Raw, now = Date.now()): GameState {
     bond: Math.max(0, Math.min(100, num(p.bond, CONFIG.bond.greetAt))), bondDay: p.bondDay && typeof p.bondDay.day === 'string' ? { day: p.bondDay.day, got: Math.max(0, num(p.bondDay.got, 0)) } : undefined,
     rehomed: p.rehomed && typeof p.rehomed.home === 'string' ? { at: num(p.rehomed.at, 0), home: p.rehomed.home.slice(0, 20), far: !!p.rehomed.far, lost: !!p.rehomed.lost } : null,
     visit: p.visit && typeof p.visit.until === 'number' && p.rehomed ? { until: p.visit.until } : null,
-    fishing: p.fishing && typeof p.fishing.until === 'number' && !p.dead ? { until: p.fishing.until } : null,
+    // 老存档只有 until；新的还记着捞哪几批、多久、什么时候叫它去的（还在路上 until 是 null）
+    fishing: p.fishing && !p.dead && (typeof p.fishing.until === 'number' || p.fishing.until === null) && (typeof p.fishing.until === 'number' || typeof p.fishing.asked === 'number')
+      ? { until: typeof p.fishing.until === 'number' ? p.fishing.until : null, slots: Array.isArray(p.fishing.slots) ? p.fishing.slots.filter((x: unknown) => Number.isInteger(x) && (x as number) >= 0 && (x as number) < CONFIG.pond.slots) : [], dur: num(p.fishing.dur, 0, 0, DAY), asked: num(p.fishing.asked, typeof p.fishing.until === 'number' ? p.fishing.until : 0, 0, Number.MAX_SAFE_INTEGER) } : null,
     outing: p.outing && typeof p.outing.neighborId === 'string' && NEIGHBORS[p.outing.neighborId] && !p.dead ? { neighborId: p.outing.neighborId, until: num(p.outing.until, 0) } : null,
     repeats: obj(p.repeats), hungryNotified: !!p.hungryNotified, adoptedAt: num(p.adoptedAt, clock),
   }));
@@ -161,7 +163,7 @@ export function repair(raw: Raw, now = Date.now()): GameState {
     rehomeLog: { last: num(raw.rehomeLog?.last, 0), visit: num(raw.rehomeLog?.visit, 0) },
     firsts: repairFirsts(raw.firsts, clock),
     lastView: raw.lastView && typeof raw.lastView.x === 'number' && isFinite(raw.lastView.x) ? { x: raw.lastView.x, roof: !!raw.lastView.roof } : null,
-    minigame: { day: typeof raw.minigame?.day === 'string' ? raw.minigame.day : '', wand: Math.max(0, Math.floor(num(raw.minigame?.wand, 0))), fishing: Math.max(0, Math.floor(num(raw.minigame?.fishing, 0))), auto: Math.max(0, Math.floor(num(raw.minigame?.auto, 0))) },
+    minigame: { day: typeof raw.minigame?.day === 'string' ? raw.minigame.day : '', wand: Math.max(0, Math.floor(num(raw.minigame?.wand, 0))), fishing: Math.max(0, Math.floor(num(raw.minigame?.fishing, 0))), auto: Math.max(0, Math.floor(num(raw.minigame?.auto, 0))), pick: Math.max(1, Math.min(CONFIG.minigame.auto.minutes.length, Math.floor(num(raw.minigame?.pick, 1)))) },
     keepsakes: Object.fromEntries(Object.entries(obj(raw.keepsakes)).filter(([k, v]) => typeof v === 'number' && v > 0 && k.length < 60).map(([k, v]) => [k, Math.floor(v as number)])),
     cattree: [0, 1, 2].map((i) => { const id = arr(raw.cattree)[i]; return typeof id === 'string' && pets.some((p) => p.id === id && !p.dead) ? id : null; }),
     pendingReturns: arr(raw.pendingReturns).filter((id) => postcards.some((c) => c.id === id)),

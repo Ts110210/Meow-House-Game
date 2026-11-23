@@ -73,7 +73,7 @@ export function newState(now: number): GameState {
   const s: GameState = {
     v: 7, createdAt: now, seasonStart: now, settings: { notify: true, showSeason: false, seasonMode: 'cycle', light: 'simple' }, clock: now, lastReal: now, fish: CONFIG.startFish, slots: 1,
     pets: [], trips: [], postcards: [], souvenirs: {}, inv: { ...CONFIG.startItems }, owned: {},
-    pond: Array(CONFIG.pond.slots).fill(null), lastCheckin: '', pendingReturns: [], friends: {}, variants: {}, milestones: [], decor: [], quests: newQuests(false), tutorial: 0, visitors: [], visitorQuota: 0, visitorDay: '', lastVisitorAt: 0, errand: null, display: { souvenirs: [], postcards: [] }, cattree: [null, null, null], hood: { now: null, bonds: {}, day: '', quota: 0, last: 0, stories: [] }, seasonal: { key: '', got: {}, done: false, last: 0, day: '', quota: 0 }, seasonalClaimed: [], moments: [], favor: {}, favorClaimed: [], finds: [], keepsakes: {}, diary: { days: {}, lead: {}, starred: [], seenAt: now }, gifts: [], treasures: {}, lastSeenReal: Date.now(), minigame: { day: '', wand: 0, fishing: 0, auto: 0 }, firsts: {}, lastView: null, rehomeLog: { last: 0, visit: 0 }, skins: {}, skinsOwned: {}, room: DEFAULT_ROOM, roomsOwned: [],
+    pond: Array(CONFIG.pond.slots).fill(null), lastCheckin: '', pendingReturns: [], friends: {}, variants: {}, milestones: [], decor: [], quests: newQuests(false), tutorial: 0, visitors: [], visitorQuota: 0, visitorDay: '', lastVisitorAt: 0, errand: null, display: { souvenirs: [], postcards: [] }, cattree: [null, null, null], hood: { now: null, bonds: {}, day: '', quota: 0, last: 0, stories: [] }, seasonal: { key: '', got: {}, done: false, last: 0, day: '', quota: 0 }, seasonalClaimed: [], moments: [], favor: {}, favorClaimed: [], finds: [], keepsakes: {}, diary: { days: {}, lead: {}, starred: [], seenAt: now }, gifts: [], treasures: {}, lastSeenReal: Date.now(), minigame: { day: '', wand: 0, fishing: 0, auto: 0, pick: 1 }, firsts: {}, lastView: null, rehomeLog: { last: 0, visit: 0 }, skins: {}, skinsOwned: {}, room: DEFAULT_ROOM, roomsOwned: [],
     dev: { enabled: false, background: false, time: 'auto', season: 'auto', weather: 'auto', speed: 1, growth: 1, decay: { food: 1, mood: 1, clean: 1 } },
   };
   s.pets.push(newPet(CONFIG.startPet.name, `default:${CONFIG.startPet.color}`, now));
@@ -201,7 +201,13 @@ export function advance(s: GameState, dt: number): GameEvent[] {
     if (s.errand && s.clock >= s.errand.expiresAt) s.errand = null;
     if (s.hood.now && s.clock >= s.hood.now.leaveAt) neighborLeaves(s, events);
     for (const p of s.pets) if (p.outing && s.clock >= p.outing.until) outingBack(s, p, events);
-    for (const p of s.pets) if (p.fishing && s.clock >= p.fishing.until) autoFishBack(s, p, events);
+    for (const p of s.pets) if (p.fishing) {
+      const f = p.fishing;
+      // 游戏没开着、画面里走不到鱼塘：最多等 maxWalk 就当它到了
+      if (f.until == null && s.clock - f.asked >= CONFIG.minigame.auto.maxWalk) f.until = f.asked + CONFIG.minigame.auto.maxWalk + f.dur;
+      if (weather(s) === 'rain') autoFishBack(s, p, events, true); // 下雨了：赶紧回家
+      else if (f.until != null && s.clock >= f.until) autoFishBack(s, p, events);
+    }
     for (const p of s.pets) if (p.visit && s.clock >= p.visit.until) { p.visit = null; events.push({ type: 'visitLeft', petId: p.id }); }
     if (s.finds.length) s.finds = s.finds.filter((f) => s.clock - f.at < CONFIG.neighbors.findExpire);
     spawnSeasonFind(s);
@@ -915,6 +921,7 @@ export const pondReady = (s: GameState, slot: number) => s.pond[slot] != null &&
 
 export function harvest(s: GameState, slot: number): Result {
   if (!pondReady(s, slot)) return { ok: false, msg: '还没长大' };
+  const by = pondTakenBy(s, slot); if (by) return { ok: false, msg: `${by.name}正在捞这一批，等它回来` };
   s.pond[slot] = null;
   s.fish += CONFIG.pond.fishPerFry;
   return { ok: true, msg: `收获小鱼干 +${CONFIG.pond.fishPerFry}` };
@@ -1199,11 +1206,39 @@ export function collectGift(s: GameState, id: string): Result {
 // ============================================================
 
 /** 今天的局数（换了一天从 0 算） */
-function miniDay(s: GameState) { const d = dayKey(s.clock); if (s.minigame.day !== d) s.minigame = { day: d, wand: 0, fishing: 0, auto: 0 }; return s.minigame; }
+function miniDay(s: GameState) { const d = dayKey(s.clock); if (s.minigame.day !== d) s.minigame = { day: d, wand: 0, fishing: 0, auto: 0, pick: s.minigame.pick ?? 1 }; return s.minigame; }
 /** 今天还有几局有小鱼干奖励 */
 export function minigameLeft(s: GameState) {
   const m = miniDay(s); const M = CONFIG.minigame;
-  return { wand: Math.max(0, M.wand.rewardPlays - m.wand), fishing: Math.max(0, M.fishing.rewardPlays - m.fishing), auto: Math.max(0, M.auto.perDay - m.auto) };
+  // 捞鱼不按天限次数，按鱼塘里有几批鱼（正被猫自己守着的那几批不算）
+  const free = pondBatches(s).length;
+  return { wand: Math.max(0, M.wand.rewardPlays - m.wand), fishing: free, auto: free };
+}
+
+// ---------- 鱼塘里的鱼（捞鱼用的就是这些） ----------
+
+/** 鱼塘里能捞的那几批：先长大的、再按放进去的先后；正被哪只猫自己守着的不算 */
+export function pondBatches(s: GameState): { slot: number; ripe: boolean }[] {
+  const taken = new Set(s.pets.flatMap((p) => p.fishing?.slots ?? []));
+  return s.pond.map((at, slot) => ({ slot, at })).filter((b) => b.at != null && !taken.has(b.slot))
+    .sort((a, b) => Number(pondReady(s, b.slot)) - Number(pondReady(s, a.slot)) || (a.at as number) - (b.at as number))
+    .map((b) => ({ slot: b.slot, ripe: pondReady(s, b.slot) }));
+}
+/** 这一批正被哪只猫自己守着（守着的时候不能收获） */
+export function pondTakenBy(s: GameState, slot: number): Pet | null { return s.pets.find((p) => p.fishing?.slots.includes(slot)) ?? null; }
+/** 能不能去鱼塘捞鱼：在家、不虚弱、没下雨、鱼塘里有鱼 */
+export function canFish(s: GameState, petId: string): Result {
+  const c = canMiniPlay(s, petId); if (!c.ok) return c;
+  const p = s.pets.find((x) => x.id === petId)!;
+  if (p.fishing) return { ok: false, msg: `${p.name}已经在鱼塘边了` };
+  if (weather(s) === 'rain') return { ok: false, msg: '下雨了，鱼塘那边去不了，等雨停' };
+  if (!pondBatches(s).length) return { ok: false, msg: s.pond.some((x) => x != null) ? '鱼塘里的鱼都有猫在守着了' : '鱼塘里还没有鱼，先放鱼苗' };
+  return { ok: true };
+}
+/** 「让它去捞」能选几批、每种要多久 */
+export function autoFishChoices(s: GameState): { n: number; ms: number }[] {
+  const A = CONFIG.minigame.auto; const max = Math.min(A.minutes.length, pondBatches(s).length);
+  return Array.from({ length: max }, (_, i) => ({ n: i + 1, ms: A.minutes[i] * MIN }));
 }
 /** 能不能陪它玩（在家、不虚弱） */
 export function canMiniPlay(s: GameState, petId: string): Result {
@@ -1229,29 +1264,48 @@ export function finishWand(s: GameState, petId: string, catches: number): Result
   return { ok: true, msg: n ? `${p.name}扑中了 ${n} 次：心情 +${mood}` + (fish ? `，小鱼干 +${fish}` : '（今天的小鱼干奖励领完了）') : `${p.name}一次都没扑到，下次逗猫棒晃得再灵活一点` };
 }
 
-/** 陪它捞完一局鱼：捞到几条 → （每天前几局）小鱼干、心情 */
-export function finishFishing(s: GameState, petId: string, caught: number): Result {
+/** 陪它捞完一局鱼：捞的是鱼塘里的一批（开局时 pondBatches 的第一批；slot 传进来，中途被收获了就换下一批）。
+ *  捞到几条 → 小鱼干（长大的那批给得多）、心情；那一批从鱼塘里没了。一条也没捞到：鱼还在塘里，不算 */
+export function finishFishing(s: GameState, petId: string, caught: number, slot?: number): Result {
   const c = canMiniPlay(s, petId); if (!c.ok) return c;
   const p = s.pets.find((x) => x.id === petId)!; const F = CONFIG.minigame.fishing; const m = miniDay(s);
-  const n = Math.max(0, Math.floor(caught)); const fish = m.fishing < F.rewardPlays ? Math.min(F.fishMax, n * F.fishEach) : 0; m.fishing++;
+  const n = Math.max(0, Math.floor(caught));
+  if (!n) return { ok: true, msg: '一条也没捞到，鱼还在塘里。鱼游过爪子下面时再点' };
+  const list = pondBatches(s); const b = list.find((x) => x.slot === slot) ?? list[0];
+  if (!b) return { ok: true, msg: '鱼塘里的鱼刚刚被收走了，这局不算' };
+  s.pond[b.slot] = null; m.fishing++;
+  const fish = b.ripe ? Math.min(F.ripeMax, n * F.ripeEach) : Math.min(F.fishMax, n * F.fishEach);
   const mood = Math.min(F.maxMood, n * F.mood); p.mood = clamp(p.mood + mood); p.lastCare = s.clock; s.fish += fish;
-  if (n > 0) note(s, p.id, 'fishGame', String(n)); addPetBond(s, p, 'fishing');
-  return { ok: true, msg: n ? `捞到 ${n} 条鱼：` + (fish ? `小鱼干 +${fish}` : '今天的小鱼干奖励领完了') + `，心情 +${mood}` : '一条也没捞到，鱼游过爪子下面时再点' };
+  note(s, p.id, 'fishGame', String(n)); addPetBond(s, p, 'fishing');
+  return { ok: true, msg: `捞到 ${n} 条${b.ripe ? '大' : '小'}鱼：小鱼干 +${fish}，心情 +${mood}。这一批捞完了` };
 }
 
-/** 让它自己去鱼塘捞：待一阵自己回来，带回一点小鱼干（比陪它玩少）。不想玩的时候用 */
-export function startAutoFish(s: GameState, petId: string): Result {
-  const c = canMiniPlay(s, petId); if (!c.ok) return c;
+/** 让它自己去鱼塘捞 count 批（主人选，记住这次选的）：它先走到鱼塘边，到了才开始计时（autoFishArrived）。不想玩的时候用 */
+export function startAutoFish(s: GameState, petId: string, count = 1): Result {
+  const c = canFish(s, petId); if (!c.ok) return c;
   const p = s.pets.find((x) => x.id === petId)!; const A = CONFIG.minigame.auto; const m = miniDay(s);
-  if (p.fishing) return { ok: false, msg: `${p.name}已经在鱼塘边了` };
-  if (m.auto >= A.perDay) return { ok: false, msg: `今天已经让它们去捞过 ${A.perDay} 次了，明天再来` };
   if (p.mood < A.moodMin) return { ok: false, msg: `${p.name}心情不好，不想动` };
-  m.auto++; p.fishing = { until: s.clock + A.duration };
-  return { ok: true, msg: `${p.name}去鱼塘边守着了，大概 ${Math.round(A.duration / MIN)} 分钟后回来` };
+  const choices = autoFishChoices(s); const pick = choices.find((x) => x.n === Math.floor(count)) ?? choices[choices.length - 1];
+  m.auto++; m.pick = pick.n;
+  p.fishing = { until: null, slots: pondBatches(s).slice(0, pick.n).map((b) => b.slot), dur: pick.ms, asked: s.clock };
+  return { ok: true, msg: `${p.name}往鱼塘那边去了，要捞 ${pick.n} 批，到了以后大概 ${Math.round(pick.ms / MIN)} 分钟` };
 }
-function autoFishBack(s: GameState, p: Pet, events: GameEvent[]) {
-  p.fishing = null; if (p.dead || p.lostSince !== null) return;
-  const n = between(CONFIG.minigame.auto.fish); s.fish += n; events.push({ type: 'autoFish', petId: p.id, fish: n });
+/** 它走到鱼塘边了：从现在开始计时（画面里看到它到了才调；游戏没开着时见 advance 里的 maxWalk） */
+export function autoFishArrived(s: GameState, petId: string): Result {
+  const p = s.pets.find((x) => x.id === petId); if (!p?.fishing) return { ok: false, msg: '' };
+  if (p.fishing.until == null) p.fishing.until = s.clock + p.fishing.dur;
+  return { ok: true, msg: '' };
+}
+/** 回来了：守着的那几批从鱼塘里没了，换成小鱼干。下雨提前回来：按守了多久算捞完了几批，没捞完的还在塘里 */
+function autoFishBack(s: GameState, p: Pet, events: GameEvent[], rain = false) {
+  const f = p.fishing!; p.fishing = null; if (p.dead || p.lostSince !== null) return;
+  const A = CONFIG.minigame.auto;
+  const done = f.until == null ? 0 : rain ? Math.floor(f.slots.length * Math.max(0, Math.min(1, 1 - (f.until - s.clock) / Math.max(1, f.dur)))) : f.slots.length;
+  let n = 0, got = 0;
+  for (const slot of f.slots.slice(0, done)) { if (s.pond[slot] == null) continue; n += Math.round(between(pondReady(s, slot) ? A.ripe : A.young)); s.pond[slot] = null; got++; }
+  // 老存档里的「让它去」没有记哪几批：照一批没长大的给
+  if (!f.slots.length && !rain) n = Math.round(between(A.young));
+  s.fish += n; events.push({ type: 'autoFish', petId: p.id, fish: n, rain, batches: got });
 }
 
 // ============================================================
