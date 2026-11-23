@@ -1359,7 +1359,7 @@ export class Scene {
       this.setAction(a, 'lick', 3200);
     } else {
       const r = Math.random();
-      // 自己找乐子：猫抓板、玩具球，鱼塘里有鱼的时候还会去岸边用爪子捞鱼。
+      // 自己找乐子：猫抓板、玩具球，鱼塘里有鱼的时候还会去岸边坐着看鱼（不伸爪子：真的捞鱼是主人陪它捞、让它去捞，会把那批鱼捞走）。
       // 三样共用一个冷却时间，位置被占了就不去，所以不会卡在里面，也不会挤在一起。
       const bugs = !rain && sim.dayTime(s) === 'day' && ['spring', 'summer'].includes(sim.season(s)); // 春夏的晴天白天，院子里有蝴蝶
       const fun = [...(s.owned.scratcher ? ['scratcher'] : []), ...(s.owned.ball ? ['ball'] : []), ...(s.owned.autoball ? ['autoball'] : []), ...(bugs ? ['butterfly'] : []), ...(s.pond.some((x) => x != null) && !rain ? ['pond'] : [])].sort(() => Math.random() - 0.5);
@@ -1382,7 +1382,7 @@ export class Scene {
       else if (mine >= 0 && Math.random() < 0.4 && lounge('cattree', rest(), between(D.perch), mine)) { /* 回自己在猫爬架上的位置 */ }
       else if (fun.length && r > 0.78 && this.now - a.selfPlayAt > SELF_PLAY_COOLDOWN && fun.some((k) => this.reserve(a, k))) {
         a.selfPlayAt = this.now;
-        a.pending = a.station === 'ball' || a.station === 'autoball' ? { action: 'play', dur: between(D.ball), ball: true } : a.station === 'pond' ? { action: 'fish', dur: between(D.fish) } : a.station === 'butterfly' ? { action: 'fish', dur: between(D.butterfly) } : { action: 'scratch', dur: between(D.scratcher) };
+        a.pending = a.station === 'ball' || a.station === 'autoball' ? { action: 'play', dur: between(D.ball), ball: true } : a.station === 'pond' ? { action: 'sit', dur: between(D.fish) } : a.station === 'butterfly' ? { action: 'fish', dur: between(D.butterfly) } : { action: 'scratch', dur: between(D.scratcher) };
       } else if (r < 0.4) {
         // 随便走走：客厅去得多一些，也会自己走到阳台和院子里
         // 爱冒险的更爱往外跑；下雨天谁都不出门
