@@ -43,21 +43,29 @@ function loop(cv: HTMLCanvasElement, time: number, step: (dt: number, t: number)
   return () => { stopped = true; };
 }
 
-/** 陪它玩：拖着逗猫棒晃，猫会追着扑。逗猫棒要一直动，停太久它就坐下不玩了 */
-export function wandGame(set: SpriteSet, name: string, onDone: (catches: number) => void): MiniGame {
-  const W = CONFIG.minigame.wand; const f = frame(`拖着逗猫棒晃来晃去，${name}会追着扑。别停太久，不然它就没兴趣了。`);
+/** 陪它玩：拖着逗猫棒晃，猫会追着扑。
+ *  规则（画面上一直看得到）：速度条在「刚好」它才追；太慢它坐下发呆、太快它看花了眼停下来；
+ *  它蹲下、头上冒「！」时，把逗猫棒放低停在它面前，扑出去落地时还在爪子下面就算扑中 */
+export function wandGame(set: SpriteSet, name: string, onDone: (catches: number) => void, note = ''): MiniGame {
+  const W = CONFIG.minigame.wand;
+  const f = frame(`一直晃，让上面的条停在「刚好」，${name}才会追。它蹲下、头上冒「！」时，把逗猫棒放低停在它面前就能扑中。${note ? '\n' + note : ''}`);
   const { c, W: w, H: h, cv } = f; const ground = h - 34; const size = 150;
   const feather = { x: w * 0.75, y: h * 0.45, vx: 0, vy: 0, speed: 0 };
-  const cat = { x: w * 0.3, dir: 1, state: 'watch' as 'watch' | 'crouch' | 'pounce' | 'bored' | 'happy', t: 0, next: 1200, still: 0 };
+  const cat = { x: w * 0.3, dir: 1, state: 'watch' as 'watch' | 'crouch' | 'pounce' | 'bored' | 'dizzy' | 'happy', t: 0, next: 1200, still: 0, fast: 0 };
   let catches = 0, flash = 0, msg = '';
   cv.style.touchAction = 'none';
   cv.addEventListener('pointerdown', (e) => { cv.setPointerCapture(e.pointerId); move(e); });
   cv.addEventListener('pointermove', (e) => { if (e.buttons || e.pointerType === 'mouse') move(e); });
   function move(e: PointerEvent) { const p = f.at(e); feather.vx = p.x - feather.x; feather.vy = p.y - feather.y; feather.x = Math.max(10, Math.min(w - 10, p.x)); feather.y = Math.max(40, Math.min(ground - 10, p.y)); }
+  /** 速度条：慢 | 刚好 | 快（按对数画，慢的那头不会挤成一条线） */
+  const gx = 14, gy = 12, gw = 150, gh = 10, gMax = W.tooFast * 2;
+  const gpos = (v: number) => gx + gw * Math.min(1, Math.log1p(Math.max(0, v)) / Math.log1p(gMax));
   const stop = loop(cv, W.time, (dt, t) => {
     // 逗猫棒有多「活」：最近移动的速度（像素/秒，慢慢衰减）
     feather.speed = feather.speed * 0.9 + (Math.hypot(feather.vx, feather.vy) / Math.max(1, dt)) * 1000 * 0.1; feather.vx = feather.vy = 0;
-    cat.still = feather.speed < W.lively ? cat.still + dt : 0;
+    // 蹲着准备扑的时候可以停下来（就是要你停在它面前），不算「太慢」
+    cat.still = feather.speed < W.lively && cat.state !== 'crouch' ? cat.still + dt : 0;
+    cat.fast = feather.speed > W.tooFast && cat.state !== 'crouch' ? cat.fast + dt : 0;
     cat.t += dt;
     const dx = feather.x - cat.x; const reach = size * W.reach * 2.2;
     if (cat.state === 'pounce') {
@@ -65,25 +73,26 @@ export function wandGame(set: SpriteSet, name: string, onDone: (catches: number)
       cat.x += cat.dir * 220 * (dt / 1000);
       if (cat.t > 450) {
         const hit = Math.abs(feather.x - (cat.x + cat.dir * size * 0.25)) < size * W.reach && feather.y > ground - size * 0.9;
-        if (hit) { catches++; flash = 500; msg = '扑中了！'; cat.state = 'happy'; } else { msg = '差一点！'; flash = 400; cat.state = 'watch'; }
+        if (hit) { catches++; flash = 600; msg = '扑中了！'; cat.state = 'happy'; } else { msg = feather.y <= ground - size * 0.9 ? '太高了，够不着' : '扑空了，要停在它面前'; flash = 700; cat.state = 'watch'; }
         cat.t = 0; cat.next = W.pounceEvery[0] + Math.random() * (W.pounceEvery[1] - W.pounceEvery[0]);
       }
     } else if (cat.state === 'happy') { if (cat.t > 600) { cat.state = 'watch'; cat.t = 0; } }
+    else if (cat.state === 'crouch') { cat.dir = dx >= 0 ? 1 : -1; if (cat.t > W.crouchMs) { cat.state = 'pounce'; cat.t = 0; } }
     else if (cat.still > W.boredAfter) { cat.state = 'bored'; }
+    else if (cat.fast > W.dizzyAfter) { cat.state = 'dizzy'; }
     else {
-      if (cat.state === 'bored') { cat.state = 'watch'; cat.t = 0; }
+      if (cat.state === 'bored' || cat.state === 'dizzy') { cat.state = 'watch'; cat.t = 0; }
       cat.dir = dx >= 0 ? 1 : -1;
-      // 离得远就走近一点；够得着、又到了该扑的时候：先蹲下、屁股扭两下，再扑
+      // 离得远就走近一点；够得着、又到了该扑的时候：先蹲下（头上冒「！」），再扑
       if (Math.abs(dx) > reach) cat.x += Math.sign(dx) * 90 * (dt / 1000);
-      if (cat.state === 'watch' && cat.t > cat.next && Math.abs(dx) < reach * 1.2) { cat.state = 'crouch'; cat.t = 0; }
-      else if (cat.state === 'crouch' && cat.t > 380) { cat.state = 'pounce'; cat.t = 0; }
+      if (cat.t > cat.next && Math.abs(dx) < reach * 1.2) { cat.state = 'crouch'; cat.t = 0; }
     }
     cat.x = Math.max(size * 0.35, Math.min(w - size * 0.35, cat.x)); flash = Math.max(0, flash - dt);
     // 画
     c.clearRect(0, 0, w, h);
     c.fillStyle = '#F6EDE0'; c.fillRect(0, 0, w, ground); c.fillStyle = '#D9B98F'; c.fillRect(0, ground, w, h - ground);
     c.strokeStyle = 'rgba(90,70,52,.18)'; for (let y = ground + 10; y < h; y += 12) { c.beginPath(); c.moveTo(0, y); c.lineTo(w, y); c.stroke(); }
-    const act: ActionName = cat.state === 'pounce' ? 'jump' : cat.state === 'crouch' ? 'fish' : cat.state === 'happy' ? 'happy' : cat.state === 'bored' ? 'sit' : Math.abs(dx) > reach ? 'walk' : 'idle';
+    const act: ActionName = cat.state === 'pounce' ? 'jump' : cat.state === 'crouch' ? 'fish' : cat.state === 'happy' ? 'happy' : cat.state === 'bored' || cat.state === 'dizzy' ? 'sit' : Math.abs(dx) > reach ? 'walk' : 'idle';
     const fr = cat.state === 'pounce' ? Math.min(3, Math.floor(cat.t / 115)) : Math.floor(t / 160) % 4;
     const lift = cat.state === 'pounce' ? Math.sin(Math.min(1, cat.t / 450) * Math.PI) * 40 : 0;
     drawCat(c, set, act, fr, cat.x, ground + 6 - lift, size, cat.dir);
@@ -92,8 +101,19 @@ export function wandGame(set: SpriteSet, name: string, onDone: (catches: number)
     c.strokeStyle = '#5A4634'; c.lineWidth = 1; c.beginPath(); c.moveTo(feather.x + 30, feather.y - 70); c.quadraticCurveTo(feather.x + 10, feather.y - 30, feather.x, feather.y); c.stroke();
     c.fillStyle = '#E8836B'; c.beginPath(); c.ellipse(feather.x, feather.y + 8, 6, 14, 0.3, 0, Math.PI * 2); c.fill();
     c.fillStyle = '#F2C14E'; c.beginPath(); c.ellipse(feather.x - 6, feather.y + 10, 4, 11, -0.4, 0, Math.PI * 2); c.fill();
-    if (cat.state === 'bored') { c.fillStyle = 'rgba(90,70,52,.7)'; c.font = '14px sans-serif'; c.textAlign = 'center'; c.fillText('…没意思', cat.x, ground - size * 0.75); }
-    if (flash > 0) { c.globalAlpha = Math.min(1, flash / 300); c.fillStyle = '#5A4634'; c.font = 'bold 22px sans-serif'; c.textAlign = 'center'; c.fillText(msg, w / 2, 34); c.globalAlpha = 1; }
+    // 猫头上的一句话：发呆、看花眼、准备扑（「！」）
+    const say = (text: string, color: string, px: number) => { c.fillStyle = color; c.font = `bold ${px}px sans-serif`; c.textAlign = 'center'; c.fillText(text, cat.x, ground - size * 0.78); };
+    if (cat.state === 'bored') say('…没意思，晃快一点', 'rgba(90,70,52,.85)', 14);
+    else if (cat.state === 'dizzy') say('@_@ 太快了，看不清', 'rgba(90,70,52,.85)', 14);
+    else if (cat.state === 'crouch') say('！', '#E0533A', 30);
+    // 速度条：三段颜色 + 一根指针
+    const lo = gpos(W.lively), hi = gpos(W.tooFast);
+    c.fillStyle = '#E9C9A8'; c.fillRect(gx, gy, lo - gx, gh); c.fillStyle = '#A9D18E'; c.fillRect(lo, gy, hi - lo, gh); c.fillStyle = '#E9A08E'; c.fillRect(hi, gy, gx + gw - hi, gh);
+    c.strokeStyle = 'rgba(90,70,52,.5)'; c.lineWidth = 1; c.strokeRect(gx + 0.5, gy + 0.5, gw - 1, gh - 1);
+    const nx = gpos(feather.speed); c.fillStyle = '#5A4634'; c.beginPath(); c.moveTo(nx, gy + gh + 1); c.lineTo(nx - 5, gy + gh + 8); c.lineTo(nx + 5, gy + gh + 8); c.closePath(); c.fill();
+    c.font = '11px sans-serif'; c.textAlign = 'center'; c.fillStyle = 'rgba(90,70,52,.8)';
+    c.fillText('慢', (gx + lo) / 2, gy + gh + 19); c.fillText('刚好', (lo + hi) / 2, gy + gh + 19); c.fillText('快', (hi + gx + gw) / 2, gy + gh + 19);
+    if (flash > 0) { c.globalAlpha = Math.min(1, flash / 300); c.fillStyle = '#5A4634'; c.font = 'bold 20px sans-serif'; c.textAlign = 'center'; c.fillText(msg, w / 2, 72); c.globalAlpha = 1; }
     f.bar.textContent = `扑中 ${catches} 次　还剩 ${Math.max(0, Math.ceil((W.time - t) / 1000))} 秒`;
   }, () => onDone(catches));
   return { el: f.el, stop };

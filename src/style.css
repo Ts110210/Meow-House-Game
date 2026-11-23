@@ -221,3 +221,4 @@ textarea.export { width: 100%; font: 12px/1.5 ui-monospace, Menlo, Consolas, mon
 /* 顶上一行多了「出门」：窄屏上按钮挤一挤，开着开发者模式也放得下一行 */
 @media (max-width: 480px) { .hud-top { gap: 3px; padding-left: 6px; padding-right: 6px; } .pill { padding: 0 7px; font-size: 13px; } }
 @media (max-width: 375px) { .pill { padding: 0 6px; font-size: 12px; } }
+.mini > p.soft { white-space: pre-line; } /* 小玩法下面的规则和奖励分两行 */

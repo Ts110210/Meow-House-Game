@@ -369,8 +369,10 @@ export const CONFIG = {
   // ---------- 小玩法（可玩可不玩：原来的「玩耍」按钮照旧一点就加心情） ----------
   minigame: {
     /** 陪它玩（逗猫棒）：玩多久；每扑中一次心情加多少（一局最多 maxMood）；每天前 rewardPlays 局每扑中一次给 fishEach 小鱼干（一局最多 fishMax）；
-     *  逗猫棒离猫多近算扑中（格子的比例）；逗猫棒要一直动它才有兴趣（速度低于 lively 超过 boredAfter 毫秒它就坐下不玩了）；隔多久扑一次 */
-    wand: { time: 20_000, mood: 3, maxMood: 24, fishEach: 1, fishMax: 8, rewardPlays: 3, reach: 0.32, lively: 220, boredAfter: 1500, pounceEvery: [900, 1800] as [number, number] },
+     *  逗猫棒离猫多近算扑中（格子的比例）；逗猫棒要一直动它才有兴趣（速度低于 lively 超过 boredAfter 毫秒它就坐下不玩了）；
+     *  晃得太快（高于 tooFast 超过 dizzyAfter 毫秒）它看花了眼、停下来不追；隔多久扑一次；蹲下（头上冒「！」）到扑出去有多久。
+     *  要先买逗猫棒才能玩（没买时只有原来的「玩耍」按钮） */
+    wand: { time: 20_000, mood: 3, maxMood: 24, fishEach: 1, fishMax: 8, rewardPlays: 3, reach: 0.32, lively: 220, boredAfter: 1500, tooFast: 1600, dizzyAfter: 700, pounceEvery: [900, 1800] as [number, number], crouchMs: 650 },
     /** 陪它捞鱼：玩多久；水里同时有几条鱼；每天前 rewardPlays 局每捞到一条给 fishEach 小鱼干（一局最多 fishMax）、心情加 mood；
      *  点下去之后爪子多久落下；爪子多大（池塘宽度的比例）；拍完一下要等多久才能再拍（乱点没用）；一局心情最多加多少 */
     fishing: { time: 20_000, fish: 4, fishEach: 1, fishMax: 8, mood: 2, maxMood: 12, rewardPlays: 3, strikeDelay: 220, paw: 0.075, cooldown: 650 },
@@ -592,7 +594,7 @@ export const GEAR: GearDef[] = [
   { id: 'tunnel', name: '猫隧道', icon: '🕳️', price: 120, desc: '放在阳台。钻进去，从另一头探出脑袋' },
   { id: 'autoball', name: '自动逗猫球', icon: '🔮', price: 150, desc: '放在收藏柜那一间，自己会滚，宠物会追着扑' },
   { id: 'heater', name: '小暖炉', icon: '🔥', price: 180, desc: '放在卧室。天冷的时候宠物爱围着它睡' },
-  { id: 'wand', name: '逗猫棒', icon: '🪶', price: 60, desc: '陪它玩的时候用：玩耍从 +10 心情变成 +24' },
+  { id: 'wand', name: '逗猫棒', icon: '🪶', price: 60, desc: '买了才能玩「陪它玩」小玩法（扑中有心情和小鱼干）；平时的玩耍也从 +10 心情变成 +24' },
   { id: 'scratcher', name: '猫抓板', icon: '🪵', price: 120, desc: '放在客厅，宠物会自己去抓，心情不会低于 15' },
   { id: 'ball', name: '玩具球', icon: '⚽', price: 40, desc: '宠物会自己追着玩，两只还会一起玩；心情不会低于 15' },
   { id: 'cattree', name: '猫爬架', icon: '🗼', price: 260, desc: '放在客厅，三层，最多三只一起待着；点它可以指定谁待在哪一层' },

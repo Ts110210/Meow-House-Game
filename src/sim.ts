@@ -1212,9 +1212,15 @@ export function canMiniPlay(s: GameState, petId: string): Result {
   return { ok: true };
 }
 
+/** 能不能玩逗猫棒小玩法：要先买逗猫棒 */
+export function canWandGame(s: GameState, petId: string): Result {
+  if (!s.owned.wand) return { ok: false, msg: '要先在商店买一根逗猫棒' };
+  return canMiniPlay(s, petId);
+}
+
 /** 陪它玩完一局逗猫棒：扑中几次 → 心情、（每天前几局）小鱼干 */
 export function finishWand(s: GameState, petId: string, catches: number): Result {
-  const c = canMiniPlay(s, petId); if (!c.ok) return c;
+  const c = canWandGame(s, petId); if (!c.ok) return c;
   const p = s.pets.find((x) => x.id === petId)!; const W = CONFIG.minigame.wand; const m = miniDay(s);
   const n = Math.max(0, Math.floor(catches)); const mood = Math.min(W.maxMood, n * W.mood);
   const fish = m.wand < W.rewardPlays ? Math.min(W.fishMax, n * W.fishEach) : 0; m.wand++;

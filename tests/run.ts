@@ -370,6 +370,8 @@ console.log('猫的日记、猫叼回来的礼物');
 console.log('小玩法');
 {
   const s = blank(); const p = s.pets[0]; p.mood = 40; const fish0 = s.fish; const M = CONFIG.minigame;
+  check('没买逗猫棒不能玩逗猫棒小玩法（原来的玩耍按钮照旧）', !sim.canWandGame(s, p.id).ok && !sim.finishWand(s, p.id, 5).ok && s.fish === fish0 && p.mood === 40 && sim.play(s, p.id).ok);
+  p.mood = 40; s.owned.wand = true;
   const r = sim.finishWand(s, p.id, 5);
   check('陪它玩：扑中几次加几次心情，每天前几局给小鱼干', r.ok && p.mood === 40 + 5 * M.wand.mood && s.fish === fish0 + 5 * M.wand.fishEach && Object.values(s.diary.days).flat().some((f) => f.k === 'wandGame' && f.x === '5'));
   sim.finishWand(s, p.id, 99); const f1 = s.fish; sim.finishWand(s, p.id, 3); sim.finishWand(s, p.id, 3);
@@ -382,7 +384,7 @@ console.log('小玩法');
   check('让它自己去捞：不能同时出门，到点自己回来带小鱼干，日记里记着', a.ok && !!p.fishing && !sim.checkDispatch(s, { petIds: [p.id], bento: 'kibble', tool: null, goods: [] }).ok && (() => { const f = s.fish; const ev = sim.advance(s, M.auto.duration + MIN); return !p.fishing && ev.some((e) => e.type === 'autoFish') && s.fish - f >= M.auto.fish[0] && Object.values(s.diary.days).flat().some((x) => x.k === 'autoFish'); })());
   sim.startAutoFish(s, p.id); sim.advance(s, M.auto.duration + MIN);
   check(`让它去一天最多 ${M.auto.perDay} 次；心情太差不去`, !sim.startAutoFish(s, p.id).ok && (sim.advance(s, DAY), p.mood = 10, !sim.startAutoFish(s, p.id).ok));
-  check('虚弱或者出门了不能玩', (() => { const q = blank(); q.pets[0].weakSince = q.clock; return !sim.finishWand(q, q.pets[0].id, 3).ok; })());
+  check('虚弱或者出门了不能玩', (() => { const q = blank(); q.owned.wand = true; q.pets[0].weakSince = q.clock; return !sim.finishWand(q, q.pets[0].id, 3).ok; })());
 }
 
 console.log('纪念册、亲密度、迎接');

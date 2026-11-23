@@ -726,10 +726,13 @@ export class UI {
     out.push(h('div', { class: 'grid3' },
       h('button', { class: 'act', 'data-tut': 'pet', onclick: () => doAct((st) => sim.petPet(st, id), 'happy') }, '摸摸', mult('pet') ?? h('small', null, `心情 +${CONFIG.actions.petMood}`)),
       h('button', { class: 'act', onclick: () => doAct((st) => sim.bath(st, id), 'bath') }, '洗澡', mult('bath') ?? h('small', null, `干净 +${CONFIG.actions.bathClean}`)),
-      h('button', { class: 'act', onclick: () => this.openMiniGame('wand', id) }, '陪它玩', h('small', null, sim.minigameLeft(s).wand ? `小玩法 · 今天还有 ${sim.minigameLeft(s).wand} 局奖励` : '小玩法 · 加心情')),
+      // 逗猫棒小玩法要先买逗猫棒：没买时点一下去商店
+      s.owned.wand
+        ? h('button', { class: 'act', onclick: () => this.openMiniGame('wand', id) }, '陪它玩', h('small', null, sim.minigameLeft(s).wand ? `小玩法 · 今天还有 ${sim.minigameLeft(s).wand} 局奖励` : '小玩法 · 加心情'))
+        : h('button', { class: 'act', style: 'opacity:.7', onclick: () => { this.say({ ok: false, msg: '要先买一根逗猫棒才能陪它玩' }); this.openShop(); } }, '陪它玩', h('small', null, '🔒 需要逗猫棒')),
       h('button', { class: 'act', onclick: () => doAct((st) => sim.play(st, id), 'play') }, '玩耍', mult('play') ?? h('small', null, s.owned.wand ? `逗猫棒 · 心情 +${CONFIG.actions.playMoodWand}` : `心情 +${CONFIG.actions.playMoodHand}`))));
     if (sim.isProtected(s, p)) out.push(h('p', { class: 'soft' }, '新手保护：它还小，是家里的第一只，长大前饿得比较慢。'));
-    if (!s.owned.wand) out.push(this.hint(`现在是空手逗它。`, `商店里有逗猫棒，买了以后玩耍变成心情 +${CONFIG.actions.playMoodWand}。`));
+    if (!s.owned.wand) out.push(this.hint(`现在是空手逗它。`, `商店里有逗猫棒，买了以后能玩「陪它玩」小玩法，平时的玩耍也变成心情 +${CONFIG.actions.playMoodWand}。`));
     return out;
     }
     if (tab === 'about') {
@@ -1050,13 +1053,18 @@ export class UI {
 
   private mini: { kind: 'wand' | 'fishing'; petId: string; game: MiniGame | null; result: string | null } | null = null;
   /** 陪它玩（逗猫棒）或陪它捞鱼。一局结束后显示结果，可以再来一局 */
+  /** 逗猫棒小玩法开局前写清楚的奖励（跟着今天还剩几局有小鱼干） */
+  private wandNote() {
+    const W = CONFIG.minigame.wand; const left = sim.minigameLeft(this.game.state).wand;
+    return `每扑中一次：心情 +${W.mood}` + (left ? `、小鱼干 +${W.fishEach}（今天还有 ${left} 局有小鱼干，每局最多 ${W.fishMax} 条）` : '（今天的小鱼干奖励领完了）');
+  }
   openMiniGame(kind: 'wand' | 'fishing', petId: string) {
     const p = this.game.pet(petId); const set = p ? this.game.sprites.get(p.spriteId) : null;
-    const ok = this.game.state && sim.canMiniPlay(this.game.state, petId); if (!p || !set || !ok.ok) { this.say(ok.ok ? { ok: false, msg: '找不到它' } : ok); sfx('error'); return; }
+    const ok = this.game.state && (kind === 'wand' ? sim.canWandGame(this.game.state, petId) : sim.canMiniPlay(this.game.state, petId)); if (!p || !set || !ok.ok) { this.say(ok.ok ? { ok: false, msg: '找不到它' } : ok); sfx('error'); return; }
     const start = () => {
       this.mini?.game?.stop();
       const done = (n: number) => { const r = this.game.act((st) => kind === 'wand' ? sim.finishWand(st, petId, n) : sim.finishFishing(st, petId, n)); sfx(r.ok && n ? 'coin' : 'click'); if (this.mini) { this.mini.result = r.msg ?? ''; this.mini.game = null; } this.refresh(true); };
-      this.mini = { kind, petId, game: kind === 'wand' ? wandGame(set, p.name, done) : fishingGame(set, p.name, done), result: null };
+      this.mini = { kind, petId, game: kind === 'wand' ? wandGame(set, p.name, done, this.wandNote()) : fishingGame(set, p.name, done), result: null };
     };
     start();
     this.open({ title: kind === 'wand' ? `陪${p.name}玩` : `陪${p.name}捞鱼`, onClose: () => { this.mini?.game?.stop(); this.mini = null; }, render: () => {
