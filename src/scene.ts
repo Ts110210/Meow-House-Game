@@ -142,6 +142,8 @@ interface Actor {
   ball: { until: number; leader: boolean; hop: boolean } | null;
   /** 主人正在陪它玩（逗猫棒）到什么时候 */
   wandUntil: number;
+  /** 小玩法的面板开着：wand = 在房间里原地陪着玩；fishing = 在鱼塘边捞。关面板前一直做这件事，不自己跑开 */
+  mini?: 'wand' | 'fishing' | null;
   /** 正占着哪件家具的第几个位置 */
   station: string | null; slot: number; selfPlayAt: number;
   /** 想用的家具现在满了：先在旁边等，空出来再过去 */
@@ -1209,12 +1211,28 @@ export class Scene {
     if (action === 'eat' && (food === 'can' || food === 'feast')) this.serveDish(a, food);
     else if (action === 'eat') this.reserveOrWait(a, 'bowl');
     else if (action === 'bath') this.reserveOrWait(a, 'tub');
+    else if (action === 'fish') this.reserveOrWait(a, 'pond'); // 捞鱼：跑去鱼塘边
     // 主人陪玩：就在原地逗它，不用走到玩具那里（猫抓板和球是它自己玩的）
-    const dur = action === 'eat' ? D.eat : action === 'bath' ? D.bath : action === 'play' ? D.wand : D.pet;
+    const dur = action === 'eat' ? D.eat : action === 'bath' ? D.bath : action === 'play' ? D.wand : action === 'fish' ? 60_000 : D.pet;
     if (action === 'play') { a.wandUntil = this.now + dur; a.selfPlayAt = this.now; }
     a.fast = true;
     a.pending = { action, dur, ...(a.station === 'dish' ? { dish: a.dishId } : {}) };
     if (follow && action !== 'happy') this.follow = { id: petId, until: this.now + dur + 4000 };
+  }
+
+  /** 小玩法开着时，房间里的这只猫也跟着：逗猫棒 = 原地陪你玩（从家具、屋顶上下来）；陪它捞 = 跑去鱼塘边捞。
+   *  面板关了传 null：手上这件事收个尾，接着做自己的事 */
+  holdForMini(petId: string, kind: 'wand' | 'fishing' | null) {
+    const a = this.actors.get(petId); if (!a) return;
+    if (!kind) {
+      if (!a.mini) return; const was = a.mini; a.mini = null;
+      const act = was === 'wand' ? 'play' : 'fish';
+      if (a.pending?.action === act) { a.pending = null; a.fast = false; this.stop(a); }
+      if (a.action === act) { a.until = Math.min(a.until, this.now + 400); a.wandUntil = Math.min(a.wandUntil, a.until); }
+      return;
+    }
+    if (a.mini === kind) return;
+    a.mini = kind; this.perform(petId, kind === 'wand' ? 'play' : 'fish');
   }
 
   /** 宠物头顶飘一行字（「饱食 +25」之类），给操作一个看得见的反馈 */
@@ -1788,6 +1806,8 @@ export class Scene {
       const weak = sim.isWeak(p);
       const sc = PET_BASE * ASSETS.petScale * sim.bodySize(p);
       if (a.inter && this.now >= a.inter.until) a.inter = null;
+      // 小玩法开着：手上这件事（逗猫棒、捞鱼）一直延长，不去想下一件事
+      if (a.mini && !a.pending && a.action === (a.mini === 'wand' ? 'play' : 'fish')) { a.until = Math.max(a.until, this.now + 1000); if (a.mini === 'wand') a.wandUntil = a.until; }
       if (this.roofStep(a, dt, weak)) { /* 在爬梯子或在屋顶上 */ }
       else if (a.inter && !weak) { /* 正在打哈欠或伸懒腰：做完再说 */ }
       else if (a.hop) {

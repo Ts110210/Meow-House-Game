@@ -1067,7 +1067,9 @@ export class UI {
       this.mini = { kind, petId, game: kind === 'wand' ? wandGame(set, p.name, done, this.wandNote()) : fishingGame(set, p.name, done), result: null };
     };
     start();
-    this.open({ title: kind === 'wand' ? `陪${p.name}玩` : `陪${p.name}捞鱼`, onClose: () => { this.mini?.game?.stop(); this.mini = null; }, render: () => {
+    // 房间里的这只猫也跟着：逗猫棒就在原地陪你玩，捞鱼就跑去鱼塘边，面板关了才去做别的
+    this.scene.holdForMini(petId, kind);
+    this.open({ title: kind === 'wand' ? `陪${p.name}玩` : `陪${p.name}捞鱼`, onClose: () => { this.mini?.game?.stop(); this.mini = null; this.scene.holdForMini(petId, null); }, render: () => {
       const m = this.mini; if (!m) return [];
       if (m.game) return [m.game.el];
       const left = sim.minigameLeft(this.game.state)[kind];
