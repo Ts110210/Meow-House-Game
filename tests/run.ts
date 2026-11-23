@@ -159,7 +159,8 @@ console.log('访客');
 {
   const V = CONFIG.visitors; const counts = [0, 0, 0]; const kinds: Record<string, number> = {};
   /** 已经玩了一天以上的存档（第一天不来访客） */
-  const aged = () => { const s = blank(); s.createdAt -= V.firstAfter; return s; };
+  // 客人深夜、下雨不来：这几项把时间定在下午、晴天（时间跟着时区和日期变，不定住会偶发失败）
+  const aged = () => { const s = blank(); s.createdAt -= V.firstAfter; s.dev.enabled = true; s.dev.hour = 14; s.dev.weather = 'clear'; return s; };
   { const s = blank(); s.visitorDay = sim.dayKey(s.clock); s.visitorQuota = 2; check('开始玩的第一天不来访客', sim.openDoorToVisitors(s).length === 0 && s.visitors.length === 0 && s.visitorQuota === 2); }
   for (let i = 0; i < 3000; i++) { const s = aged(); sim.openDoorToVisitors(s); counts[s.visitorQuota + s.visitors.length]++; for (const v of s.visitors) kinds[v.kind] = (kinds[v.kind] ?? 0) + 1; }
   check('每天来 0–2 个，比例大约 25% / 50% / 25%', Math.abs(counts[0] / 3000 - 0.25) < 0.04 && Math.abs(counts[1] / 3000 - 0.5) < 0.04 && Math.abs(counts[2] / 3000 - 0.25) < 0.04, counts.join());
@@ -365,6 +366,16 @@ console.log('猫的日记、猫叼回来的礼物');
   check('稀有礼物捡起来进图鉴，还是一件能摆出来的装饰', r.ok && !!g.treasures[got[0].kind] && TREASURES[got[0].kind].rare === true && g.decor.some((d) => d.kind === got[0].kind && d.zone === null));
   g.gifts.push({ id: 'x', kind: 'feather', petId: g.pets[0].id, at: g.clock }); sim.advance(g, CONFIG.gifts.expire + MIN);
   check('门口的礼物放太久没捡会不见', g.gifts.length === 0);
+}
+
+console.log('客人看时间和天气');
+{
+  const s = blank(T0 - 5 * DAY); s.dev.enabled = true; s.dev.weather = 'clear'; s.clock = T0; s.lastVisitorAt = 0; s.hood.last = 0;
+  s.dev.hour = 3; check('半夜三点：邻居猫和访客都不来', !sim.guestsWelcome(s) && sim.openDoorToNeighbors(s).length === 0 && sim.openDoorToVisitors(s).length === 0);
+  s.dev.hour = 14; s.dev.weather = 'rain'; check('下雨天不来', !sim.guestsWelcome(s));
+  s.dev.weather = 'clear'; check('白天晴天可以来', sim.guestsWelcome(s));
+  s.hood.quota = 1; const ev = sim.openDoorToNeighbors(s, 'dahei'); s.dev.weather = 'rain'; sim.advance(s, MIN);
+  check('邻居猫在的时候下起雨，先回家', ev.length > 0 && s.hood.now === null);
 }
 
 console.log('吃饱了不吃');
@@ -613,7 +624,7 @@ console.log('公母和体型');
 
 console.log('邻居猫和常客');
 {
-  const s = blank(); s.fish = 0; const p = s.pets[0]; p.food = 80; p.mood = 50;
+  const s = blank(); s.fish = 0; const p = s.pets[0]; p.food = 80; p.mood = 50; s.dev.enabled = true; s.dev.hour = 14; s.dev.weather = 'clear'; // 深夜、下雨邻居不来，定在下午晴天
   check('有三只邻居，样子都画得出来', Object.keys(NEIGHBORS).length === 3 && Object.values(NEIGHBORS).every((n) => !!decodeLook(n.look) && n.notes.length >= 3 && n.stories.length >= 3));
   s.hood.day = sim.dayKey(s.clock); s.hood.quota = 0;
   check('今天没有名额就不来', sim.openDoorToNeighbors(s).length === 0 && s.hood.now === null);

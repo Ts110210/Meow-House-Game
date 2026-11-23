@@ -199,7 +199,8 @@ export function advance(s: GameState, dt: number): GameEvent[] {
     stepPets(s, step, events);
     for (const v of [...s.visitors]) if (s.clock >= v.leaveAt) { s.visitors = s.visitors.filter((x) => x.id !== v.id); events.push({ type: 'visitorLeft', who: v.who }); }
     if (s.errand && s.clock >= s.errand.expiresAt) s.errand = null;
-    if (s.hood.now && s.clock >= s.hood.now.leaveAt) neighborLeaves(s, events);
+    // 邻居猫到点回家；下起雨来也先回家（不会在雨里待在院子、屋顶上）
+    if (s.hood.now && (s.clock >= s.hood.now.leaveAt || weather(s) === 'rain')) neighborLeaves(s, events);
     for (const p of s.pets) if (p.outing && s.clock >= p.outing.until) outingBack(s, p, events);
     for (const p of s.pets) if (p.fishing) {
       const f = p.fishing;
@@ -562,7 +563,7 @@ function addBond(s: GameState, id: string, n: number) { s.hood.bonds[id] = Math.
 export function openDoorToNeighbors(s: GameState, who?: string): GameEvent[] {
   const NB = CONFIG.neighbors; const day = dayKey(s.clock); const h = s.hood;
   if (h.day !== day) { h.day = day; let r = Math.random(); h.quota = 0; for (let n = 0; n < NB.perDayChance.length; n++) { r -= NB.perDayChance[n]; if (r <= 0) { h.quota = n; break; } } }
-  if (!who && (h.quota <= 0 || h.now || s.clock - h.last < NB.gap || s.clock - s.createdAt < NB.firstAfter || homePets(s).length === 0)) return [];
+  if (!who && (h.quota <= 0 || h.now || s.clock - h.last < NB.gap || s.clock - s.createdAt < NB.firstAfter || homePets(s).length === 0 || !guestsWelcome(s))) return [];
   if (h.now) return [];
   const ids = Object.keys(NEIGHBORS); const id = who && NEIGHBORS[who] ? who : ids[Math.floor(Math.random() * ids.length)];
   if (!who) h.quota--;
@@ -707,6 +708,13 @@ export function setCatTree(s: GameState, level: number, petId: string | null): R
 const weighted = <K extends string>(w: Record<K, number>): K => { let r = Math.random() * (Object.values(w) as number[]).reduce((a, b) => a + b, 0); for (const k of Object.keys(w) as K[]) { r -= w[k]; if (r <= 0) return k; } return Object.keys(w)[0] as K; };
 const between = ([a, b]: [number, number]) => Math.round(a + Math.random() * (b - a));
 
+/** 现在适不适合有客人来：深夜（guests.quiet）不来、下雨天不来（今天的名额留着，天亮、雨停了再来） */
+export function guestsWelcome(s: GameState): boolean {
+  const h = lightHour(s); const [from, to] = CONFIG.guests.quiet;
+  const quiet = from > to ? h >= from || h < to : h >= from && h < to;
+  return !quiet && weather(s) !== 'rain';
+}
+
 /** 主人打开 App（或回到前台）时调用：新的一天先定今天来几个；今天还有名额、门口没人、离上一个够久，就来一个。 */
 export function openDoorToVisitors(s: GameState): GameEvent[] {
   const V = CONFIG.visitors; const day = dayKey(s.clock);
@@ -715,7 +723,7 @@ export function openDoorToVisitors(s: GameState): GameEvent[] {
     let r = Math.random(); s.visitorQuota = 0;
     for (let n = 0; n < V.perDayChance.length; n++) { r -= V.perDayChance[n]; if (r <= 0) { s.visitorQuota = n; break; } }
   }
-  if (s.visitorQuota <= 0 || s.visitors.length > 0 || s.clock - s.lastVisitorAt < V.gap || s.clock - s.createdAt < V.firstAfter) return [];
+  if (s.visitorQuota <= 0 || s.visitors.length > 0 || s.clock - s.lastVisitorAt < V.gap || s.clock - s.createdAt < V.firstAfter || !guestsWelcome(s)) return [];
   s.visitorQuota--; s.lastVisitorAt = s.clock;
   const v = makeVisitor(s); s.visitors.push(v);
   return [{ type: 'visitor', visitorId: v.id }];
