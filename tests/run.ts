@@ -254,7 +254,7 @@ console.log('任务：新手引导和每日任务');
   const f1 = s.fish; check('全部领完再领额外奖励，一天一次', sim.claimDailyBonus(s).ok && s.fish === f1 + QUESTS.dailyBonus && !sim.claimDailyBonus(s).ok);
   sim.advance(s, DAY); st = sim.questStatus(s);
   check('第二天换一批新的，进度从零开始', st.items.length === QUESTS.dailyCount && st.items.every((x) => x.got === 0 && !x.claimed) && !st.bonusClaimed);
-  check('每日任务一天能多赚大约 75–105', (() => { const r = QUESTS.daily.map((q) => q.reward).sort((a, b) => a - b); const lo = r.slice(0, 3).reduce((a, b) => a + b, 0) + QUESTS.dailyBonus, hi = r.slice(-3).reduce((a, b) => a + b, 0) + QUESTS.dailyBonus; return lo >= 70 && hi <= 110; })());
+  check('每日任务一天能多赚大约 180–220（主人要每天 250–350 起步）', (() => { const r = QUESTS.daily.map((q) => q.reward).sort((a, b) => a - b); const lo = r.slice(0, 3).reduce((a, b) => a + b, 0) + QUESTS.dailyBonus, hi = r.slice(-3).reduce((a, b) => a + b, 0) + QUESTS.dailyBonus; return lo >= 170 && hi <= 230; })());
   const old = JSON.parse(JSON.stringify(sim.newState(T0))); old.v = 7; delete old.quests; old.clock += 2 * DAY;
   const m = migrate(old, T0); check('已经玩了一阵的旧存档不走引导，直接每日任务', m.ok && m.state.quests.guideDone);
   const young = JSON.parse(JSON.stringify(sim.newState(T0))); young.v = 7; delete young.quests;

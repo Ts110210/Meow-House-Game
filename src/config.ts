@@ -521,7 +521,7 @@ export const CONFIG = {
   },
 
   // ---------- 每日签到 ----------
-  checkinFish: 30,
+  checkinFish: 60,
 
   // ---------- 背屏（小米 17 Pro Max） ----------
   backScreen: {
@@ -776,21 +776,21 @@ export const QUESTS = {
     { id: 'decor', text: '在「布置房间」里挪一件装饰', key: 'decor', need: 1, reward: 20, go: 'decor' },
     { id: 'roof', text: '点底部的「屋顶」去屋顶看看', key: 'roof', need: 1, reward: 10, go: 'roof' },
   ] as QuestDef[],
-  /** 每日任务的池子：每天从里面随机抽 dailyCount 个（不重复） */
+  /** 每日任务的池子：每天从里面随机抽 dailyCount 个（不重复）。2026-11-23 主人要每天收入 250–350 起步：签到、每日任务、全部完成的奖励都调高了 */
   daily: [
-    { id: 'feed3', text: '喂 3 次饭', key: 'feed', need: 3, reward: 15, go: 'pet' },
-    { id: 'pet5', text: '摸摸 5 次', key: 'pet', need: 5, reward: 15, go: 'pet' },
-    { id: 'bath1', text: '洗 1 次澡', key: 'bath', need: 1, reward: 15, go: 'pet' },
-    { id: 'play2', text: '陪玩 2 次', key: 'play', need: 2, reward: 15, go: 'pet' },
-    { id: 'checkin', text: '每日签到', key: 'checkin', need: 1, reward: 15, go: 'checkin' },
-    { id: 'trip1', text: '派宠物出门 1 次', key: 'trip', need: 1, reward: 25, go: 'door' },
-    { id: 'plant1', text: '往鱼塘放 1 条鱼苗', key: 'plant', need: 1, reward: 20, go: 'pond' },
-    { id: 'buy1', text: '在商店买 1 样东西', key: 'buy', need: 1, reward: 20, go: 'shop' },
-    { id: 'decor1', text: '在「布置房间」里挪 1 件装饰', key: 'decor', need: 1, reward: 15, go: 'decor' },
+    { id: 'feed3', text: '喂 3 次饭', key: 'feed', need: 3, reward: 45, go: 'pet' },
+    { id: 'pet5', text: '摸摸 5 次', key: 'pet', need: 5, reward: 40, go: 'pet' },
+    { id: 'bath1', text: '洗 1 次澡', key: 'bath', need: 1, reward: 40, go: 'pet' },
+    { id: 'play2', text: '陪玩 2 次', key: 'play', need: 2, reward: 40, go: 'pet' },
+    { id: 'checkin', text: '每日签到', key: 'checkin', need: 1, reward: 40, go: 'checkin' },
+    { id: 'trip1', text: '派宠物出门 1 次', key: 'trip', need: 1, reward: 60, go: 'door' },
+    { id: 'plant1', text: '往鱼塘放 1 条鱼苗', key: 'plant', need: 1, reward: 50, go: 'pond' },
+    { id: 'buy1', text: '在商店买 1 样东西', key: 'buy', need: 1, reward: 50, go: 'shop' },
+    { id: 'decor1', text: '在「布置房间」里挪 1 件装饰', key: 'decor', need: 1, reward: 40, go: 'decor' },
   ] as QuestDef[],
   dailyCount: 3,
   /** 当天的每日任务全部领完，再给这么多 */
-  dailyBonus: 30,
+  dailyBonus: 60,
 };
 
 /** 公猫、母猫。现在只决定成年后的大小（见 CONFIG.growth.adultSize） */
