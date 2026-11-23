@@ -339,6 +339,11 @@ const OBJECT_ART: Record<string, { w: number; h: number; draw: (s: Sketch) => vo
   // 鱼罐头：拉开的罐子，里面是鱼。吃完是空罐
   can: { w: 46, h: 36, draw(s) { s.rect(4, 8, 38, 26, { fill: '#C9D3D9', r: 4 }); s.rect(4, 16, 38, 10, { fill: P.mist }); s.ellipse(23, 8, 19, 6, { fill: '#E9A07F' }); s.ellipse(17, 7, 5, 2.5, { fill: '#F3C5A8', stroke: false, hatch: 0 }); s.curve([[40, 6], [48, 0], [44, 12]], '#9AA6AE', 2); } },
   canEmpty: { w: 46, h: 36, draw(s) { s.poly([[2, 30], [10, 12], [40, 16], [44, 34], [8, 36]], { fill: '#C9D3D9' }); s.ellipse(25, 14, 15, 5, { fill: '#9AA6AE' }); s.rect(12, 20, 26, 8, { fill: P.mist, stroke: false }); } },
+  // 饭碗里的猫粮：和饭碗一样大（96×44），只画堆在碗口的一小堆粮；喂了才出现，吃的时候慢慢变少
+  bowlFood: { w: 96, h: 44, draw(s) {
+    s.ellipse(48, 12, 36, 6, { fill: '#B8794A' }); s.ellipse(48, 8, 26, 6, { fill: '#C98A55' }); s.ellipse(47, 5, 14, 4, { fill: '#D69A63' });
+    for (const [x, y] of [[30, 11], [40, 7], [52, 9], [60, 12], [44, 4], [56, 5], [36, 12], [66, 10]]) s.ellipse(x, y, 3, 2, { fill: '#8E5A34', stroke: false, hatch: 0 });
+  } },
   // 豪华便当：打开的盒子，几格不同的菜。吃完是空盒
   feast: { w: 76, h: 34, draw(s) { s.rect(2, 8, 72, 24, { fill: P.coral, r: 4 }); s.rect(6, 4, 64, 10, { fill: P.white, r: 3 }); s.ellipse(20, 8, 9, 4, { fill: '#F3C5A8' }); s.ellipse(38, 8, 7, 4, { fill: P.sage }); s.ellipse(56, 8, 9, 4, { fill: P.mustard }); } },
   feastEmpty: { w: 76, h: 34, draw(s) { s.rect(2, 8, 72, 24, { fill: P.coral, r: 4 }); s.rect(6, 4, 64, 10, { fill: darken(P.white, 0.06), r: 3 }); s.line(28, 5, 28, 13, P.ink, 1, 0.5); s.line(48, 5, 48, 13, P.ink, 1, 0.5); } },

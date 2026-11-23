@@ -398,6 +398,8 @@ export const CONFIG = {
     climbMs: 2_200, walkSpeed: 80,
   },
   eating: {
+    /** 饭碗里的粮分几档画（满 → 快吃完）：档数越多变少得越平滑 */
+    bowlSteps: 6,
     /** 罐头、便当吃完后，空罐、空盒在地上留多久再消失（毫秒） */
     emptyLinger: 30_000,
     /** 消失时淡出用多久 */

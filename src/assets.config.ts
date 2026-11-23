@@ -146,6 +146,9 @@ export const ASSETS = {
     canEmpty: { src: 'props/can-empty.png', height: 36, mouth: [0.5, 0.18], label: '空罐头' },
     feast: { src: 'props/feast.png', height: 34, mouth: [0.5, 0.22], label: '豪华便当' },
     feastEmpty: { src: 'props/feast-empty.png', height: 34, mouth: [0.5, 0.22], label: '空便当盒' },
+    /** 饭碗里的猫粮（满的时候）：和 objects/bowl.png 一样大、对齐，只画粮，别的地方透明；bowl.png 本身画空碗。
+     *  喂了猫粮就满，猫吃的时候从上往下一点点变少（程序裁掉上面的部分），吃完就空了。height 不用（跟着碗走） */
+    bowlFood: { src: 'props/bowl-food.png', height: 0, mouth: [0.5, 0.3], label: '碗里的猫粮' },
   } as Record<string, PropDef>,
   /** 吃鱼罐头、豪华便当的地方：厨房里饭碗周围的一块长方形，在这里面随便找个空位（x、y = 宠物脚底，按 432 宽、地板线 560 算） */
   eatArea: { zone: 'kitchen' as ZoneId, x: [40, 420] as [number, number], y: [614, 700] as [number, number] },

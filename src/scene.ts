@@ -444,6 +444,8 @@ export class Scene {
         t.eventMode = 'none'; // 摆着的纪念品不挡点击，点到它等于点收藏柜
         this.addSorted(t, pos.y + 0.05);
       });
+      // 饭碗：上面再放一层碗里的粮（满到空几档），每帧按 bowlLevel 换
+      if (kind === 'bowl' && src && !this.editMode) this.bowlFood = this.makeBowlFood(sp, pos.y);
       // 鱼塘里的鱼：画在自己的小图层里，每帧让它来回游
       if (kind === 'pond') s.pond.forEach((p, i) => {
         if (p == null) return;
@@ -914,6 +916,40 @@ export class Scene {
   // ---------- 罐头、便当：摆在厨房地上，吃完留下空罐、空盒，过一会儿消失 ----------
   private dishes = new Map<string, { id: string; kind: 'can' | 'feast'; owner: string; x: number; y: number; dir: 1 | -1; sp: Sprite; started: boolean; endAt: number; emptyUntil: number }>();
   private dishSeq = 0;
+  /** 饭碗里还剩多少猫粮（0 空 – 1 满）：喂猫粮时满上，猫在碗边吃的时候一点点变少。只是画面，不进存档 */
+  private bowlLevel = 0;
+  /** 碗里那堆粮：几档裁好的图（从空到满）、画在碗上面那一层 */
+  private bowlFood: { sp: Sprite; steps: Texture[]; h: number } | null = null;
+  /** 碗里的粮：同一张图从上往下裁掉不同的高度，得到几档（满 → 快吃完）。图里只有粮，和碗一样大、对齐 */
+  private makeBowlFood(bowl: Sprite, z: number): { sp: Sprite; steps: Texture[]; h: number } | null {
+    const img = this.assets.get('prop.bowlFood') ?? (this.objArt.has('bowlFood') ? this.objArt.get('bowlFood')! : (this.objArt.set('bowlFood', drawObject('bowlFood')), this.objArt.get('bowlFood')!));
+    if (!img) return null;
+    // 粮在图里从哪一行到哪一行（量一次）：只在这一段里裁，透明的地方不算
+    let top = 0, bot = img.height;
+    try {
+      const c = img.getContext('2d', { willReadFrequently: true } as any) as CanvasRenderingContext2D | null;
+      if (c) { const d = c.getImageData(0, 0, img.width, img.height).data; const row = (y: number) => { for (let x = 0; x < img.width; x++) if (d[(y * img.width + x) * 4 + 3] > 24) return true; return false; };
+        while (top < img.height - 1 && !row(top)) top++; bot = img.height; while (bot > top + 1 && !row(bot - 1)) bot--; }
+    } catch { /* 读不了像素就整张算 */ }
+    const base = this.tex(img); const N = CONFIG.eating.bowlSteps;
+    const steps = Array.from({ length: N }, (_, i) => { const f = (i + 1) / N; const y0 = Math.round(top + (1 - f) * (bot - top)); return new Texture({ source: base.source, frame: new Rectangle(0, y0, img.width, img.height - y0) }); });
+    const sp = new Sprite(steps[N - 1]); sp.anchor.set(0.5, 1); sp.eventMode = 'none'; sp.visible = this.bowlLevel > 0;
+    (sp as any).bowl = bowl; this.addSorted(sp, z + 0.01);
+    return { sp, steps, h: img.height };
+  }
+  /** 每帧：在碗边吃的猫越多吃得越快；按剩下多少换那一档图 */
+  private updateBowl(dt: number) {
+    const eaters = [...this.actors.values()].filter((a) => a.action === 'eat' && a.station === 'bowl' && this.now < a.until).length;
+    if (eaters && this.bowlLevel > 0) this.bowlLevel = Math.max(0, this.bowlLevel - (eaters * dt) / D.eat);
+    const f = this.bowlFood; if (!f || f.sp.destroyed) return;
+    const bowl = (f.sp as any).bowl as Sprite; const N = f.steps.length;
+    if (this.bowlLevel <= 0.001 || !bowl || bowl.destroyed) { f.sp.visible = false; return; }
+    const t = f.steps[Math.min(N - 1, Math.max(0, Math.ceil(this.bowlLevel * N) - 1))];
+    if (f.sp.texture !== t) f.sp.texture = t;
+    // 粮的图和碗一样大：整张对应碗的高度，裁剩下的那部分按比例
+    f.sp.visible = bowl.visible; f.sp.width = bowl.width; f.sp.height = bowl.height * (t.frame.height / f.h); f.sp.position.set(bowl.x, bowl.y);
+  }
+
   private propTex(kind: string): Texture {
     const img = this.assets.get(`prop.${kind}`); if (img) return this.tex(img);
     if (!this.objArt.has(kind)) this.objArt.set(kind, drawObject(kind));
@@ -1209,7 +1245,7 @@ export class Scene {
     a.pending = null; a.want = null; this.stop(a); a.wandUntil = 0; a.inter = null;
     if (a.sulkUntil > this.now) { a.sulkUntil = 0; if (action === 'happy') this.floatText(petId, '哼……原谅你了'); }
     if (action === 'eat' && (food === 'can' || food === 'feast')) this.serveDish(a, food);
-    else if (action === 'eat') this.reserveOrWait(a, 'bowl');
+    else if (action === 'eat') { this.reserveOrWait(a, 'bowl'); this.bowlLevel = 1; } // 猫粮倒进碗里：满了
     else if (action === 'bath') this.reserveOrWait(a, 'tub');
     else if (action === 'fish') this.reserveOrWait(a, 'pond'); // 捞鱼：跑去鱼塘边
     // 主人陪玩：就在原地逗它，不用走到玩具那里（猫抓板和球是它自己玩的）
@@ -1958,7 +1994,7 @@ export class Scene {
       }
     });
 
-    this.updateGuest(dt); this.watchMoments(); this.updateDishes();
+    this.updateGuest(dt); this.watchMoments(); this.updateDishes(); this.updateBowl(dt);
     if (!this.decorChecked && this.objSprites.size && this.now > 1500 && !this.editMode) { this.decorChecked = true; this.tidyDecor(); }
     for (const [kind, front] of this.fronts) front.visible = inUse.has(kind);
     this.rollAutoBall(dt);
